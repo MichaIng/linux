@@ -14,6 +14,7 @@ extern char __init_data_begin[], __init_data_end[];
 extern char __init_text_begin[], __init_text_end[];
 extern char __alt_start[], __alt_end[];
 extern char __exittext_begin[], __exittext_end[];
+extern phys_addr_t end_linear_map;
 
 static inline bool is_va_kernel_text(uintptr_t va)
 {
