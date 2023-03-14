@@ -1,0 +1,104 @@
+name: VisionFive 2 kernel build
+on: [workflow_dispatch, push]
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+permissions: {}
+jobs:
+  build:
+    # https://github.com/actions/virtual-environments
+    runs-on: ubuntu-22.04
+    defaults:
+      run:
+        shell: sh
+    env:
+      # https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/log/?h=linux-5.15.y
+      CROSS_COMPILE: 'riscv64-linux-gnu-'
+      ARCH: 'riscv'
+    steps:
+    - name: Setup tmpfs
+      run: sudo mount -t tmpfs -o "noatime,lazytime,uid=$(id -u),size=3G" tmpfs "$GITHUB_WORKSPACE"
+    - uses: actions/checkout@v3
+    - name: Build init
+      run: |
+        sudo apt-get -q update
+        sudo DEBIAN_FRONTEND=noninteractive apt-get --no-install-recommends -qq install make gcc libc6-dev flex bison gcc-riscv64-linux-gnu bc libssl-dev
+        rm -Rf linux-image-visionfive2
+        mkdir -p linux-image-visionfive2/DEBIAN linux-image-visionfive2/boot/extlinux
+    - name: Build Linux
+      run: |
+        > .scmversion # Avoid Git commit version suffix
+        mv dietpi_visionfive2_defconfig arch/riscv/configs/
+        make dietpi_visionfive2_defconfig
+        make -j$(nproc)
+        make install INSTALL_PATH='linux-image-visionfive2/boot'
+        make dtbs_install INSTALL_DTBS_PATH='linux-image-visionfive2/usr/lib/linux-image-visionfive2'
+        find linux-image-visionfive2/usr/lib/linux-image-visionfive2 -mindepth 1 -regextype egrep \( ! -regex '.*/(starfive|vf2-overlay.*|jh7110-visionfive-v2.*\.dtb)' -o -regex '.*/jh7110-visionfive-v2-A1[01].dtb' \) -exec rm -Rf {} +
+        make modules_install INSTALL_MOD_PATH='linux-image-visionfive2'
+        rm linux-image-visionfive2/lib/modules/*/build linux-image-visionfive2/lib/modules/*/source
+        chmod -R 0644 linux-image-visionfive2
+        find linux-image-visionfive2 -type d -exec chmod 0755 {} +
+    - name: Build package
+      run: |
+        kernelversion=$(make kernelversion)
+        curl -fO 'https://dietpi.com/downloads/binaries/linux-image-visionfive2.deb'
+        version=$(dpkg-deb -f linux-image-visionfive2.deb Version)
+        rm linux-image-visionfive2.deb
+        suffix=${version#*-dietpi}
+        if [ "$version" = "$kernelversion-dietpi$suffix" ]
+        then
+            version="$kernelversion-dietpi$((suffix+1))"
+        else
+            version="$kernelversion-dietpi1"
+        fi
+        cat << _EOF_ > linux-image-visionfive2/boot/extlinux/extlinux.conf
+        label DietPi
+        linux /boot/vmlinuz-$kernelversion
+        fdt /usr/lib/linux-image-visionfive2/starfive/jh7110-visionfive-v2.dtb
+        append root=/dev/mmcblk1p1 rootfstype=ext4 rootwait earlycon console=ttyS0,115200 console=tty0 consoleblank=0 net.ifnames=0
+        _EOF_
+        echo '/boot/extlinux/extlinux.conf' > linux-image-visionfive2/DEBIAN/conffiles
+        cat << _EOF_ > linux-image-visionfive2/DEBIAN/postinst
+        #!/bin/dash
+        set -e
+        export DEB_MAINT_PARAMS=\$* INITRD=Yes
+        [ -d '/etc/kernel/postinst.d' ] && run-parts --arg='$kernelversion' --arg='/boot/vmlinuz-$kernelversion' /etc/kernel/postinst.d
+        sed -Ei '/^[[:blank:]]*(linux|kernel)/c\linux /boot/vmlinuz-$kernelversion' /boot/extlinux/extlinux.conf
+        exit 0
+        _EOF_
+        cp linux-image-visionfive2/DEBIAN/postinst linux-image-visionfive2/DEBIAN/preinst
+        sed -i -e '/extlinux/d' -e 's/postinst/preinst/g' linux-image-visionfive2/DEBIAN/preinst
+        cp linux-image-visionfive2/DEBIAN/postinst linux-image-visionfive2/DEBIAN/postrm
+        sed -i -e '/extlinux/d' -e 's/postinst/postrm/g' linux-image-visionfive2/DEBIAN/postrm
+        cp linux-image-visionfive2/DEBIAN/postinst linux-image-visionfive2/DEBIAN/prerm
+        sed -i -e '/extlinux/d' -e 's/postinst/prerm/g' linux-image-visionfive2/DEBIAN/prerm
+        chmod +x linux-image-visionfive2/DEBIAN/p*
+        find linux-image-visionfive2 ! \( -path linux-image-visionfive2/DEBIAN -prune \) -type f -exec md5sum {} + | sed 's|linux-image-visionfive2/||' > linux-image-visionfive2/DEBIAN/md5sums
+        cat << _EOF_ > linux-image-visionfive2/DEBIAN/control
+        Package: linux-image-visionfive2
+        Version: $version
+        Architecture: riscv64
+        Maintainer: MichaIng <micha@dietpi.com>
+        Date: $(date -u '+%a, %d %b %Y %T %z')
+        Standards-Version: 4.6.2.0
+        Installed-Size: $(du -sk 'linux-image-visionfive2' | mawk '{print $1}')
+        Section: kernel
+        Priority: optional
+        Homepage: https://github.com/MichaIng/linux
+        Vcs-Git: https://github.com/MichaIng/linux.git
+        Vcs-Browser: https://github.com/MichaIng/linux
+        Description: Linux kernel for RISC-V StarFive VisionFive 2
+        _EOF_
+        sed -i "/^Installed-Size:/c\Installed-Size: $(du -sk 'linux-image-visionfive2' | mawk '{print $1}')" linux-image-visionfive2/DEBIAN/control
+        sudo chown -R 0:0 linux-image-visionfive2
+        dpkg-deb -b -Zxz -z9 -Sextreme linux-image-visionfive2
+        sudo rm -R linux-image-visionfive2
+    - name: Upload
+      run: |
+        [ -d ~/.ssh ] || mkdir ~/.ssh
+        umask 377
+        echo '${{ secrets.KNOWN_HOSTS }}' > ~/.ssh/known_hosts
+        echo '${{ secrets.SSH_KEY }}' > ~/.ssh/id_ed25519
+        curl -T 'linux-image-visionfive2.deb' --key ~/.ssh/id_ed25519 '${{ secrets.UPLOAD_URL }}all/'
+        curl 'https://api.cloudflare.com/client/v4/zones/${{ secrets.CF_ZONE }}/purge_cache' -H 'Authorization: Bearer ${{ secrets.CF_TOKEN }}' -H 'Content-Type: application/json' \
+        --data '{"files":["https://dietpi.com/downloads/binaries/testing/","https://dietpi.com/downloads/binaries/testing/linux-image-visionfive2.deb"]}'
