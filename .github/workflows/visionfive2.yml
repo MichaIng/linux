@@ -36,7 +36,7 @@ jobs:
         find linux-image-visionfive2/usr/lib/linux-image-visionfive2 -mindepth 1 -regextype egrep \( ! -regex '.*/(starfive|vf2-overlay.*|jh7110-visionfive-v2.*\.dtb)' -o -regex '.*/jh7110-visionfive-v2-A1[01].dtb' \) -exec rm -Rf {} +
         make modules_install INSTALL_MOD_PATH='linux-image-visionfive2'
         rm linux-image-visionfive2/lib/modules/*/build linux-image-visionfive2/lib/modules/*/source
-        chmod -R 0644 linux-image-visionfive2
+        find linux-image-visionfive2 -type f -exec chmod 0644 {} +
         find linux-image-visionfive2 -type d -exec chmod 0755 {} +
     - name: Build package
       run: |
