@@ -389,6 +389,13 @@ struct sg_table *vs_gem_prime_get_sg_table(struct drm_gem_object *obj)
 
 int vs_gem_prime_vmap(struct drm_gem_object *obj, struct dma_buf_map *map)
 {
+	struct vs_gem_object *vs_obj = to_vs_gem_object(obj);
+
+	void * vaddr = vs_obj->dma_attrs & DMA_ATTR_NO_KERNEL_MAPPING ?
+		       page_address(vs_obj->cookie) : vs_obj->cookie;
+
+	dma_buf_map_set_vaddr(map, vaddr);
+
 	return 0;
 }
 
