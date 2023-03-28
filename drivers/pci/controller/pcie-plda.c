@@ -164,10 +164,8 @@ struct plda_pcie {
 	struct clk_bulk_data *clks;
 	int num_clks;
 	int atr_table_num;
-	struct pinctrl *pinctrl;
-	struct pinctrl_state *perst_state_def;
-	struct pinctrl_state *perst_state_active;
 	struct gpio_desc *power_gpio;
+	struct gpio_desc *reset_gpio;
 };
 
 static inline void plda_writel(struct plda_pcie *pcie, const u32 value,
@@ -752,20 +750,6 @@ int plda_gpio_init(struct plda_pcie *pcie)
 	pcie->reset_gpio = devm_gpiod_get_optional(dev, "reset", GPIOD_OUT_HIGH);
 	if (IS_ERR_OR_NULL(pcie->reset_gpio)) {
 		dev_warn(dev, "Failed to get reset-gpio.\n");
-		return -EINVAL;
-	}
-
-	pcie->perst_state_def
-		= pinctrl_lookup_state(pcie->pinctrl, "perst-default");
-	if (IS_ERR_OR_NULL(pcie->perst_state_def)) {
-		dev_err(dev, "Failed to get the perst-default pinctrl handle\n");
-		return -EINVAL;
-	}
-
-	pcie->perst_state_active
-		= pinctrl_lookup_state(pcie->pinctrl, "perst-active");
-	if (IS_ERR_OR_NULL(pcie->perst_state_active)) {
-		dev_err(dev, "Failed to get the perst-active pinctrl handle\n");
 		return -EINVAL;
 	}
 
