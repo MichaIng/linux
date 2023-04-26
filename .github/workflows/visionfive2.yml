@@ -12,7 +12,6 @@ jobs:
       run:
         shell: sh
     env:
-      # https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/log/?h=linux-5.15.y
       CROSS_COMPILE: 'riscv64-linux-gnu-'
       ARCH: 'riscv'
     steps:
@@ -44,15 +43,13 @@ jobs:
       run: |
         kernelversion=$(make kernelversion)
         curl -fO 'https://dietpi.com/downloads/binaries/linux-image-visionfive2.deb'
-        version=$(dpkg-deb -f linux-image-visionfive2.deb Version)
+        cur_version=$(dpkg-deb -f linux-image-visionfive2.deb Version)
         rm linux-image-visionfive2.deb
-        suffix=${version#*-dietpi}
-        if [ "$version" = "$kernelversion-dietpi$suffix" ]
-        then
-            version="$kernelversion-dietpi$((suffix+1))"
-        else
-            version="$kernelversion-dietpi1"
-        fi
+        cur_suffix=${cur_version#*-dietpi}
+        echo "Current package version is:  $cur_version"
+        echo "New kernel version is:       $kernelversion"
+        [ "$kernelversion-dietpi$cur_suffix" = "$cur_version" ] && version="$kernelversion-dietpi$((cur_suffix+1))" || version="$kernelversion-dietpi1"
+        echo "New package version will be: $version"
         cat << _EOF_ > linux-image-visionfive2/boot/extlinux/extlinux.conf
         label DietPi
         linux /boot/vmlinuz-$kernelversion
