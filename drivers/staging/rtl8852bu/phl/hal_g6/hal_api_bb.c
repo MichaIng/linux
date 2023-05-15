@@ -161,6 +161,13 @@ void rtw_hal_init_bb_reg(struct hal_info_t *hal_info)
 	halbb_reset_bb(hal_info->bb);
 }
 
+u8 rtw_hal_ex_cn_report(struct rtw_hal_com_t *hal_com)
+{
+	struct hal_info_t *hal = (struct hal_info_t *)hal_com->hal_priv;
+
+	return halbb_ex_cn_report(hal->bb);
+}
+
 u32 rtw_hal_read_rf_reg(struct rtw_hal_com_t *hal_com,
 			enum rf_path path, u32 addr, u32 mask)
 {
@@ -838,7 +845,7 @@ rtw_hal_bb_parse_phy_sts(void *hal, void *ppdu_sts,
 	struct physts_rxd rxdesc = {0};
 	struct physts_result bb_rpt = {0};
 	u8 i = 0;
-
+	bool valid = false;
 
 	rxdesc.data_rate = mdata->rx_rate;
 	rxdesc.gi_ltf = mdata->rx_gi_ltf;
@@ -856,9 +863,14 @@ rtw_hal_bb_parse_phy_sts(void *hal, void *ppdu_sts,
 		rxdesc.user_i[i].is_bcn = hal_ppdu->usr[i].has_bcn;
 	}
 
-	halbb_physts_parsing(hal_info->bb, hal_ppdu->phy_st_ptr,
+	valid = halbb_physts_parsing(hal_info->bb, hal_ppdu->phy_st_ptr,
 			     (u16)hal_ppdu->phy_st_size,
 			     &rxdesc, &bb_rpt);
+	if (valid != true) {
+		PHL_TRACE(COMP_PHL_PSTS, _PHL_DEBUG_,
+						"halbb_physts_parsing Fail!\n");
+		hstutus = RTW_HAL_STATUS_FAILURE;
+	}
 
 	if ((bb_rpt.rssi_avg != 0) || (bb_rpt.physts_rpt_valid == 1)) {
 		phy_info->is_valid = true;
@@ -1280,37 +1292,36 @@ void rtw_hal_bb_set_tx_pow_ref(struct rtw_hal_com_t *hal_com,
 }
 
 #ifdef CONFIG_RTW_ACS
-void rtw_hal_bb_acs_mntr_trigger(struct hal_info_t *hal_info, u16 monitor_time)
+void rtw_hal_bb_acs_mntr_trigger(struct hal_info_t *hal_info, struct acs_mntr_parm *parm)
 {
 	struct ccx_para_info para = {0};
 	struct env_trig_rpt trig_rpt = {0};
+	struct acs_mntr_parm *mntr_parm = (struct acs_mntr_parm *)parm;
 
 	para.rac_lv = RAC_LV_3;
-	para.mntr_time = monitor_time;
-	/*clm para*/
+	para.mntr_time = mntr_parm->mntr_time;
 	para.clm_app = CLM_ACS;
 	para.clm_input_opt = CLM_CCA_P20;
-
-	/*nhm para*/
 	para.nhm_app = NHM_ACS;
-	para.nhm_incld_cca = NHM_INCLUDE_CCA;
+	para.nhm_incld_cca = mntr_parm->nhm_incld_cca ? NHM_INCLUDE_CCA : NHM_EXCLUDE_CCA;
 
 	halbb_env_mntr_trigger(hal_info->bb, &para, &trig_rpt);
 }
 
-enum rtw_hal_status rtw_hal_bb_acs_mntr_result(struct hal_info_t *hal_info, void *rpt)
+enum rtw_hal_status rtw_hal_bb_acs_mntr_result(struct hal_info_t *hal_info, struct acs_mntr_rpt *rpt)
 {
 	u8 result = 0;
 	struct env_mntr_rpt mntr_rpt = {0};
-	struct auto_chan_sel_report *acs_rpt = (struct auto_chan_sel_report *)rpt;
 
 	result = halbb_env_mntr_result(hal_info->bb, &mntr_rpt);
 
 	if ((result & (CLM_SUCCESS | NHM_SUCCESS)) != (CLM_SUCCESS | NHM_SUCCESS)) {
 		return RTW_HAL_STATUS_FAILURE;
 	} else {
-		acs_rpt->clm_ratio = mntr_rpt.clm_ratio;
-		acs_rpt->nhm_pwr = mntr_rpt.nhm_pwr;
+		rpt->clm_ratio = mntr_rpt.clm_ratio;
+		rpt->nhm_pwr = mntr_rpt.nhm_pwr;
+		rpt->nhm_ratio = mntr_rpt.nhm_ratio;
+		hal_mem_cpy(hal_info->hal_com, rpt->nhm_rpt, mntr_rpt.nhm_rpt, NHM_RPT_NUM);
 		return RTW_HAL_STATUS_SUCCESS;
 	}
 }
@@ -1552,6 +1563,7 @@ void rtw_hal_bb_env_rpt(struct rtw_hal_com_t *hal_com, struct rtw_env_report *en
 		env_rpt->clm_ratio = bg_rpt.clm_ratio;
 		env_rpt->nhm_pwr = bg_rpt.nhm_pwr;
 		env_rpt->nhm_ratio = bg_rpt.nhm_ratio;
+		env_rpt->nhm_tx_ratio = bg_rpt.nhm_tx_ratio;
 		env_rpt->nhm_cca_ratio = bg_rpt.nhm_cca_ratio;
 		env_rpt->rpt_status = 1;
 	} else {
@@ -1717,6 +1729,11 @@ void rtw_hal_bb_init_reg_by_hdr(struct hal_info_t *hal_info, u32 *folder_array,
 				u32 folder_len, u8 is_form_folder, enum phl_phy_idx phy_idx)
 
 {
+}
+
+u8 rtw_hal_ex_cn_report(struct rtw_hal_com_t *hal_com)
+{
+	return 0;
 }
 
 u32 rtw_hal_read_rf_reg(struct rtw_hal_com_t *hal_com,
@@ -2113,12 +2130,12 @@ rtw_hal_bb_tssi_bb_reset(struct rtw_hal_com_t *hal_com)
 }
 
 #ifdef CONFIG_RTW_ACS
-void rtw_hal_bb_acs_mntr_trigger(struct hal_info_t *hal_info, u16 monitor_time)
+void rtw_hal_bb_acs_mntr_trigger(struct hal_info_t *hal_info, struct acs_mntr_parm *parm)
 {
 
 }
 
-enum rtw_hal_status rtw_hal_bb_acs_mntr_result(struct hal_info_t *hal_info, void *rpt)
+enum rtw_hal_status rtw_hal_bb_acs_mntr_result(struct hal_info_t *hal_info, struct acs_mntr_rpt *rpt)
 {
 	return RTW_HAL_STATUS_FAILURE;
 }

@@ -22,6 +22,8 @@ static u32 wol_pattern_orig;
 static u32 wol_uc_orig;
 static u32 wol_magic_orig;
 static u8 nlo_enable_record;
+static u8 mdns_v4_multicast_addr[] = {0x01, 0x00, 0x5e, 0x00, 0x00, 0xFB};
+static u8 mdns_v6_multicast_addr[] = {0x33, 0x33, 0x00, 0x00, 0x00, 0xFB};
 
 static u32 send_h2c_keep_alive(struct mac_ax_adapter *adapter,
 			       struct keep_alive *parm)
@@ -255,6 +257,8 @@ static u32 send_h2c_gtk_ofld(struct mac_ax_adapter *adapter,
 		(parm->ieee80211w_en ? FWCMD_H2C_GTK_OFLD_IEEE80211W_EN : 0) |
 		(parm->pairwise_wakeup ?
 		 FWCMD_H2C_GTK_OFLD_PAIRWISE_WAKEUP : 0) |
+		(parm->norekey_wakeup ?
+		 FWCMD_H2C_GTK_OFLD_NOREKEY_WAKEUP : 0) |
 		SET_WORD(parm->mac_id, FWCMD_H2C_GTK_OFLD_MAC_ID) |
 		SET_WORD(parm->gtk_rsp_id, FWCMD_H2C_GTK_OFLD_GTK_RSP_ID));
 
@@ -1030,6 +1034,12 @@ u32 mac_cfg_wow_wake(struct mac_ax_adapter *adapter,
 			return MACNOITEM;
 		}
 	} else {
+		ret = refresh_security_cam_info(adapter, macid);
+		if (ret)
+			PLTFM_MSG_ERR("refresh_security_cam_info failed %d\n", ret);
+		else
+			PLTFM_MSG_TRACE("refresh_security_cam_info success!\n");
+
 		if (wow_bk_status[(macid >> 5)] & BIT(macid & 0x1F)) {
 			//restore address cam
 			role = mac_role_srch(adapter, macid);
@@ -1123,6 +1133,7 @@ u32 mac_cfg_gtk_ofld(struct mac_ax_adapter *adapter,
 	parm.tkip_en = info->tkip_en;
 	parm.ieee80211w_en = info->ieee80211w_en;
 	parm.pairwise_wakeup = info->pairwise_wakeup;
+	parm.norekey_wakeup = info->norekey_wakeup;
 	parm.mac_id = macid;
 	parm.gtk_rsp_id = info->gtk_rsp_id;
 	parm.pmf_sa_query_id = info->pmf_sa_query_id;
@@ -1506,6 +1517,8 @@ u32 _mac_request_aoac_report_rx_rdy(struct mac_ax_adapter *adapter)
 	#endif
 	u8 *buf;
 	struct fwcmd_aoac_report_req *fwcmd_aoac_rpt_req;
+	struct mac_ax_intf_ops *ops = adapter_to_intf_ops(adapter);
+	u32 val32;
 
 	h2cb = h2cb_alloc(adapter, H2CB_CLASS_DATA);
 
@@ -1517,6 +1530,22 @@ u32 _mac_request_aoac_report_rx_rdy(struct mac_ax_adapter *adapter)
 		ret = MACNOBUF;
 		goto fail;
 	}
+
+	PLTFM_MSG_ERR("Request aoac_rpt\n");
+	val32 = MAC_REG_R32(R_AX_CH12_TXBD_IDX);
+	PLTFM_MSG_ERR("CH12_TXBD=%x\n", val32);
+	MAC_REG_W32(R_AX_PLE_DBG_FUN_INTF_CTL, 80010002);
+	val32 = MAC_REG_R32(R_AX_PLE_DBG_FUN_INTF_DATA);
+	PLTFM_MSG_ERR("PLE_C2H=%x\n", val32);
+	MAC_REG_W32(R_AX_PLE_DBG_FUN_INTF_CTL, 80010003);
+	val32 = MAC_REG_R32(R_AX_PLE_DBG_FUN_INTF_DATA);
+	PLTFM_MSG_ERR("PLE_H2C=%x\n", val32);
+	val32 = mac_sram_dbg_read(adapter, 0x400, AXIDMA_SEL);
+	PLTFM_MSG_ERR("AXI_H2C=%x\n", val32);
+	val32 = mac_sram_dbg_read(adapter, 0x420, AXIDMA_SEL);
+	PLTFM_MSG_ERR("AXI_C2H=%x\n", val32);
+	val32 = MAC_REG_R32(R_AX_RXQ_RXBD_IDX);
+	PLTFM_MSG_ERR("RXQ_RXBD=%x\n\n", val32);
 
 	fwcmd_aoac_rpt_req = (struct fwcmd_aoac_report_req *)buf;
 	fwcmd_aoac_rpt_req->dword0 =
@@ -1681,8 +1710,10 @@ u32 mac_read_aoac_report(struct mac_ax_adapter *adapter,
 			 struct mac_ax_aoac_report *rpt_buf, u8 rx_ready)
 {
 	struct mac_ax_wowlan_info *wow_info = &adapter->wowlan_info;
+	struct mac_ax_intf_ops *ops = adapter_to_intf_ops(adapter);
 	u32 ret = MACSUCCESS;
-	u8 cnt = 100;
+	u8 cnt = 200;
+	u32 val32;
 
 	while ((rx_ready) && (adapter->sm.aoac_rpt != MAC_AX_AOAC_RPT_H2C_DONE)) {
 		PLTFM_DELAY_MS(1);
@@ -1690,6 +1721,20 @@ u32 mac_read_aoac_report(struct mac_ax_adapter *adapter,
 			PLTFM_MSG_ERR("[ERR] read aoac report(%d) fail\n",
 				      adapter->sm.aoac_rpt);
 			adapter->sm.aoac_rpt = MAC_AX_AOAC_RPT_IDLE;
+			val32 = MAC_REG_R32(R_AX_CH12_TXBD_IDX);
+			PLTFM_MSG_ERR("CH12_TXBD=%x\n", val32);
+			MAC_REG_W32(R_AX_PLE_DBG_FUN_INTF_CTL, 80010002);
+			val32 = MAC_REG_R32(R_AX_PLE_DBG_FUN_INTF_DATA);
+			PLTFM_MSG_ERR("PLE_C2H=%x\n", val32);
+			MAC_REG_W32(R_AX_PLE_DBG_FUN_INTF_CTL, 80010003);
+			val32 = MAC_REG_R32(R_AX_PLE_DBG_FUN_INTF_DATA);
+			PLTFM_MSG_ERR("PLE_H2C=%x\n", val32);
+			val32 = mac_sram_dbg_read(adapter, 0x400, AXIDMA_SEL);
+			PLTFM_MSG_ERR("AXI_H2C=%x\n", val32);
+			val32 = mac_sram_dbg_read(adapter, 0x420, AXIDMA_SEL);
+			PLTFM_MSG_ERR("AXI_C2H=%x\n", val32);
+			val32 = MAC_REG_R32(R_AX_RXQ_RXBD_IDX);
+			PLTFM_MSG_ERR("RXQ_RXBD=%x\n\n", val32);
 			return MACPOLLTO;
 		}
 	}
@@ -1772,4 +1817,452 @@ u32 free_aoac_report(struct mac_ax_adapter *adapter)
 	}
 
 	return MACSUCCESS;
+}
+
+u32 mac_cfg_wow_auto_test(struct mac_ax_adapter *adapter, u8 rxtest)
+{
+	u32 ret;
+	#if MAC_AX_PHL_H2C
+	struct rtw_h2c_pkt *h2cb;
+	#else
+	struct h2c_buf *h2cb;
+	#endif
+	u8 *buf;
+	struct fwcmd_wow_auto_test *fwcmd_wow_auto_test;
+
+	if (adapter->sm.fwdl != MAC_AX_FWDL_INIT_RDY) {
+		PLTFM_MSG_WARN("%s fw not ready\n", __func__);
+		return MACFWNONRDY;
+	}
+
+	h2cb = h2cb_alloc(adapter, H2CB_CLASS_DATA);
+
+	if (!h2cb)
+		return MACNPTR;
+
+	buf = h2cb_put(h2cb, sizeof(struct fwcmd_wow_auto_test));
+	if (!buf) {
+		ret = MACNOBUF;
+		goto fail;
+	}
+
+	fwcmd_wow_auto_test = (struct fwcmd_wow_auto_test *)buf;
+	fwcmd_wow_auto_test->dword0 =
+	cpu_to_le32((rxtest ? FWCMD_H2C_WOW_AUTO_TEST_RX_TEST : 0));
+
+	ret = h2c_pkt_set_hdr(adapter, h2cb,
+			      FWCMD_TYPE_H2C, FWCMD_H2C_CAT_TEST,
+			      FWCMD_H2C_CL_WOW_TEST, FWCMD_H2C_FUNC_WOW_AUTO_TEST,
+			      0, 0);
+	if (ret)
+		goto fail;
+
+	ret = h2c_pkt_build_txd(adapter, h2cb);
+	if (ret)
+		goto fail;
+
+#if MAC_AX_PHL_H2C
+	ret = PLTFM_TX(h2cb);
+#else
+	ret = PLTFM_TX(h2cb->data, h2cb->len);
+#endif
+	if (ret) {
+		PLTFM_MSG_ERR("[ERR]platform tx: %d\n", ret);
+		adapter->sm.aoac_rpt = MAC_AX_AOAC_RPT_ERROR;
+		goto fail;
+	}
+
+	h2cb_free(adapter, h2cb);
+
+	return MACSUCCESS;
+fail:
+	h2cb_free(adapter, h2cb);
+
+	return ret;
+}
+
+static void dump_bytes(struct mac_ax_adapter *adapter, u8 *start, u32 size)
+{
+	u32 idx;
+
+	for (idx = 0; idx < size; idx += 4, start += 4) {
+		switch (size-idx) {
+		case 1:
+			PLTFM_MSG_TRACE("- 0x%x: 0x%hhx\n", idx, *start);
+			break;
+		case 2:
+			PLTFM_MSG_TRACE("- 0x%x: 0x%hhx 0x%hhx\n", idx, *start, *(start+1));
+			break;
+		case 3:
+			PLTFM_MSG_TRACE("- 0x%x: 0x%hhx 0x%hhx 0x%hhx\n", idx,
+				      *start, *(start+1), *(start+2));
+			break;
+		default:
+			PLTFM_MSG_TRACE("- 0x%x: 0x%hhx 0x%hhx 0x%hhx 0x%hhx\n", idx,
+				      *start, *(start+1), *(start+2), *(start+3));
+			break;
+		}
+	}
+}
+
+static void mdns_sprintf(struct mac_ax_adapter *adapter, char* content, u8 *in, u32 len)
+{
+	u32 idx;
+	u32 write_idx;
+
+	write_idx = 0;
+	PLTFM_MEMSET(content, 0, 128);
+	content[write_idx++] = '<';
+	for (idx = 0; idx < len; idx++) {
+		if (in[idx] >= 0x20) {
+			content[write_idx++] = in[idx];
+		} else {
+			content[write_idx++] = '[';
+			content[write_idx++] = '0' + (in[idx] >> 4);
+			content[write_idx++] = '0' + (in[idx] & 0xff);
+			content[write_idx++] = ']';
+		}
+	}
+	content[write_idx++] = '>';
+	content[write_idx] = 0;
+}
+
+
+static void dump_mdns_machine(struct mac_ax_adapter *adapter,
+			      struct rtw_hal_mac_proxy_mdns_machine *machine)
+{
+	char p[128];
+	mdns_sprintf(adapter, p, machine->name, machine->len);
+	PLTFM_MSG_TRACE("[MDNS][Mchn] %s (%d)\n", &p, machine->len);
+}
+
+static void dump_mdns_rsp_hdr(struct mac_ax_adapter *adapter,
+			      struct rtw_hal_mac_proxy_mdns_rsp_hdr h)
+{
+	PLTFM_MSG_TRACE("[MDNS] hdr: type (0x%x 0x%x), cf_cls (0x%x 0x%x), ttl (%d), len (%d)\n",
+			h.rspTypeB0, h.rspTypeB1,
+			h.cache_class_B0, h.cache_class_B1, h.ttl, h.dataLen);
+}
+
+static void dump_mdns_serv(struct mac_ax_adapter *adapter, struct rtw_hal_mac_proxy_mdns_service *s)
+{
+	char p[128];
+	mdns_sprintf(adapter, p, s->name, s->name_len);
+	PLTFM_MSG_TRACE("[Serv] name %s (%d)\n", p, s->name_len);
+	PLTFM_MSG_TRACE("[Serv] =============>\n");
+	dump_mdns_rsp_hdr(adapter, s->hdr);
+	PLTFM_MSG_TRACE("[Serv] prio (0x%x), weight (0x%x), port (%d)\n",
+			s->priority, s->weight, s->port);
+	mdns_sprintf(adapter, p, s->target, s->target_len);
+	PLTFM_MSG_TRACE("[Serv] target %s (%d), compress (0x%x), hasTxt (%x), txtPktId (%d)\n",
+			p, s->target_len, s->compression, s->has_txt, s->txt_pktid);
+}
+
+static void dump_mdns(struct mac_ax_adapter *adapter, struct rtw_hal_mac_proxy_mdns *mdns)
+{
+	u8 idx;
+	char p[128];
+	PLTFM_MSG_TRACE("\n");
+	PLTFM_MSG_TRACE("[MDNS] ipv4 pkt (%d), ipv6 pkt (%d), #serv (%d), #machine (%d), macid (%d)\n",
+		      mdns->ipv4_pktid, mdns->ipv6_pktid,
+		      mdns->num_supported_services, mdns->num_machine_names, mdns->macid);
+	PLTFM_MSG_TRACE("[MDNS] serv0 (%d), serv1 (%d), serv2 (%d), serv3 (%d), serv4 (%d)\n",
+		      mdns->serv_pktid[0], mdns->serv_pktid[1], mdns->serv_pktid[2],
+		      mdns->serv_pktid[3], mdns->serv_pktid[4]);
+	PLTFM_MSG_TRACE("[MDNS] serv5 (%d), serv6 (%d), serv7 (%d), serv8 (%d), serv9 (%d)\n",
+		      mdns->serv_pktid[5], mdns->serv_pktid[6], mdns->serv_pktid[7],
+		      mdns->serv_pktid[8], mdns->serv_pktid[9]);
+
+	PLTFM_MSG_TRACE("\n");
+	for (idx = 0; idx < mdns->num_machine_names; idx++) {
+		PLTFM_MSG_TRACE("[MDNS][Mchn %d] =====>\n", idx);
+		dump_mdns_machine(adapter, &mdns->machines[idx]);
+	}
+
+	PLTFM_MSG_TRACE("\n");
+	PLTFM_MSG_TRACE("[MDNS][A] =============>\n");
+	dump_mdns_rsp_hdr(adapter, mdns->a_rsp.hdr);
+	PLTFM_MSG_TRACE("[MDNS][A] %d.%d.%d.%d\n", mdns->a_rsp.ipv4Addr[0],
+		      mdns->a_rsp.ipv4Addr[1], mdns->a_rsp.ipv4Addr[2], mdns->a_rsp.ipv4Addr[3]);
+	dump_bytes(adapter, (u8 *)&mdns->a_rsp, sizeof(mdns->a_rsp));
+
+	PLTFM_MSG_TRACE("\n");
+	PLTFM_MSG_TRACE("[MDNS][AAAA] =============>\n");
+	dump_mdns_rsp_hdr(adapter, mdns->aaaa_rsp.hdr);
+	PLTFM_MSG_TRACE("[MDNS][AAAA] %x:%x:%x:%x:%x:%x:%x:%x:%x:%x:%x:%x:%x:%x:%x:%x\n",
+		      mdns->aaaa_rsp.ipv6Addr[0], mdns->aaaa_rsp.ipv6Addr[1],
+		      mdns->aaaa_rsp.ipv6Addr[2], mdns->aaaa_rsp.ipv6Addr[3],
+		      mdns->aaaa_rsp.ipv6Addr[4], mdns->aaaa_rsp.ipv6Addr[5],
+		      mdns->aaaa_rsp.ipv6Addr[6], mdns->aaaa_rsp.ipv6Addr[7],
+		      mdns->aaaa_rsp.ipv6Addr[8], mdns->aaaa_rsp.ipv6Addr[9],
+		      mdns->aaaa_rsp.ipv6Addr[10], mdns->aaaa_rsp.ipv6Addr[11],
+		      mdns->aaaa_rsp.ipv6Addr[12], mdns->aaaa_rsp.ipv6Addr[13],
+		      mdns->aaaa_rsp.ipv6Addr[14], mdns->aaaa_rsp.ipv6Addr[15]);
+	dump_bytes(adapter, (u8 *)&mdns->aaaa_rsp, sizeof(mdns->aaaa_rsp));
+
+	PLTFM_MSG_TRACE("\n");
+	PLTFM_MSG_TRACE("[MDNS][PTR] =============>\n");
+	dump_mdns_rsp_hdr(adapter, mdns->ptr_rsp.hdr);
+	mdns_sprintf(adapter, p, mdns->ptr_rsp.domain, mdns->ptr_rsp.hdr.dataLen-2);
+	PLTFM_MSG_TRACE("[MDNS][PTR] domain %s\n", &p);
+	dump_bytes(adapter, (u8 *)&mdns->ptr_rsp, sizeof(mdns->ptr_rsp));
+}
+
+static void mdns_rsp_hdr_endian(struct rtw_hal_mac_proxy_mdns_rsp_hdr *hdr)
+{
+	hdr->ttl = cpu_to_be32(hdr->ttl);
+	hdr->dataLen = cpu_to_be16(hdr->dataLen);
+}
+
+u32 mac_proxyofld(struct mac_ax_adapter *adapter, struct rtw_hal_mac_proxyofld *pcfg)
+{
+	u32 ret;
+	#if MAC_AX_PHL_H2C
+	struct rtw_h2c_pkt *h2cb;
+	#else
+	struct h2c_buf *h2cb;
+	#endif
+	u8 *buf;
+	struct rtw_hal_mac_proxyofld cfg;
+	struct mac_ax_ops *mac_ops = adapter_to_mac_ops(adapter);
+	struct mac_ax_intf_ops *ops = adapter_to_intf_ops(adapter);
+	struct mac_ax_multicast_info mc_info = {0};
+	u32 val32;
+
+	ret = MACSUCCESS;
+	cfg = *pcfg;
+
+	if (adapter->sm.fwdl != MAC_AX_FWDL_INIT_RDY)
+		return MACNOFW;
+	if (adapter->sm.proxy_st != MAC_AX_PROXY_IDLE)
+		return MACPROCERR;
+
+	h2cb = h2cb_alloc(adapter, H2CB_CLASS_DATA);
+	if (!h2cb)
+		return MACNPTR;
+
+	buf = h2cb_put(h2cb, sizeof(struct fwcmd_proxy));
+	if (!buf) {
+		h2cb_free(adapter, h2cb);
+		return MACNOBUF;
+	}
+
+	PLTFM_MEMCPY(buf, &cfg, sizeof(cfg));
+
+	ret = h2c_pkt_set_hdr(adapter, h2cb, FWCMD_TYPE_H2C, FWCMD_H2C_CAT_MAC,
+			      FWCMD_H2C_CL_PROXY, FWCMD_H2C_FUNC_PROXY, 1, 1);
+	if (ret) {
+		h2cb_free(adapter, h2cb);
+		return ret;
+	}
+
+	ret = h2c_pkt_build_txd(adapter, h2cb);
+	if (ret) {
+		h2cb_free(adapter, h2cb);
+		return ret;
+	}
+
+	#if MAC_AX_PHL_H2C
+	ret = PLTFM_TX(h2cb);
+	#else
+	ret = PLTFM_TX(h2cb->data, h2cb->len);
+	#endif
+
+	if (ret) {
+		h2cb_free(adapter, h2cb);
+		return ret;
+	}
+	adapter->sm.proxy_st = MAC_AX_PROXY_SENDING;
+	h2cb_free(adapter, h2cb);
+
+	if (cfg.mdns_v4_rsp || cfg.mdns_v4_wake || cfg.mdns_v6_rsp || cfg.mdns_v6_wake) {
+		val32 = MAC_REG_R32(R_AX_RX_FLTR_OPT);
+		val32 |= B_AX_A_MC_LIST_CAM_MATCH;
+		MAC_REG_W32(R_AX_RX_FLTR_OPT, val32);
+		if (cfg.mdns_v4_rsp || cfg.mdns_v4_wake) {
+			PLTFM_MEMCPY(mc_info.mc_addr, mdns_v4_multicast_addr, 6);
+			mc_info.mc_msk = MAC_AX_MSK_NONE;
+			mac_cfg_multicast(adapter, 1, &mc_info);
+		}
+		if (cfg.mdns_v6_rsp || cfg.mdns_v6_wake) {
+			PLTFM_MEMCPY(mc_info.mc_addr, mdns_v6_multicast_addr, 6);
+			mc_info.mc_msk = MAC_AX_MSK_NONE;
+			mac_cfg_multicast(adapter, 1, &mc_info);
+		}
+	}
+
+	return ret;
+}
+
+u32 mac_proxy_mdns(struct mac_ax_adapter *adapter, struct rtw_hal_mac_proxy_mdns *pmdns) {
+	u8 *buf;
+	u32 ret;
+	#if MAC_AX_PHL_H2C
+	struct rtw_h2c_pkt *h2cb;
+	#else
+	struct h2c_buf *h2cb;
+	#endif
+	u8 idx;
+	struct rtw_hal_mac_proxy_mdns mdns;
+
+	ret = MACSUCCESS;
+	mdns = *pmdns;
+
+	if (adapter->sm.fwdl != MAC_AX_FWDL_INIT_RDY)
+		return MACNOFW;
+	if (adapter->sm.proxy_st != MAC_AX_PROXY_IDLE)
+		return MACPROCERR;
+
+	PLTFM_MSG_TRACE("[MDNS] =============>\n");
+	dump_mdns(adapter, &mdns);
+	// dump_bytes(adapter, (u8 *)&mdns, sizeof(struct rtw_hal_mac_proxy_mdns));
+
+	for (idx = 0; idx < RTW_PHL_PROXY_MDNS_MAX_MACHINE_NUM; idx++)
+		mdns.machines[idx].len = cpu_to_le32(mdns.machines[idx].len);
+	mdns_rsp_hdr_endian(&mdns.a_rsp.hdr);
+	mdns_rsp_hdr_endian(&mdns.aaaa_rsp.hdr);
+	mdns_rsp_hdr_endian(&mdns.ptr_rsp.hdr);
+
+	// dump_bytes(adapter, (u8 *)&mdns, sizeof(struct rtw_hal_mac_proxy_mdns));
+
+	h2cb = h2cb_alloc(adapter, H2CB_CLASS_LONG_DATA);
+	if (!h2cb)
+		return MACNPTR;
+
+	buf = h2cb_put(h2cb, sizeof(struct rtw_hal_mac_proxy_mdns));
+	if (!buf) {
+		h2cb_free(adapter, h2cb);
+		return MACNOBUF;
+	}
+
+	PLTFM_MEMCPY(buf, (u8 *)&mdns, sizeof(struct rtw_hal_mac_proxy_mdns));
+
+	ret = h2c_pkt_set_hdr(adapter, h2cb, FWCMD_TYPE_H2C, FWCMD_H2C_CAT_MAC,
+			      FWCMD_H2C_CL_PROXY, FWCMD_H2C_FUNC_MDNS, 1, 1);
+	if (ret) {
+		h2cb_free(adapter, h2cb);
+		return ret;
+	}
+
+	ret = h2c_pkt_build_txd(adapter, h2cb);
+	if (ret) {
+		h2cb_free(adapter, h2cb);
+		return ret;
+	}
+
+	#if MAC_AX_PHL_H2C
+	ret = PLTFM_TX(h2cb);
+	#else
+	ret = PLTFM_TX(h2cb->data, h2cb->len);
+	#endif
+
+	if (ret) {
+		h2cb_free(adapter, h2cb);
+		return ret;
+	}
+	adapter->sm.proxy_st = MAC_AX_PROXY_SENDING;
+	h2cb_free(adapter, h2cb);
+
+	return ret;
+}
+
+u32 mac_proxy_mdns_serv_pktofld(struct mac_ax_adapter *adapter,
+				struct rtw_hal_mac_proxy_mdns_service *pserv, u8 *pktid)
+{
+	u16 idx;
+	u8 *buf;
+	u16 len;
+	u32 ret;
+	struct rtw_hal_mac_proxy_mdns_service serv;
+
+	serv = *pserv;
+
+	ret = MACSUCCESS;
+	len = sizeof(struct rtw_hal_mac_proxy_mdns_service) + serv.name_len + serv.target_len;
+	len = len - (sizeof(u8 *) * 2) - 1 - 1; //get rid of *name, *target, target_len, txt_id
+	buf = (u8 *)PLTFM_MALLOC(len);
+
+	PLTFM_MSG_TRACE("\n");
+	PLTFM_MSG_TRACE("[MDNS][Serv] =============>\n");
+	dump_mdns_serv(adapter, &serv);
+
+	mdns_rsp_hdr_endian(&serv.hdr);
+	serv.priority = cpu_to_be16(serv.priority);
+	serv.weight = cpu_to_be16(serv.weight);
+	serv.port = cpu_to_be16(serv.port);
+
+	idx = 0;
+
+	buf[idx++] = serv.name_len;
+
+	PLTFM_MEMCPY(buf + idx, serv.name, serv.name_len);
+	idx += serv.name_len;
+
+	PLTFM_MEMCPY(buf + idx, &(serv.hdr), RTW_PHL_PROXY_MDNS_RSP_HDR_LEN);
+	idx += RTW_PHL_PROXY_MDNS_RSP_HDR_LEN;
+
+	PLTFM_MEMCPY(buf + idx, &(serv.priority), 2);
+	idx += 2;
+
+	PLTFM_MEMCPY(buf + idx, &(serv.weight), 2);
+	idx += 2;
+
+	PLTFM_MEMCPY(buf + idx, &(serv.port), 2);
+	idx += 2;
+
+	PLTFM_MEMCPY(buf + idx, serv.target, serv.target_len);
+	idx += serv.target_len;
+
+	buf[idx++] = serv.compression;
+	buf[idx++] = serv.compression_loc;
+	buf[idx++] = serv.has_txt;
+	buf[idx++] = serv.txt_pktid;
+
+	dump_bytes(adapter, buf, len);
+	ret = mac_add_pkt_ofld(adapter, buf, len, pktid);
+	PLTFM_MSG_TRACE("[MDNS][Serv] ret %d, pktid %d\n", ret, *pktid);
+	PLTFM_FREE(buf, len);
+	return ret;
+}
+
+u32 mac_proxy_mdns_txt_pktofld(struct mac_ax_adapter *adapter,
+                               struct rtw_hal_mac_proxy_mdns_txt *ptxt, u8 *pktid)
+{
+	u16 idx;
+	u8 *buf;
+	u16 len;
+	u32 ret;
+	struct rtw_hal_mac_proxy_mdns_txt txt;
+
+	txt = *ptxt;
+	ret = MACSUCCESS;
+	len = sizeof(struct rtw_hal_mac_proxy_mdns_txt) + txt.content_len;
+	len = len - sizeof(u16) - sizeof(u8 *);
+	buf = (u8 *)PLTFM_MALLOC(len);
+
+	PLTFM_MSG_TRACE("\n");
+	PLTFM_MSG_TRACE("[MDNS][Txt] =============>\n");
+	dump_mdns_rsp_hdr(adapter, txt.hdr);
+	mdns_rsp_hdr_endian(&txt.hdr);
+
+	idx = 0;
+
+	PLTFM_MEMCPY(buf, &(txt.hdr), RTW_PHL_PROXY_MDNS_RSP_HDR_LEN);
+	idx += RTW_PHL_PROXY_MDNS_RSP_HDR_LEN;
+
+	PLTFM_MEMCPY(buf + idx, txt.content, txt.content_len);
+
+	dump_bytes(adapter, buf, len);
+	ret = mac_add_pkt_ofld(adapter, buf, len, pktid);
+	PLTFM_MSG_TRACE("[MDNS][Txt] ret %d, pktid %d\n", ret, *pktid);
+	PLTFM_FREE(buf, len);
+	return ret;
+}
+
+u32 mac_check_proxy_done(struct mac_ax_adapter *adapter, u8 *fw_ret) {
+	if(adapter->sm.proxy_st == MAC_AX_PROXY_IDLE) {
+		*fw_ret = adapter->sm.proxy_ret;
+		return MACSUCCESS;
+	}
+	return MACPROCBUSY;
 }

@@ -175,6 +175,7 @@ struct btc_ctrl_t {
 	u8 lps;
 	u8 tx_time;
 	u8 tx_retry;
+	u8 disable_rx_stbc;
 };
 
 /*except version*/
@@ -602,6 +603,7 @@ struct rtw_rssi_info {
 	u16 pkt_cnt_data;
 	u8 rssi_bcn; /* u(8,1), beacon RSSI, hal-bb provide, read only : 0~110 (dBm = rssi -110) */
 	u16 rssi_bcn_ma; /* u(16,5),  beacon RSSI, hal-bb provide, read only*/
+	u16 rssi_bcn_ma_path[4];
 	u16 pkt_cnt_bcn;
 	u8 ma_factor:4;
 	u8 ma_factor_bcn:4;
@@ -744,11 +746,8 @@ struct rtw_trx_stat {
 	/* Below info is for release report*/
 	u32 tx_fail_cnt;
 	u32 tx_ok_cnt;
-#ifdef CONFIG_USB_HCI
-	struct rtw_wp_rpt_stats wp_rpt_stats[PHL_AC_QUEUE_TOTAL];
-#endif
+	struct rtw_wp_rpt_stats *wp_rpt_stats;
 #ifdef CONFIG_PCI_HCI
-	u8 *wp_rpt_stats;
 	u32 ltr_tx_dly_count;
 	u32 ltr_last_tx_dly_time;
 #endif
@@ -850,6 +849,7 @@ struct phy_hw_cap_t {
 	u8 rx_num;
 	u16 hw_rts_time_th;
 	u16 hw_rts_len_th;
+	u32 txagg_num;
 };
 
 
@@ -1098,6 +1098,7 @@ struct rtw_hal_com_t {
 #ifdef RTW_WKARD_CCX_RPT_LIMIT_CTRL
 	u8 spe_pkt_cnt_lmt;
 #endif
+	u32 uuid;
 };
 
 #define FL_CFG_OP_SET 0
@@ -1188,11 +1189,16 @@ enum rtw_hal_ps_pwr_req_src {
 };
 
 struct rtw_hal_lps_info {
-	u8 lps_en;
+	u8 en;
 	u16 macid;
 	enum rtw_lps_listen_bcn_mode listen_bcn_mode;
 	u8 awake_interval;
 	enum rtw_lps_smart_ps_mode smart_ps_mode;
+};
+
+struct rtw_hal_ips_info {
+	u8 en;
+	u16 macid;
 };
 
 enum ps_pwr_state {
@@ -1235,13 +1241,6 @@ enum hal_tsf_sync_act {
 	HAL_TSF_EN_SYNC_AUTO = 1,
 	HAL_TSF_DIS_SYNC_AUTO = 2,
 };
-
-#ifdef CONFIG_RTW_ACS
-struct auto_chan_sel_report {
-	u8 clm_ratio;
-	u8 nhm_pwr;
-};
-#endif
 
 struct watchdog_nhm_report {
 	u8 ccx_rpt_stamp;

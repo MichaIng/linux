@@ -1,6 +1,6 @@
 /******************************************************************************
  *
- * Copyright(c) 2019 Realtek Corporation.
+ * Copyright(c) 2019 - 2021 Realtek Corporation.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of version 2 of the GNU General Public License as
@@ -77,7 +77,7 @@ enum lock_type {
 
 	#define _os_atomic volatile long
 	#define _os_dbgdump DbgPrint
-	#define KERN_CONT
+	#define _os_dbgdump_c DbgPrint
 	#define _os_assert ASSERT
 	#define _os_warn_on
 
@@ -102,8 +102,13 @@ enum lock_type {
 	#define _os_atomic ATOMIC_T
 	#define MAC_ALEN ETH_ALEN
 	#define _os_dbgdump _dbgdump
-	#if (LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 24))
-	#define KERN_CONT
+	#ifdef _dbgdump_c
+		#define _os_dbgdump_c _dbgdump_c
+	#else
+		#if (LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 24))
+			#define KERN_CONT
+		#endif
+		#define _os_dbgdump_c(fmt, arg...)	_dbgdump(KERN_CONT fmt, ##arg)
 	#endif
 	#define _os_assert(_expr) 0/*rtw_bug_on(_expr)*/
 	#define _os_warn_on(_cond) rtw_warn_on(_cond)
@@ -148,6 +153,20 @@ enum lock_type {
 	#define s64 long long
 	#define MAC_ALEN 6
 
+	#ifndef fallthrough
+	#if __GNUC__ >= 5 || defined(__clang__)
+	#ifndef __has_attribute
+	#define __has_attribute(x) 0
+	#endif
+	#if __has_attribute(__fallthrough__)
+	#define fallthrough __attribute__((__fallthrough__))
+	#endif
+	#endif
+	#ifndef fallthrough
+	#define fallthrough do {} while (0) /* fallthrough */
+	#endif
+	#endif
+
 	/* keep define name then delete if osdep ready */
 	#define _dma unsigned long
 
@@ -159,7 +178,7 @@ enum lock_type {
 	#define _os_list struct list_head
 	#define _os_atomic int
 	#define _os_dbgdump(_fmt, ...)
-	#define KERN_CONT
+	#define _os_dbgdump_c(_fmt, ...)
 	#define _os_assert(_expr)
 	#define _os_warn_on(_cond)
 	#define _os_spinlockfg unsigned int
@@ -181,6 +200,8 @@ struct _os_handler {
 		_os_workitem	workitem;
 		_os_thread thread;
 	} u;
+	_os_sema hdlr_sema;
+	bool hdlr_created;
 };
 
 #ifndef PHL_PLATFORM_LINUX

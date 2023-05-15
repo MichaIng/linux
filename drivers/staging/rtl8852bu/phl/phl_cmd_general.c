@@ -221,7 +221,16 @@ _phl_cmd_general_post_phase_msg_hdlr(struct phl_info_t *phl_info, void *dispr,
 		psts = RTW_PHL_STATUS_SUCCESS;
 	}
 	break;
-	case MSG_EVT_WATCHDOG:
+	case MSG_EVT_SW_WATCHDOG:
+		if (IS_MSG_FAIL(msg->msg_id))
+			psts = RTW_PHL_STATUS_FAILURE;
+		else if (IS_MSG_CANCEL(msg->msg_id))
+			psts = RTW_PHL_STATUS_FAILURE;
+		else
+			psts = RTW_PHL_STATUS_SUCCESS;
+		psts = phl_watchdog_sw_cmd_hdl(phl_info, psts);
+	break;
+	case MSG_EVT_HW_WATCHDOG:
 	{
 		if (IS_MSG_CANNOT_IO(msg->msg_id))
 			psts = RTW_PHL_STATUS_CANNOT_IO;
@@ -231,7 +240,7 @@ _phl_cmd_general_post_phase_msg_hdlr(struct phl_info_t *phl_info, void *dispr,
 			psts = RTW_PHL_STATUS_FAILURE;
 		else
 			psts = RTW_PHL_STATUS_SUCCESS;
-		psts = phl_watchdog_cmd_hdl(phl_info, psts);
+		psts = phl_watchdog_hw_cmd_hdl(phl_info, psts);
 	}
 	break;
 
@@ -267,6 +276,19 @@ _phl_cmd_general_post_phase_msg_hdlr(struct phl_info_t *phl_info, void *dispr,
 			psts = RTW_PHL_STATUS_SUCCESS;
 	break;
 #endif
+
+	case MSG_EVT_GET_TX_PWR_DBM:
+	{
+		if (IS_MSG_CANNOT_IO(msg->msg_id))
+			psts = RTW_PHL_STATUS_CANNOT_IO;
+		else if (IS_MSG_FAIL(msg->msg_id))
+			psts = RTW_PHL_STATUS_FAILURE;
+		else if (IS_MSG_CANCEL(msg->msg_id))
+			psts = RTW_PHL_STATUS_FAILURE;
+		else
+			psts = rtw_phl_get_txinfo_pwr((void*)phl_info, (s16*)(phl_cmd->buf));
+	}
+	break;
 
 	case MSG_EVT_NOTIFY_HAL:
 		psts = phl_notify_cmd_hdl(phl_info, phl_cmd->buf);
@@ -357,8 +379,14 @@ static enum phl_mdl_ret_code _phl_cmd_general_start(void *dispr, void *priv)
 	return MDL_RET_SUCCESS;
 }
 
+static void _stop_operation_on_general(void *phl)
+{
+	rtw_phl_watchdog_stop(phl);
+}
+
 static enum phl_mdl_ret_code _phl_cmd_general_stop(void *dispr, void *priv)
 {
+	_stop_operation_on_general(priv);
 	return MDL_RET_SUCCESS;
 }
 
@@ -374,7 +402,7 @@ static void _fail_evt_hdlr(void *dispr, void *priv, struct phl_msg *msg)
 	phl_dispr_get_idx(dispr, &idx);
 
 	switch (evt_id) {
-	case MSG_EVT_WATCHDOG:
+	case MSG_EVT_HW_WATCHDOG:
 		/* watchdog do not need to handle fail case */
 		PHL_DBG("%s do simple watchdog!\n", __func__);
 		rtw_hal_simple_watchdog(phl_info->hal, false);
@@ -510,20 +538,6 @@ _phl_cmd_obj_free(struct phl_info_t *phl_info, struct phl_cmd_obj *phl_cmd)
 	return RTW_PHL_STATUS_SUCCESS;
 }
 
-static void _phl_cmd_complete_msg_hdlr(struct phl_info_t *phl_info,
-						       struct phl_msg *msg)
-{
-	u16 evt_id = MSG_EVT_ID_FIELD(msg->msg_id);
-
-	switch (evt_id) {
-	case MSG_EVT_WATCHDOG:
-		phl_watchdog_cmd_complete_hdl(phl_info);
-		break;
-	default:
-		break;
-	}
-}
-
 static void _phl_cmd_complete(void *priv, struct phl_msg *msg)
 {
 	struct phl_info_t *phl_info = (struct phl_info_t *)priv;
@@ -533,9 +547,6 @@ static void _phl_cmd_complete(void *priv, struct phl_msg *msg)
 	enum rtw_phl_status pstst = RTW_PHL_STATUS_SUCCESS;
 
 	PHL_DBG("%s evt_id:%d\n", __func__, phl_cmd->evt_id);
-
-	/* no matter msg status, must execute complete handler */
-	_phl_cmd_complete_msg_hdlr(phl_info, msg);
 
 	if (IS_MSG_CANNOT_IO(msg->msg_id))
 		csts = PHL_CMD_DONE_CANNOT_IO;
@@ -626,7 +637,7 @@ phl_cmd_enqueue(struct phl_info_t *phl_info,
 			psts = RTW_PHL_STATUS_SUCCESS;
 		}
 	} else {
-		PHL_ERR("%s send msg failed\n", __func__);
+		PHL_TRACE(COMP_PHL_CMDDISP, _PHL_INFO_, "%s: evt_id(%d)\n", __func__, evt_id);
 		_phl_cmd_obj_free(phl_info, phl_cmd);
 	}
 

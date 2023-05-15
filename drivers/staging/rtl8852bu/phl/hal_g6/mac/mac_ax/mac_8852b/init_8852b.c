@@ -22,6 +22,7 @@
 #include "pwr_seq_func_8852b.h"
 #include "../hw.h"
 #include "../security_cam.h"
+#include "../ftm.h"
 #include "../trx_desc.h"
 #include "../../feature_cfg.h"
 #include "../fwcmd.h"
@@ -55,6 +56,7 @@
 #include "../phy_misc.h"
 #include "../h2c_agg.h"
 #include "../dbcc.h"
+#include "../secure_boot.h"
 
 #if MAC_AX_SDIO_SUPPORT
 #include "../_sdio.h"
@@ -103,6 +105,8 @@ static struct mac_ax_intf_ops mac8852b_sdio_ops = {
 	sdio_get_txagg_num, /*get_txagg_num*/
 	NULL, /*get_usb_rx_state*/
 	sdio_autok_counter_avg, /* pcie_autok_counter_avg */
+	sdio_tp_adjust, /* tp_adjust */
+	dbcc_hci_ctrl_sdio, /* dbcc_hci_ctrl */
 };
 #endif
 
@@ -139,6 +143,8 @@ static struct mac_ax_intf_ops mac8852b_usb_ops = {
 	usb_get_txagg_num_8852b, /*get_txagg_num*/
 	usb_get_rx_state_8852b, /*get_usb_rx_state*/
 	usb_autok_counter_avg, /* pcie_autok_counter_avg */
+	usb_tp_adjust, /* tp_adjust */
+	dbcc_hci_ctrl_usb, /* dbcc_hci_ctrl */
 };
 #endif
 
@@ -175,6 +181,8 @@ static struct mac_ax_intf_ops mac8852b_pcie_ops = {
 	pcie_get_txagg_num, /*get_txagg_num*/
 	NULL, /*get_usb_rx_state*/
 	pcie_autok_counter_avg, /* pcie_autok_counter_avg */
+	pcie_tp_adjust, /* tp_adjust */
+	dbcc_hci_ctrl_pcie, /* dbcc_hci_ctrl */
 };
 #endif
 
@@ -196,6 +204,7 @@ static struct mac_ax_ops mac8852b_ops = {
 	mac_disable_cpu, /* disable_cpu */
 	mac_fwredl, /* fwredl */
 	mac_fwdl, /* fwdl */
+	mac_query_fw_buff, /* query_fw_buff */
 	mac_enable_fw, /* enable_fw */
 	mac_lv1_rcvy, /* lv1_rcvy */
 	mac_get_macaddr,
@@ -301,6 +310,7 @@ static struct mac_ax_ops mac8852b_ops = {
 	mac_read_xcap_reg_dav, /*read xcap xo/xi reg*/
 	mac_write_xcap_reg_dav, /*write xcap xo/xi reg*/
 	mac_write_bbrst_reg, /*write bb rst reg*/
+	mac_tx_path_map_cfg, /*for BB control TX PATH*/
 	/*sounding related*/
 	mac_get_csi_buffer_index, /* get CSI buffer index */
 	mac_set_csi_buffer_index, /* set CSI buffer index */
@@ -345,9 +355,10 @@ static struct mac_ax_ops mac8852b_ops = {
 	mac_read_aoac_report, /* read_aoac_report */
 	mac_check_aoac_report_done, /* check_aoac_report_done */
 	mac_wow_stop_trx, /* wow_stop_trx */
+	mac_cfg_wow_auto_test, /* cfg_wow_auto_test */
 	/*system related*/
 	mac_dbcc_enable, /*enable / disable dbcc */
-	mac_dbcc_move_macid, /* dbcc_move_macid */
+	mac_dbcc_trx_ctrl, /* dbcc_trx_ctrl */
 	mac_port_cfg, /* cofig port para */
 	mac_port_init, /* init port para */
 	mac_enable_imr, /* enable CMAC/DMAC IMR */
@@ -355,6 +366,7 @@ static struct mac_ax_ops mac8852b_ops = {
 	mac_dump_efuse_map_bt, /* dump_bt_efuse */
 	mac_write_efuse_plus, /* write_wl_bt_efuse */
 	mac_read_efuse_plus, /* read_wl_bt_efuse */
+	mac_read_hidden_efuse, /* read_hidden_efuse */
 	mac_get_efuse_avl_size, /* get_available_efuse_size */
 	mac_get_efuse_avl_size_bt, /* get_available_efuse_size_bt */
 	mac_dump_log_efuse_plus, /* dump_logical_efuse */
@@ -433,6 +445,9 @@ static struct mac_ax_ops mac8852b_ops = {
 	mac_get_c2h_event, /* get_c2h_event */
 	mac_cfg_wps, /* cfg_wps */
 	mac_get_wl_dis_val, /* get_wl_dis_val */
+	/* ftm related */
+	mac_ista_ftm_proc, /*mac_ista_ftm_proc*/
+	mac_ista_ftm_enable, /*mac_ista_ftm_enable*/
 #if MAC_AX_FEATURE_DBGPKG
 	mac_fwcmd_lb, /* fwcmd_lb */
 	mac_mem_dump, /* sram mem dump */
@@ -461,6 +476,7 @@ static struct mac_ax_ops mac8852b_ops = {
 	mac_read_ofld_value, /* read_ofld_value */
 #endif
 	mac_add_cmd_ofld, /* add_cmd_ofld */
+	mac_cmd_ofld, /*cmd_ofld*/
 	mac_flash_erase,
 	mac_flash_read,
 	mac_flash_write,
@@ -469,6 +485,7 @@ static struct mac_ax_ops mac8852b_ops = {
 	mac_fw_ofdma_sts_en, /* send fw sts en to fw */
 	mac_tx_duty, /* tx_duty */
 	mac_tx_duty_stop, /* tx_duty _stop */
+	mac_get_phy_rpt_cfg, /* get_phy_rpt_cfg */
 #if MAC_AX_FEATURE_DBGCMD
 	mac_halmac_cmd, /* halmac_cmd */
 	mac_halmac_cmd_parser, /* halmac_cmd_parser */
@@ -492,7 +509,23 @@ static struct mac_ax_ops mac8852b_ops = {
 	mac_scanofld_chlist_busy,
 	mac_role_sync,
 	mac_ch_switch_ofld,
-	mac_get_ch_switch_rpt
+	mac_get_ch_switch_rpt,
+	mac_cfg_bcn_filter,
+	mac_bcn_filter_rssi,
+	mac_bcn_filter_tp,
+	mac_proxyofld,
+	mac_proxy_mdns_serv_pktofld,
+	mac_proxy_mdns_txt_pktofld,
+	mac_proxy_mdns,
+	mac_check_proxy_done,
+	/* MP security related */
+	mac_chk_sec_rec, /* mp_chk_sec_rec*/
+	mac_pg_sec_phy_wifi, /* mp_pg_sec_phy_wifi */
+	mac_cmp_sec_phy_wifi, /* mp_cmp_sec_phy_wifi */
+	mac_pg_sec_hid_wifi, /* mp_pg_sec_hid_wifi */
+	mac_cmp_sec_hid_wifi, /* mp_cmp_sec_hid_wifi */
+	mac_pg_sec_dis, /* mp_pg_sec_dis */
+	mac_cmp_sec_dis /* mp_cmp_sec_dis */
 };
 
 static struct mac_ax_hw_info mac8852b_hw_info = {
@@ -520,7 +553,8 @@ static struct mac_ax_hw_info mac8852b_hw_info = {
 	1280, /* limit_efuse_size_SDIO */
 	512, /* bt_efuse_size */
 	1024, /* bt_log_efuse_size */
-	32, /*hidden_efuse_size*/
+	96, /* hidden_efuse_rf_size */
+	32, /*hidden_efuse_mac_size*/
 	4, /* sec_ctrl_efuse_size */
 	192, /* sec_data_efuse_size */
 	NULL, /* sec_cam_table_t pointer */
@@ -542,56 +576,7 @@ static struct mac_ax_hw_info mac8852b_hw_info = {
 	0, /* ind_aces_cnt */
 	0, /* dbg_port_cnt */
 	0, /* core_swr_volt */
-	MAC_AX_SWR_NORM, /* core_swr_volt_sel */
-};
-
-static struct mac_ax_hw_info mac8852b_hw_info_cabv = {
-	0, /* done */
-	MAC_AX_CHIP_ID_8852B, /* chip_id */
-	0xFF, /* cv */
-	MAC_AX_INTF_INVALID, /* intf */
-	19, /* tx_ch_num */
-	10, /* tx_data_ch_num */
-	WD_BODY_LEN, /* wd_body_len */
-	WD_INFO_LEN, /* wd_info_len */
-	pwr_on_seq_8852b, /* pwr_on_seq */
-	pwr_off_seq_8852b, /* pwr_off_seq */
-	PWR_SEQ_VER_8852B, /* pwr_seq_ver */
-	131072, /* fifo_size */
-	32, /* macid_num */
-	5, /* port_num */
-	4, /* mbssid_num */
-	20, /* bssid_num */
-	1536, /* wl_efuse_size */
-	1216, /* wl_zone2_efuse_size */
-	2048, /* log_efuse_size */
-	1280, /* limit_efuse_size_PCIE */
-	1280, /* limit_efuse_size_USB */
-	1280, /* limit_efuse_size_SDIO */
-	512, /* bt_efuse_size */
-	1024, /* bt_log_efuse_size */
-	32, /*hidden_efuse_size*/
-	4, /* sec_ctrl_efuse_size */
-	192, /* sec_data_efuse_size */
-	NULL, /* sec_cam_table_t pointer */
-	NULL, /* sec_cam_table_bk pointer */
-	32, /* ple_rsvd_space */
-	24, /* payload_desc_size */
-	8, /* efuse_version_size */
-	128, /* wl_efuse_size_DAV */
-	96, /* wl_zone2_efuse_size_DAV  */
-	32, /* hidden_efuse_size_DAV  */
-	16, /* log_efuse_size_DAV  */
-	0, /* wl_efuse_start_addr */
-	0, /* wl_efuse_start_addr_DAV  */
-	0x600, /* bt_efuse_start_addr */
-	0, /* wd_checksum_en */
-	0, /* sw_amsdu_max_size */
-	NULL, /* pwr_on */
-	NULL, /* pwr_off */
-	0, /* ind_aces_cnt */
-	0, /* dbg_port_cnt */
-	0, /* core_swr_volt */
+	{{{0}, 0}}, /* cust_proc_id */
 	MAC_AX_SWR_NORM, /* core_swr_volt_sel */
 };
 
@@ -661,6 +646,7 @@ static struct mac_ax_adapter mac_8852b_adapter =  {
 	{0}, /*log_cfg*/
 	{NULL},
 	NULL, /*ch_switch_rpt*/
+	NULL, /* dbcc_info */
 };
 
 #ifdef CONFIG_NEW_HALMAC_INTERFACE
@@ -745,15 +731,9 @@ struct mac_ax_adapter *get_mac_8852b_adapter(enum mac_ax_intf intf,
 		return NULL;
 	}
 
-	if ((intf == MAC_AX_INTF_USB || intf == MAC_AX_INTF_PCIE) &&
-	    (cv == CAV || cv == CBV))
-		pltfm_cb->rtl_memcpy(drv_adapter, hw_info,
-				     &mac8852b_hw_info_cabv,
-				     sizeof(struct mac_ax_hw_info));
-	else
-		pltfm_cb->rtl_memcpy(drv_adapter, hw_info,
-				     &mac8852b_hw_info,
-				     sizeof(struct mac_ax_hw_info));
+	pltfm_cb->rtl_memcpy(drv_adapter, hw_info,
+			     &mac8852b_hw_info,
+			     sizeof(struct mac_ax_hw_info));
 
 	pwr_info = &adapter->mac_pwr_info;
 

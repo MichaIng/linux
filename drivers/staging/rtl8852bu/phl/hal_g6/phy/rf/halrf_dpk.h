@@ -70,6 +70,7 @@ struct halrf_dpk_info {
 	u8	corr_val[KPATH][DPK_BKUP_NUM];		/*path*/
 	u8	corr_idx[KPATH][DPK_BKUP_NUM];		/*path*/
 	u8	cur_idx[KPATH];				/*path*/
+	u32	dpk_time;
 
 	struct dpk_bkup_para bp[KPATH][DPK_BKUP_NUM];	/*path/index*/
 };

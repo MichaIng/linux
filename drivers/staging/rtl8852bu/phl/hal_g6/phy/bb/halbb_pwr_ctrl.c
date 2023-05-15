@@ -189,7 +189,12 @@ void halbb_pwr_ctrl_en(struct bb_info *bb, bool pwr_ctrl_en)
 	u32 ret_v = 0;
 	u32 mask_en = BIT(29);
 	u32 reg_ofst = 0xd20c;
-
+	u32 id = bb->phl_com->id.id & 0xFFFF;
+	
+	if (id == 0x109) {
+		BB_DBG(bb, DBG_PWR_CTRL, "DTP Not Support = %d",id);
+		return;
+	} 
 	BB_DBG(bb, DBG_PWR_CTRL, "halbb_pwr_ctrl_en() = %x\n", (u32)pwr_ctrl_en);
 
 	if(pwr_ctrl_en) {
@@ -298,8 +303,10 @@ void halbb_set_pwr_ctrl(struct bb_info *bb, u16 macid, u8 pwr_lv)
 		pwr_ctrl_en = false;
 		pwr = 0;
 	}
+	/* use pwr_tbl_0 and pwr_tbl_1, for active and response tx*/
 	halbb_set_pwr_macid_idx(bb, macid, pwr, pwr_ctrl_en, 0);
-	/* only use pwr_tbl_0 */
+	halbb_set_pwr_macid_idx(bb, macid, pwr, pwr_ctrl_en, 1);
+
 }
 
 void halbb_pwr_ctrl_per_sta(struct bb_info *bb, u16 macid)
@@ -512,7 +519,8 @@ void halbb_macid_ctrl_init(struct bb_info *bb)
 }
 
 void halbb_tpu_mac_cr_init(struct bb_info *bb, enum phl_phy_idx phy_idx)
-{
+
+{
 	u32 tpu_array_type1[] = {0xD248, 0x07763333,
 				 0xD220, 0x01ebf004,
 				 0xD240, 0x0002f8ff};

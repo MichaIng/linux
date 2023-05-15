@@ -30,6 +30,10 @@
 	#define DRV_BB_DFS_DISABLE
 #endif
 
+#ifdef CONFIG_PHL_THERMAL_PROTECT
+	#define CONFIG_HAL_THERMAL_PROTECT
+#endif
+
 #ifdef CONFIG_BB_TIMER_SUPPORT_DISABLE
 	#define DRV_BB_TIMER_SUPPORT_DISABLE
 #endif
@@ -46,6 +50,7 @@
 #ifdef CONFIG_RTL8852B
 #define MAC_FW_8852B_U1 1
 #define MAC_FW_8852B_U2 1
+#define MAC_FW_8852B_U3 1
 #endif
 
 
@@ -56,10 +61,6 @@
 
 #ifdef RTW_WKARD_PHL_LPS_IQK_TWICE
 #define RTW_WKARD_HAL_LPS_IQK_TWICE
-#endif
-
-#ifdef CONFIG_PHL_MAC_WATCHDOG
-#define CONFIG_HAL_MAC_WATCHDOG
 #endif
 
 #endif /*_HAL_CONFIG_H_*/

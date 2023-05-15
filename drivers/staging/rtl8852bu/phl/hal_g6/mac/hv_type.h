@@ -27,6 +27,7 @@ typedef unsigned long long u64;
 
 #define HV_AX_FPGA 0
 #define HV_AX_ASIC 1
+#define HV_AX_PXP  2
 
 /**
  * @enum hv_ax_ss_wmm

@@ -112,6 +112,36 @@ _cmd_estimated_swch_seq(struct rtw_phl_scan_param *param, u8 op_num)
 }
 #endif /*DBG_SCAN_CHAN_DUMP*/
 
+#ifdef CONFIG_RTW_ACS
+static void _cmd_scan_acs_mntr_trigger(struct phl_info_t *phl_info, struct rtw_phl_scan_param *param)
+{
+	struct phl_acs_parm parm = {0};
+	struct phl_scan_channel *scan_ch = param->scan_ch;
+
+	if (!param->acs)
+		return;
+
+	parm.idx = scan_ch->acs_idx;
+	parm.monitor_time = ACS_ENV_MNTR_TIME(scan_ch->duration);
+	parm.nhm_include_cca = param->nhm_include_cca;
+
+	phl_acs_mntr_trigger(phl_info, &parm);
+}
+
+static void _cmd_scan_acs_mntr_result(struct phl_info_t *phl_info, struct rtw_phl_scan_param *param)
+{
+	struct phl_acs_parm parm = {0};
+	struct phl_scan_channel *scan_ch = param->scan_ch;
+
+	if (!param->acs || param->ch_idx < 0)
+		return;
+
+	parm.idx = scan_ch->acs_idx;
+
+	phl_acs_mntr_result(phl_info, &parm);
+}
+#endif /* CONFIG_RTW_ACS */
+
 static void
 _cmd_scan_update_chlist(void *drv, struct rtw_phl_scan_param *param)
 {
@@ -593,6 +623,10 @@ enum phl_mdl_ret_code _cmd_scan_hdl_internal_evt(
 				tx_pause = false;
 			}
 
+			#ifdef CONFIG_RTW_ACS
+			_cmd_scan_acs_mntr_result(phl_info, param);
+			#endif
+
 			scan_ch = _cmd_scan_select_chnl(d, param);
 			if (scan_ch == NULL) {
 				/* no more channel, we are done */
@@ -619,6 +653,10 @@ enum phl_mdl_ret_code _cmd_scan_hdl_internal_evt(
 			chdef.offset = scan_ch->offset;
 
 			phl_set_ch_bw(wifi_role, &chdef, false);
+
+			#ifdef CONFIG_RTW_ACS
+			_cmd_scan_acs_mntr_trigger(phl_info, param);
+			#endif
 
 			if ((scan_ch->scan_mode != BACKOP_MODE) &&
 			    (scan_ch->type == RTW_PHL_SCAN_ACTIVE)) {

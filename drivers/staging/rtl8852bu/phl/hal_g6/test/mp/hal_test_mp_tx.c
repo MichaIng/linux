@@ -167,24 +167,6 @@ enum rtw_hal_status rtw_hal_mp_tx_mode_switch(
 	return hal_status;
 }
 
-enum rtw_hal_status rtw_hal_mp_tx_f2p_cmd(
-	struct mp_context *mp, struct mp_tx_arg *arg, struct mp_mac_ax_f2p_test_para *f2p_para_struct,
-	struct mp_mac_ax_f2p_wd *f2p_wd_struct, struct mp_mac_ax_f2p_tx_cmd *f2p_tx_cmd_struct
-	)
-{
-	enum rtw_hal_status hal_status = RTW_HAL_STATUS_FAILURE;
-	struct hal_info_t *hal_info = (struct hal_info_t *)mp->hal;
-	u8 psigb_addr[64] = {0};
-
-	PHL_INFO("%s\n", __FUNCTION__);
-
-	hal_status = rtw_hal_mac_f2p_test_cmd(hal_info, f2p_para_struct, f2p_wd_struct, f2p_tx_cmd_struct, psigb_addr);
-
-	hal_status = RTW_HAL_STATUS_SUCCESS;
-
-	return hal_status;
-}
-
 enum rtw_hal_status rtw_hal_mp_set_dpd_bypass(
 	struct mp_context *mp, struct mp_tx_arg *arg)
 {

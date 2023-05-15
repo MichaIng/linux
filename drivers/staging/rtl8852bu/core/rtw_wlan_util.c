@@ -1,6 +1,6 @@
 /******************************************************************************
  *
- * Copyright(c) 2007 - 2021 Realtek Corporation.
+ * Copyright(c) 2007 - 2022 Realtek Corporation.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of version 2 of the GNU General Public License as
@@ -148,7 +148,7 @@ s8 rtw_get_sta_rx_nss(_adapter *adapter, struct sta_info *psta)
 	if (!psta)
 		return nss;
 
-	nss = GET_HAL_RX_NSS(dvobj);
+	nss = get_phy_rx_nss(adapter);
 
 #ifdef CONFIG_80211N_HT
 	#ifdef CONFIG_80211AC_VHT
@@ -175,7 +175,7 @@ s8 rtw_get_sta_tx_nss(_adapter *adapter, struct sta_info *psta)
 	if (!psta)
 		return nss;
 
-	nss = GET_HAL_TX_NSS(adapter_to_dvobj(adapter));
+	nss = get_phy_tx_nss(adapter);
 
 #ifdef CONFIG_80211N_HT
 	#ifdef CONFIG_80211AC_VHT
@@ -1023,7 +1023,7 @@ void HT_caps_handler(_adapter *padapter, PNDIS_802_11_VARIABLE_IEs pIE)
 	for (i = 0; i < 16; i++)
 		pmlmeinfo->HT_caps.u.HT_cap_element.MCS_rate[i] &= pmlmeext->default_supported_mcs_set[i];
 
-	rx_nss = GET_HAL_RX_NSS(adapter_to_dvobj(padapter));
+	rx_nss = get_phy_rx_nss(padapter);
 
 	switch (rx_nss) {
 	case 1:
@@ -1557,7 +1557,8 @@ void rtw_debug_rx_bcn(_adapter *adapter, u8 *pframe, u32 packet_len)
  *	WLAN_EID_CHANNEL_SWITCH
  *	WLAN_EID_PWR_CONSTRAINT
  */
-int _rtw_get_bcn_keys(u8 *cap_info, u32 buf_len, u8 def_ch, _adapter *adapter
+int _rtw_get_bcn_keys(u8 *cap_info, u32 buf_len, u8 def_ch
+	, _adapter *adapter
 	, struct beacon_keys *recv_beacon)
 {
 	int left;
@@ -1617,7 +1618,7 @@ int _rtw_get_bcn_keys(u8 *cap_info, u32 buf_len, u8 def_ch, _adapter *adapter
 
 	/* check bw and channel offset */
 	rtw_ies_get_chbw(pos, left, &recv_beacon->ch, &recv_beacon->bw, &recv_beacon->offset, 1, 1);
-	if (!recv_beacon->ch) 
+	if (!recv_beacon->ch)
 		recv_beacon->ch = def_ch;
 
 	/* checking SSID */
@@ -1649,34 +1650,33 @@ int _rtw_get_bcn_keys(u8 *cap_info, u32 buf_len, u8 def_ch, _adapter *adapter
 		struct mlme_ext_priv *pmlmeext = &adapter->mlmeextpriv;
 
 		if (elems.tim && elems.tim_len) {
-		#ifdef DBG_RX_BCN
+			#ifdef DBG_RX_BCN
 			_rtw_memcpy(pmlmeext->tim, elems.tim, 4);
-		#endif
+			#endif
 			pmlmeext->dtim = elems.tim[1];
 		}
 
 		/* checking RTW TBTX */
-	#ifdef CONFIG_RTW_TOKEN_BASED_XMIT
+		#ifdef CONFIG_RTW_TOKEN_BASED_XMIT
 		if (elems.tbtx_cap && elems.tbtx_cap_len) {
 			struct mlme_ext_info	*pmlmeinfo = &(pmlmeext->mlmext_info);
 
 			if (rtw_is_tbtx_capabilty(elems.tbtx_cap, elems.tbtx_cap_len))
 				RTW_DBG("AP support TBTX\n");
 		}
-	#endif
+		#endif
 	}
 
 	return _TRUE;
 }
 
-int rtw_get_bcn_keys(_adapter *adapter, u8 *whdr, u32 flen, struct beacon_keys *bcn_keys)
+int rtw_get_bcn_keys(_adapter *adapter
+	, u8 *whdr, u32 flen, struct beacon_keys *bcn_keys)
 {
-	struct mlme_ext_priv *pmlmeext = &adapter->mlmeextpriv;
-
 	return _rtw_get_bcn_keys(
 		whdr + WLAN_HDR_A3_LEN + 10
 		, flen - WLAN_HDR_A3_LEN - 10
-		, pmlmeext->chandef.chan, adapter
+		, adapter->mlmeextpriv.chandef.chan, adapter
 		, bcn_keys);
 }
 
@@ -1695,6 +1695,22 @@ int rtw_update_bcn_keys_of_network(struct wlan_network *network)
 	return network->bcn_keys_valid;
 }
 
+#define CIPHER_STR(c, type)	c & WPA_CIPHER_##type ? "["#type"]" : ""
+#define CIPHER_FMT		"%s%s%s%s%s%s%s%s%s%s%s%s"
+#define CIPHER_ARG(c)		CIPHER_STR(c, NONE), \
+				CIPHER_STR(c, WEP40), \
+				CIPHER_STR(c, WEP104), \
+				CIPHER_STR(c, TKIP), \
+				CIPHER_STR(c, CCMP), \
+				CIPHER_STR(c, GCMP), \
+				CIPHER_STR(c, GCMP_256), \
+				CIPHER_STR(c, CCMP_256), \
+				CIPHER_STR(c, BIP_CMAC_128), \
+				CIPHER_STR(c, BIP_GMAC_128), \
+				CIPHER_STR(c, BIP_GMAC_256), \
+				CIPHER_STR(c, BIP_CMAC_256)
+#define AKM_STR(akm, type)	akm & WLAN_AKM_TYPE_##type ? "["#type"]" : ""
+
 void rtw_dump_bcn_keys(void *sel, struct beacon_keys *recv_beacon)
 {
 	u8 ssid[IW_ESSID_MAX_SIZE + 1];
@@ -1708,9 +1724,30 @@ void rtw_dump_bcn_keys(void *sel, struct beacon_keys *recv_beacon)
 	RTW_PRINT_SEL(sel, "proto_cap = 0x%02x\n", recv_beacon->proto_cap);
 	RTW_MAP_DUMP_SEL(sel, "rate_set = "
 		, recv_beacon->rate_set, recv_beacon->rate_num);
-	RTW_PRINT_SEL(sel, "sec = %d, group = 0x%x, pair = 0x%x, akm = 0x%08x\n"
-		, recv_beacon->encryp_protocol, recv_beacon->group_cipher
-		, recv_beacon->pairwise_cipher, recv_beacon->akm);
+	RTW_PRINT_SEL(sel, "sec = %d\n", recv_beacon->encryp_protocol);
+	RTW_PRINT_SEL(sel, "GTK = 0x%x " CIPHER_FMT "\n"
+		, recv_beacon->group_cipher
+		, CIPHER_ARG(recv_beacon->group_cipher));
+	RTW_PRINT_SEL(sel, "PTK = 0x%x " CIPHER_FMT "\n"
+		, recv_beacon->pairwise_cipher
+		, CIPHER_ARG(recv_beacon->pairwise_cipher));
+	RTW_PRINT_SEL(sel, "AKM = 0x%08x %s%s%s%s%s%s%s%s%s%s%s%s%s%s%s\n"
+		, recv_beacon->akm
+		, AKM_STR(recv_beacon->akm, 8021X)
+		, AKM_STR(recv_beacon->akm, PSK)
+		, AKM_STR(recv_beacon->akm, FT_8021X)
+		, AKM_STR(recv_beacon->akm, FT_PSK)
+		, AKM_STR(recv_beacon->akm, 8021X_SHA256)
+		, AKM_STR(recv_beacon->akm, PSK_SHA256)
+		, AKM_STR(recv_beacon->akm, TDLS)
+		, AKM_STR(recv_beacon->akm, SAE)
+		, AKM_STR(recv_beacon->akm, FT_OVER_SAE)
+		, AKM_STR(recv_beacon->akm, 8021X_SUITE_B)
+		, AKM_STR(recv_beacon->akm, 8021X_SUITE_B_192)
+		, AKM_STR(recv_beacon->akm, FILS_SHA256)
+		, AKM_STR(recv_beacon->akm, FILS_SHA384)
+		, AKM_STR(recv_beacon->akm, FT_FILS_SHA256)
+		, AKM_STR(recv_beacon->akm, FT_FILS_SHA384));
 }
 
 bool rtw_bcn_key_compare(struct beacon_keys *cur, struct beacon_keys *recv)
@@ -1747,7 +1784,6 @@ exit:
 	return ret;
 }
 
-
 int rtw_check_bcn_info(_adapter *adapter, u8 *pframe, u32 packet_len)
 {
 	u8 *pbssid = GetAddr3Ptr(pframe);
@@ -1759,7 +1795,9 @@ int rtw_check_bcn_info(_adapter *adapter, u8 *pframe, u32 packet_len)
 	u8 ifbmp_m = rtw_mi_get_ap_mesh_ifbmp(adapter);
 	u8 ifbmp_s = rtw_mi_get_ld_sta_ifbmp(adapter);
 	struct dvobj_priv *d = adapter_to_dvobj(adapter);
-	struct mlme_ext_priv *pmlmeext = &(adapter->mlmeextpriv);
+	struct mlme_ext_priv *pmlmeext = &adapter->mlmeextpriv;
+	struct mlme_ext_info *pmlmeinfo = &pmlmeext->mlmext_info;
+	u8 ssid_is_hidden = _FALSE;
 
 	if (is_client_associated_to_ap(adapter) == _FALSE)
 		goto exit_success;
@@ -1770,8 +1808,31 @@ int rtw_check_bcn_info(_adapter *adapter, u8 *pframe, u32 packet_len)
 #ifdef DBG_RX_BCN
 	rtw_debug_rx_bcn(adapter, pframe, packet_len);
 #endif
+
+	ssid_is_hidden = is_hidden_ssid(recv_beacon.ssid, recv_beacon.ssid_len);
+
+	if (recv_beacon.ssid_len != cur_beacon->ssid_len) {
+		pmlmeinfo->illegal_beacon_code |= SSID_LENGTH_CHANGED;
+		pmlmeinfo->illegal_beacon_code |= SSID_CHANGED;
+		if (!ssid_is_hidden) {
+			RTW_WARN("%s: Ignore ssid len change new %d old %d\n",
+				 __func__, recv_beacon.ssid_len,
+				 cur_beacon->ssid_len);
+		}
+	} else if ((_rtw_memcmp(recv_beacon.ssid,
+				cur_beacon->ssid,
+				cur_beacon->ssid_len) == _FALSE)) {
+		pmlmeinfo->illegal_beacon_code |= SSID_CHANGED;
+		if (!ssid_is_hidden) {
+			RTW_INFO_DUMP("[old ssid]: ",
+				      cur_beacon->ssid, cur_beacon->ssid_len);
+			RTW_INFO_DUMP("[new ssid]: ",
+				      recv_beacon.ssid, cur_beacon->ssid_len);
+		}
+	}
+
 	/* hidden ssid, replace with current beacon ssid directly */
-	if (is_hidden_ssid(recv_beacon.ssid, recv_beacon.ssid_len)) {
+	if (ssid_is_hidden) {
 		_rtw_memcpy(recv_beacon.ssid, cur_beacon->ssid, cur_beacon->ssid_len);
 		recv_beacon.ssid_len = cur_beacon->ssid_len;
 	}
@@ -1880,6 +1941,17 @@ int rtw_check_bcn_info(_adapter *adapter, u8 *pframe, u32 packet_len)
 		RTW_INFO(FUNC_ADPT_FMT" new beacon key:\n", FUNC_ADPT_ARG(adapter));
 		rtw_dump_bcn_keys(RTW_DBGDUMP, &recv_beacon);
 
+		if (recv_beacon.ch != cur_beacon->ch)
+			pmlmeinfo->illegal_beacon_code |= BEACON_CHANNEL_CHANGED;
+		if (recv_beacon.encryp_protocol != cur_beacon->encryp_protocol)
+			pmlmeinfo->illegal_beacon_code |= ENCRYPT_PROTOCOL_CHANGED;
+		if (recv_beacon.pairwise_cipher != cur_beacon->pairwise_cipher)
+			pmlmeinfo->illegal_beacon_code |= PAIRWISE_CIPHER_CHANGED;
+		if (recv_beacon.group_cipher != cur_beacon->group_cipher)
+			pmlmeinfo->illegal_beacon_code |= GROUP_CIPHER_CHANGED;
+		if (recv_beacon.akm != cur_beacon->akm)
+			pmlmeinfo->illegal_beacon_code |= IS_8021X_CHANGED;
+
 		if (rtw_bcn_key_compare(cur_beacon, &recv_beacon) == _FALSE)
 			goto exit;
 
@@ -1963,6 +2035,7 @@ void process_csa_ie(_adapter *padapter, u8 *ies, uint ies_len)
 	struct rtw_phl_ecsa_param *ecsa_param = &(ecsa_info->phl_ecsa_param);
 #endif
 	struct rf_ctl_t *rfctl = adapter_to_rfctl(padapter);
+	struct dvobj_priv *dvobj = adapter_to_dvobj(padapter);
 	struct mlme_ext_priv *pmlmeext = &padapter->mlmeextpriv;
 	struct mlme_ext_info *pmlmeinfo = &(pmlmeext->mlmext_info);
 	struct mlme_priv *pmlmepriv = &padapter->mlmepriv;
@@ -1970,6 +2043,7 @@ void process_csa_ie(_adapter *padapter, u8 *ies, uint ies_len)
 	PNDIS_802_11_VARIABLE_IEs pIE, sub_pie;
 	u8 ch = 0, csa_ch_offset = 0, csa_ch_width = 0, csa_ch_freq_seg0 = 0, csa_ch_freq_seg1 = 0;
 	u8 csa_switch_cnt = 0, csa_mode = 0;
+	struct rtw_chan_def u_chdef = {0};
 	u8 is_csa_running;
 
 #ifdef DBG_CSA
@@ -2034,8 +2108,19 @@ void process_csa_ie(_adapter *padapter, u8 *ies, uint ies_len)
 		i += (pIE->Length + 2);
 	}
 
+	/* Doesn't receive CSA IE */
+	if (ch == 0)
+		return;
+
 	/* Doesn't support switch bandwidth/offset in the same channel for now */
-	if (ch == rtw_mi_get_union_chan(padapter)) {
+	if (rtw_phl_mr_get_chandef(dvobj->phl, padapter->phl_role, &u_chdef)
+							!= RTW_PHL_STATUS_SUCCESS) {
+		RTW_ERR("%s get union chandef failed\n", __func__);
+		rtw_warn_on(1);
+		return;
+	}
+
+	if (ch == u_chdef.chan) {
 		RTW_ERR("%s : receive the same channel from CSA IE, so ignore it\n", __func__);
 		return;
 	}
@@ -3203,3 +3288,49 @@ err_out:
 	RTW_INFO("[%s] rtw_zmalloc fail\n", __func__);
 }
 #endif
+
+#define rtw_efuse_str_out_raw(str, len)		\
+	do {					\
+		u32 i;				\
+		u8 *_pos = str;			\
+		for (i = 0; i <= len; i++) {	\
+			_RTW_PRINT_SEL(		\
+				RTW_DBGDUMP,	\
+				"%c",*_pos++);	\
+		}				\
+	} while(0)
+
+void rtw_efuse_dbg_raw_dump(struct dvobj_priv *pdvobj)
+{
+#ifdef CONFIG_RTW_EFUSE_DBG_DUMP
+#define PROC_MSG_LEN   (80*24*4)
+	struct phl_info_t *phl_info = \
+		(struct phl_info_t *)GET_PHL_INFO(pdvobj);
+	struct rtw_proc_cmd proc_cmd;
+	u32 proc_cmd_msg_len = PROC_MSG_LEN;
+	u8 *proc_cmd_msg = NULL;
+	u8 pstr_dump_hw_map_str[] = "dump_hw_map";
+	u32 i = 0;
+
+	if (0 == CONFIG_RTW_EFUSE_DBG_DUMP)
+		return;
+
+	proc_cmd_msg = rtw_zmalloc(proc_cmd_msg_len);
+	if (NULL == proc_cmd_msg)
+		return;
+
+	_rtw_memset(&proc_cmd, 0, sizeof(proc_cmd));
+	proc_cmd.in_type = RTW_ARG_TYPE_BUF;
+	proc_cmd.in_cnt_len = strlen(pstr_dump_hw_map_str);
+	proc_cmd.in.buf = pstr_dump_hw_map_str;
+
+	rtw_phl_proc_cmd(phl_info, RTW_PROC_CMD_EFUSE,
+		&proc_cmd, proc_cmd_msg, proc_cmd_msg_len);
+
+	rtw_efuse_str_out_raw(proc_cmd_msg, proc_cmd_msg_len);
+
+	if (proc_cmd_msg)
+		rtw_mfree(proc_cmd_msg, PROC_MSG_LEN);
+#endif
+}
+

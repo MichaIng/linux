@@ -90,4 +90,8 @@ phl_data_ctrler(struct phl_info_t *phl_info, struct phl_data_ctl_t *ctl,
 void rtw_phl_tx_stop(void *phl);
 void rtw_phl_tx_resume(void *phl);
 
+void rtw_phl_tx_packet_event_notify(void *phl,
+	struct rtw_wifi_role_t *wifi_role,
+	enum phl_pkt_evt_type pkt_type);
+
 #endif	/* __PHL_TX_H_ */

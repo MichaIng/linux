@@ -381,53 +381,6 @@ void rtw_phl_btc_role_notify(void *phl, u8 role_id, enum role_state rstate)
 	rtw_phl_btc_notify(phl, ntfy.notify, &ntfy);
 }
 
-#ifndef CONFIG_PHL_CMD_BTC
-void rtw_phl_btc_packet_event_notify(void *phl, u8 role_id, u8 pkt_evt_type)
-{
-	struct rtw_phl_btc_ntfy ntfy = {0};
-	struct rtw_phl_btc_pkt_param *pkt = &ntfy.u.pkt;
-
-	pkt->role_id = role_id;
-	pkt->pkt_evt_type = pkt_evt_type;
-
-	ntfy.notify = PHL_BTC_NTFY_PACKET_EVT;
-	ntfy.ops = NULL;
-	ntfy.priv = NULL;
-	ntfy.ntfy_cb = NULL;
-
-	rtw_phl_btc_notify(phl, ntfy.notify, &ntfy);
-}
-
-u8 rtw_phl_btc_pkt_2_evt_type(u8 packet_type)
-{
-	u8 pkt_evt_type = BTC_PKT_EVT_MAX;
-
-	switch (packet_type) {
-	case PACKET_NORMAL:
-		pkt_evt_type = BTC_PKT_EVT_NORMAL;
-		break;
-	case PACKET_DHCP:
-		pkt_evt_type = BTC_PKT_EVT_DHCP;
-		break;
-	case PACKET_ARP:
-		pkt_evt_type = BTC_PKT_EVT_ARP;
-		break;
-	case PACKET_EAPOL:
-		pkt_evt_type = BTC_PKT_EVT_EAPOL;
-		break;
-	case PACKET_EAPOL_START:
-		pkt_evt_type = BTC_PKT_EVT_EAPOL_START;
-		break;
-	default:
-		PHL_ERR("%s packet type(%d) not support\n",
-			__func__, packet_type);
-		break;
-	}
-
-	return pkt_evt_type;
-}
-#endif
-
 static void _btc_fsm_tmr(void *phl, void *timer)
 {
 	struct rtw_phl_btc_ntfy ntfy = {0};

@@ -26,7 +26,7 @@
 #define TSSI_HIDE_EFUSE_NUM 8
 #define AVG_THERMAL_NUM_TSSI 2
 #define MAX_CH_NUM 67
-#define TSSI_ALIMK_VAULE_NUM 8
+#define TSSI_ALIMK_VAULE_NUM 4
 
 #define MAX_HALRF_PATH 2
 
@@ -201,9 +201,13 @@ struct halrf_tssi_info{
 	u32 backup_txagc_offset[MAX_HALRF_PATH][MAX_CH_NUM];
 	u8 backup_txagc_oft_ther[MAX_HALRF_PATH][MAX_CH_NUM];
 	bool check_backup_txagc[MAX_CH_NUM];
+	bool check_backup_aligmk[MAX_HALRF_PATH][MAX_CH_NUM];
 	u32 start_time, finish_time;
 	u32 alignment_value[MAX_HALRF_PATH][TSSI_ALIMK_MAX][TSSI_ALIMK_VAULE_NUM];
+	u32 alignment_backup_by_ch[MAX_HALRF_PATH][MAX_CH_NUM][TSSI_ALIMK_VAULE_NUM];
 	bool alignment_done[MAX_HALRF_PATH][TSSI_ALIMK_MAX];
+	u32 tssi_total_time;
+	u32 tssi_alimk_time;
 };
 
 struct halrf_xtal_info{

@@ -166,7 +166,7 @@ u8 rtw_set_acs_sitesurvey(_adapter *adapter)
 			center_chs_num = center_chs_2g_num;
 			center_chs = center_chs_2g;
 		} else
-		#ifdef CONFIG_IEEE80211_BAND_5GHZ
+		#if CONFIG_IEEE80211_BAND_5GHZ
 		if (band == BAND_ON_5G) {
 			center_chs_num = center_chs_5g_num;
 			center_chs = center_chs_5g;
@@ -183,7 +183,7 @@ u8 rtw_set_acs_sitesurvey(_adapter *adapter)
 		if (rfctl->ch_sel_within_same_band) {
 			if (rtw_is_2g_ch(uch) && band != BAND_ON_24G)
 				continue;
-			#ifdef CONFIG_IEEE80211_BAND_5GHZ
+			#if CONFIG_IEEE80211_BAND_5GHZ
 			if (rtw_is_5g_ch(uch) && band != BAND_ON_5G)
 				continue;
 			#endif
@@ -553,7 +553,7 @@ static bool update_scanned_network(_adapter *adapter, WLAN_BSSID_EX *target)
 			pnetwork->bcn_keys_valid = 1;
 		} else if (update_ie)
 			pnetwork->bcn_keys_valid = 0;
-		
+
 		rtw_update_network(&(pnetwork->network), target, adapter, update_ie);
 	}
 
@@ -823,6 +823,7 @@ void rtw_surveydone_event_callback(_adapter *adapter, u8 *pbuf)
 	struct surveydone_event *parm = (struct surveydone_event *)pbuf;
 	struct	mlme_priv	*pmlmepriv = &adapter->mlmepriv;
 	struct mlme_ext_priv	*pmlmeext = &adapter->mlmeextpriv;
+	struct mlme_ext_info	*pmlmeinfo = &pmlmeext->mlmext_info;
 
 	_rtw_spinlock_bh(&pmlmepriv->lock);
 	if (pmlmepriv->wps_probe_req_ie) {
@@ -930,6 +931,9 @@ void rtw_surveydone_event_callback(_adapter *adapter, u8 *pbuf)
 #else
 					receive_disconnect(adapter, pmlmepriv->cur_network.network.MacAddress
 						, WLAN_REASON_ACTIVE_ROAM, _FALSE);
+					pmlmeinfo->disconnect_occurred_time = rtw_systime_to_ms(rtw_get_current_time());
+					pmlmeinfo->disconnect_code = DISCONNECTION_BY_DRIVER_DUE_TO_ROAMING;
+					pmlmeinfo->wifi_reason_code = WLAN_REASON_UNSPECIFIED;
 #endif
 				}
 			}
@@ -2565,14 +2569,34 @@ static struct rtw_phl_scan_ops scan_ops_rrm_cb = {
 };
 #endif /* CONFIG_RTW_80211K */
 
-#define SCANNING_TIMEOUT_EX	2000
+#ifndef SCAN_PER_CH_EX_TIME
+#define SCAN_PER_CH_EX_TIME	40 /*8852bs sw ch ov*/
+#endif /*SCAN_PER_CH_EX_TIME*/
 static u32 rtw_scan_timeout_decision(_adapter *padapter)
 {
-	u32 back_op_times= 0;
 	u8 max_chan_num;
+	u8 issue_null_time;
 	u16 scan_ms;
+	u16 p_ch_ex_time;
+	u32 non_op_buf;
+	u32 back_op_times = 0;
+
 	struct mlme_ext_priv *pmlmeext = &padapter->mlmeextpriv;
 	struct ss_res *ss = &pmlmeext->sitesurvey_res;
+	#ifdef CONFIG_SCAN_BACKOP
+	u8 backop_cout = 0;
+	#endif /*CONFIG_SCAN_BACKOP*/
+
+	if (padapter->registrypriv.scan_pch_ex_time != 0)
+		p_ch_ex_time = padapter->registrypriv.scan_pch_ex_time;
+	else
+		p_ch_ex_time = SCAN_PER_CH_EX_TIME;
+
+	/*issue null time,null(0)+null(1),undefine flag phl sleep 50ms*/
+	issue_null_time = 10;
+	#ifndef RTW_WKARD_TX_NULL_WD_RP
+	issue_null_time += 50;
+	#endif /*RTW_WKARD_TX_NULL_WD_RP*/
 
 	if (is_supported_5g(padapter->registrypriv.band_type)
 		&& is_supported_24g(padapter->registrypriv.band_type))
@@ -2581,9 +2605,10 @@ static u32 rtw_scan_timeout_decision(_adapter *padapter)
 		max_chan_num = MAX_CHANNEL_NUM_2G;/*single band*/
 
 	#ifdef CONFIG_SCAN_BACKOP
+	backop_cout = max_chan_num / ss->scan_cnt_max;
 	/* delay 50ms to protect nulldata(1) */
 	if (rtw_scan_backop_decision(padapter))
-		back_op_times = (max_chan_num / ss->scan_cnt_max) * (ss->backop_ms + 50);
+		back_op_times = backop_cout * (ss->backop_ms + p_ch_ex_time + issue_null_time);
 	#endif
 
 	if (ss->duration)
@@ -2596,8 +2621,15 @@ static u32 rtw_scan_timeout_decision(_adapter *padapter)
 	#endif /*CONFIG_RTW_ACS*/
 		scan_ms = ss->scan_ch_ms;
 
-	ss->scan_timeout_ms = (scan_ms * max_chan_num) + back_op_times + SCANNING_TIMEOUT_EX;
+	/*non op channel buffer time + scan start/done issue null*/
+	non_op_buf = max_chan_num * p_ch_ex_time + issue_null_time;
+
+	ss->scan_timeout_ms = (scan_ms * max_chan_num) + back_op_times + non_op_buf;
 	#ifdef DBG_SITESURVEY
+	RTW_INFO("%s, max_chan_num(%d), p_ch_ex_time(%d), \
+		 ss->scan_cnt_max=%d issue_null_time=%d\n" \
+		 , __func__, max_chan_num, p_ch_ex_time,
+		 ss->scan_cnt_max, issue_null_time);
 	RTW_INFO("%s , scan_timeout_ms = %d (ms), scan_ms=%d (ms), \
 		back_op_times=%d (ms), ss->duration=%d (ms)\n" \
 		, __func__, ss->scan_timeout_ms, scan_ms, back_op_times, ss->duration);

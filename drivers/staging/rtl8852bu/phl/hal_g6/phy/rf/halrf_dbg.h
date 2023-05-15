@@ -25,8 +25,6 @@
 #ifndef __HALRF_DBG_H__
 #define __HALRF_DBG_H__
 
-#include <rtw_debug.h>
-
 /*@--------------------------[Define] ---------------------------------------*/
 #define HALRF_WATCHDOG_PERIOD	2 /*second*/
 
@@ -36,7 +34,7 @@
 #ifdef RFDBG_TRACE_EN
 	#define RF_DBG(rf, comp, fmt, ...)     \
 		do {\
-			if(((rf)->dbg_component & comp) && (_DRV_DEBUG_ <= rtw_drv_log_level))\
+			if(rf->dbg_component & comp)\
 				_os_dbgdump("[RF]" fmt, ##__VA_ARGS__);\
 		} while (0)
 		
@@ -47,14 +45,12 @@
 		
 	#define RF_WARNING(fmt, ...)     \
 		do {\
-			if(_DRV_WARNING_ <= rtw_drv_log_level)\
-				_os_dbgdump("[WARNING][RF]" fmt, ##__VA_ARGS__);\
+			_os_dbgdump("[WARNING][RF]" fmt, ##__VA_ARGS__);\
 		} while (0)
 
 	#define RF_DBG_VAST(max_buff_len, used_len, buff_addr, remain_len, fmt, ...)\
 		do {\
-			if(_DRV_DEBUG_ <= rtw_drv_log_level)\
-				_os_dbgdump(fmt, ##__VA_ARGS__);\
+			_os_dbgdump(fmt, ##__VA_ARGS__);\
 		} while (0)
 
 	#define	RF_DBG_CNSL(max_buff_len, used_len, buff_addr, remain_len, fmt, ...)\
@@ -100,5 +96,8 @@ void halrf_test_cmd(struct rf_info *rf, char input[][16], u32 *_used,  char *out
 void halrf_scanf(char *in, enum rf_scanf_type type, u32 *out);
 void halrf_txgapk_dbg_cmd(struct rf_info *rf, char input[][16], u32 *_used, char *output, u32 *_out_len);
 void halrf_dump_rf_reg_cmd(struct rf_info *rf, char input[][16], u32 *_used, char *output, u32 *_out_len);
+void halrf_hwtx_dbg_cmd(struct rf_info *rf, char input[][16], u32 *_used, char *output, u32 *_out_len);
+void halrf_kfree_dbg_cmd(struct rf_info *rf, char input[][16], u32 *_used, char *output, u32 *_out_len);
+void halrf_chl_rfk_dbg_cmd(struct rf_info *rf, char input[][16], u32 *_used, char *output, u32 *_out_len);
 
 #endif

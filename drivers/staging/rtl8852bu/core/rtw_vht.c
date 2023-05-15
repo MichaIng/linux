@@ -333,8 +333,8 @@ void rtw_vht_get_dft_setting(_adapter *padapter,
 	pvhtpriv->ampdu_len = pregistrypriv->ampdu_factor;
 	pvhtpriv->max_mpdu_len = dft_proto_cap->max_amsdu_len;
 
-	tx_nss = GET_HAL_TX_NSS(adapter_to_dvobj(padapter));
-	rx_nss = GET_HAL_RX_NSS(adapter_to_dvobj(padapter));
+	tx_nss = GET_PHY_TX_NSS_BY_BAND(padapter, HW_BAND_0);
+	rx_nss = GET_PHY_RX_NSS_BY_BAND(padapter, HW_BAND_0);
 
 	/* for now, vhtpriv.vht_mcs_map comes from RX NSS */
 	rtw_vht_nss_to_mcsmap(rx_nss, pvhtpriv->vht_mcs_map, pregistrypriv->vht_rx_mcs_map);
@@ -488,8 +488,8 @@ void rtw_vht_get_real_setting(_adapter *padapter)
 	pvhtpriv->ampdu_len = pregistrypriv->ampdu_factor;
 	pvhtpriv->max_mpdu_len = proto_cap->max_amsdu_len;
 
-	tx_nss = GET_HAL_TX_NSS(adapter_to_dvobj(padapter));
-	rx_nss = GET_HAL_RX_NSS(adapter_to_dvobj(padapter));
+	tx_nss = get_phy_tx_nss(padapter);
+	rx_nss = get_phy_rx_nss(padapter);
 
 	/* for now, vhtpriv.vht_mcs_map comes from RX NSS */
 	rtw_vht_nss_to_mcsmap(rx_nss, pvhtpriv->vht_mcs_map, pregistrypriv->vht_rx_mcs_map);
@@ -859,7 +859,7 @@ void VHT_caps_handler(_adapter *padapter, PNDIS_802_11_VARIABLE_IEs pIE)
 	pvhtpriv->ampdu_len = GET_VHT_CAPABILITY_ELE_MAX_RXAMPDU_FACTOR(pIE->data);
 
 	pcap_mcs = GET_VHT_CAPABILITY_ELE_RX_MCS(pIE->data);
-	rx_nss = GET_HAL_RX_NSS(adapter_to_dvobj(padapter));
+	rx_nss = get_phy_rx_nss(padapter);
 	rtw_vht_nss_to_mcsmap(rx_nss, pvhtpriv->vht_mcs_map, pcap_mcs);
 	pvhtpriv->vht_highest_rate = rtw_get_vht_highest_rate(pvhtpriv->vht_mcs_map);
 }
@@ -900,7 +900,7 @@ void rtw_process_vht_op_mode_notify(_adapter *padapter, u8 *pframe, void *sta)
 		return;
 
 	target_bw = GET_VHT_OPERATING_MODE_FIELD_CHNL_WIDTH(pframe);
-	tx_nss = GET_HAL_TX_NSS(adapter_to_dvobj(padapter));
+	tx_nss = get_phy_tx_nss(padapter);
 	target_rxss = rtw_min(tx_nss, (GET_VHT_OPERATING_MODE_FIELD_RX_NSS(pframe) + 1));
 
 	if (target_bw != psta->phl_sta->chandef.bw) {
@@ -952,7 +952,7 @@ u32	rtw_build_vht_operation_ie(_adapter *padapter, u8 *pbuf, u8 channel)
 	if (rtw_hw_chk_bw_cap(adapter_to_dvobj(padapter), BW_CAP_80M | BW_CAP_160M)
 	    && REGSTY_BW_5G(pregistrypriv) >= CHANNEL_WIDTH_80
 	   ) {
-		center_freq = rtw_phl_get_center_ch(channel, get_highest_bw_cap(bw_mode), CHAN_OFFSET_UPPER);
+		center_freq = rtw_phl_get_center_ch(channel, bw_mode, CHAN_OFFSET_UPPER);
 		ChnlWidth = 1;
 	} else {
 		center_freq = 0;
@@ -1145,7 +1145,11 @@ u32	rtw_build_vht_cap_ie(_adapter *padapter, u8 *pbuf)
 	/* find the largest bw supported by both registry and hal */
 	bw = rtw_hw_largest_bw(adapter_to_dvobj(padapter), REGSTY_BW_5G(pregistrypriv));
 
-	HighestRate = VHT_MCS_DATA_RATE[bw][pvhtpriv->sgi_80m][((pvhtpriv->vht_highest_rate - MGN_VHT1SS_MCS0) & 0x3f)];
+	if(bw >= ARRAY_SIZE(VHT_MCS_DATA_RATE)){
+		RTW_WARN("BW parameter value is out of range:%u\n", bw);
+		bw = ARRAY_SIZE(VHT_MCS_DATA_RATE) - 1;
+	}
+	HighestRate = VHT_MCS_DATA_RATE[bw][0][((pvhtpriv->vht_highest_rate - MGN_VHT1SS_MCS0) & 0x3f)];
 	HighestRate = (HighestRate + 1) >> 1;
 
 	SET_VHT_CAPABILITY_ELE_MCS_RX_HIGHEST_RATE(pcap, HighestRate); /* indicate we support highest rx rate is 600Mbps. */
@@ -1366,14 +1370,6 @@ void rtw_check_for_vht20(_adapter *adapter, u8 *ies, int ies_len)
 /* We need to update the (mlmepriv->vhtpriv) */
 void rtw_update_drv_vht_cap(_adapter *padapter, u8 *vht_cap_ie)
 {
-	struct mlme_priv *pmlmepriv = &(padapter->mlmepriv);
-	struct vht_priv *pvhtpriv = &(pmlmepriv->vhtpriv);
-	struct registry_priv *pregpriv = &padapter->registrypriv;
-	s32 ie_len = 0;
-	u32 rx_packet_offset, max_recvbuf_sz, available_mpdu_sz;
-	u8 cap_val;
-	u8 *pvht_cap;
-
 	/* Initialize VHT capability element */
 	rtw_vht_get_real_setting(padapter);
 
@@ -1409,6 +1405,16 @@ void rtw_check_vht_ies(_adapter *padapter, WLAN_BSSID_EX *pnetwork)
 
 	/* TODO : We don't handle this IE like before, so remove it */
 	rtw_remove_bcn_ie(padapter, pnetwork, EID_VHTTransmitPower);
+}
+
+void rtw_update_probe_rsp_vht_cap(struct _ADAPTER *a, u8 *ies, sint ies_len)
+{
+	u8 *vht_cap_ie;
+	sint ie_len;
+
+	vht_cap_ie = rtw_get_ie(ies, WLAN_EID_VHT_CAPABILITY, &ie_len, ies_len);
+	if (vht_cap_ie)
+		rtw_build_vht_cap_ie(a, vht_cap_ie);
 }
 
 void rtw_reattach_vht_ies(_adapter *padapter, WLAN_BSSID_EX *pnetwork)

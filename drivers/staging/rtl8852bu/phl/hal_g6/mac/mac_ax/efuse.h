@@ -23,6 +23,7 @@
 #define RSVD_EFUSE_SIZE		16
 #define RSVD_CS_EFUSE_SIZE	24
 #define EFUSE_WAIT_CNT		10000
+#define EFUSE_WAIT_CNT_PLUS	30000
 #define EFUSE_C2HREG_WAIT_CNT	10000
 #define EFUSE_C2HREG_RETRY_WAIT_US 1
 #define EFUSE_FW_DUMP_WAIT_CNT	100000
@@ -107,6 +108,7 @@ enum efuse_map_sel {
 	EFUSE_MAP_SEL_PHY_OTP,
 	EFUSE_MAP_SEL_PHY_DAV,
 	EFUSE_MAP_SEL_LOG_DAV,
+	EFUSE_MAP_SEL_HIDDEN_RF,
 
 	/* keep last */
 	EFUSE_MAP_SEL_LAST,
@@ -421,6 +423,28 @@ u32 mac_read_efuse_plus(struct mac_ax_adapter *adapter, u32 addr, u32 size,
  */
 u32 mac_read_efuse(struct mac_ax_adapter *adapter, u32 addr, u32 size, u8 *val,
 		   enum mac_ax_efuse_bank bank);
+/**
+ * @}
+ */
+
+/**
+ * @addtogroup Efuse
+ * @{
+ */
+
+/**
+ * @brief mac_read_hidden_efuse
+ *
+ * @param *adapter
+ * @param addr
+ * @param size
+ * @param *val
+ * @param hidden_cfg
+ * @return Please Place Description here.
+ * @retval u32
+ */
+u32 mac_read_hidden_efuse(struct mac_ax_adapter *adapter, u32 addr, u32 size,
+			  u8 *val, enum mac_ax_efuse_hidden_cfg hidden_cfg);
 /**
  * @}
  */
@@ -965,6 +989,17 @@ u32 mac_check_OTP(struct mac_ax_adapter *adapter, u8 is_start);
  */
 u32 mac_disable_rf(struct mac_ax_adapter *adapter,
 		   enum mac_ax_disable_rf_func func, enum mac_ax_net_type type);
+
+/**
+ * @brief mac_check_OTP
+ *
+ * @param *adapter
+ * @param *is_start
+ * @return Please Place Description here.
+ * @retval u32
+ */
+u32 mac_check_OTP(struct mac_ax_adapter *adapter, u8 is_start);
+
 /**
  * @}
  */

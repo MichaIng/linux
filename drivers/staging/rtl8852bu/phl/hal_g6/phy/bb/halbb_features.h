@@ -104,6 +104,9 @@
 #if 0
 	#define HALBB_ANT_DIV_SUPPORT
 #endif
+#ifdef DRV_BB_PATH_DIV_ENABLE
+	#define HALBB_PATH_DIV_SUPPORT
+#endif
 #ifndef DRV_BB_DYN_L2H_DISABLE
 	#define HALBB_DYN_L2H_SUPPORT
 #endif
@@ -118,5 +121,14 @@
 #endif
 
 #define HALBB_TDMA_CR_SUPPORT
+
+
+#ifndef DRV_BB_ULOFDMA_CTRL_DISABLE
+	#define HALBB_UL_TB_CTRL_SUPPORT
+#endif
+
+#if (defined(DRV_BB_CNSL_CMN_INFO) || !defined(HALBB_DBG_TRACE_SUPPORT))
+	#define HALBB_CNSL_CMN_INFO_SUPPORT
+#endif
 
 #endif

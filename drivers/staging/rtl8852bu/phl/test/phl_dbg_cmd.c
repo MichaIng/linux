@@ -622,6 +622,79 @@ void _dump_mcc_info(struct phl_info_t *phl_info, char input[][MAX_ARGV],
 exit:
 	return;
 }
+
+void _mcc_set_dbg_info(struct phl_info_t *phl_info, char input[][MAX_ARGV],
+	u32 input_num, char *output, u32 out_len)
+{
+	struct rtw_phl_mcc_dbg_info mcc_dbg_i = {0};
+	u32 ntfy_cnt = 0;
+	u32 used = 0;
+
+	if (!input_num)
+		goto _exit;
+	PHL_DBG_MON_INFO(out_len, used, output + used, out_len - used, "\n");
+	if (!_os_strcmp("-h", input[2])) {
+		PHL_DBG_MON_INFO(out_len, used, output + used,
+			out_len - used, "_mcc_set_dbg_info: Para1 string list: ntfy_rx, clean\n");
+		PHL_DBG_MON_INFO(out_len, used, output + used,
+			out_len - used, "_mcc_set_dbg_info: Para2: Enter ntfy counter(0~7), 0: Notify continuously\n");
+		goto _exit;
+	} else if (!_os_strcmp("ntfy_rx", input[2])) {
+		mcc_dbg_i.ntfy_rx = true;
+	} else if (!_os_strcmp("clean", input[2])) {
+		PHL_DBG_MON_INFO(out_len, used, output + used,
+				out_len - used, "_mcc_set_dbg_info: Clean setting\n");
+		goto _cfg;
+	} else {
+		PHL_DBG_MON_INFO(out_len, used, output + used,
+				out_len - used, "_mcc_set_dbg_info: error Para1, try enter -h\n");
+		goto _exit;
+	}
+	/* get setting */
+	_get_hex_from_string(input[3], &ntfy_cnt);
+	if (ntfy_cnt > 7) {
+		PHL_DBG_MON_INFO(out_len, used, output + used,
+				out_len - used, "_mcc_set_dbg_info: Out of range, ntfy_cnt(%d) > 7\n",
+				(u8)ntfy_cnt);
+		goto _exit;
+	}
+	mcc_dbg_i.ntfy_cnt = (u8)ntfy_cnt;
+_cfg:
+	PHL_DBG_MON_INFO(out_len, used, output + used,
+			out_len - used, "_mcc_set_dbg_info: ntfy_rx(%d), ntfy_cnt(%d)\n",
+			mcc_dbg_i.ntfy_rx, mcc_dbg_i.ntfy_cnt);
+	if (phl_mcc_set_dbg_info(phl_info, &mcc_dbg_i)) {
+		PHL_DBG_MON_INFO(out_len, used, output + used,
+			out_len - used, "_mcc_set_dbg_info: Up ok\n");
+	} else {
+		PHL_DBG_MON_INFO(out_len, used, output + used,
+			out_len - used, "_mcc_set_dbg_info: Up failed\n");
+	}
+_exit:
+	return;
+}
+
+void _mcc_cmd_parser(struct phl_info_t *phl_info, char input[][MAX_ARGV],
+			u32 input_num, char *output, u32 out_len)
+{
+	u32 used = 0;
+
+	if (!input_num)
+		return;
+	PHL_DBG_MON_INFO(out_len, used, output + used, out_len - used, "\n");
+	if (!_os_strcmp("-h", input[1])) {
+		PHL_DBG_MON_INFO(out_len, used, output + used,
+				out_len - used, "_mcc_cmd_parser: Para string list: show, set_dbg\n");
+	} else if (!_os_strcmp("show", input[1])) {
+		_dump_mcc_info(phl_info, input, input_num, output, out_len);
+	} else if (!_os_strcmp("set_dbg", input[1])) {
+		_mcc_set_dbg_info(phl_info, input, input_num, output, out_len);
+	} else {
+		PHL_DBG_MON_INFO(out_len, used, output + used,
+				out_len - used, "_mcc_set_dbg_info: error Para, try enter -h\n");
+	}
+}
+
 #endif
 void phl_dbg_cmd_snd(struct phl_info_t *phl_info, char input[][MAX_ARGV],
 		      u32 input_num, char *output, u32 out_len)
@@ -1180,6 +1253,38 @@ void phl_dbg_cmd_show_rssi(struct phl_info_t *phl_info, char input[][MAX_ARGV],
 
 }
 
+#ifdef CONFIG_RTW_DEBUG
+static void _phl_set_level(struct phl_info_t *phl_info, char input[][MAX_ARGV],
+			 u32 input_num, char *output, u32 out_len)
+{
+	u32 ctrl = 0;
+	u32 dbg_level = 0;
+	u32 used = 0;
+
+	PHL_DBG_MON_INFO(out_len, used, output + used, out_len - used,
+			"[DBG] PHL_DBG_LEVEL [0=set value, 1=show] \n");
+
+	if (input_num <= 1)
+		return;
+
+	_get_hex_from_string(input[1], &ctrl);
+	if (ctrl > 1)
+		return;
+	_get_hex_from_string(input[2], &dbg_level);
+	if (dbg_level >= _PHL_MAX_)
+		return;
+
+	if (ctrl == 0)
+		phl_log_level = (u8)dbg_level;
+	else if (ctrl == 1)
+		PHL_DBG_MON_INFO(out_len, used, output + used, out_len - used,
+				 "phl_log_level=%u\n", phl_log_level);
+	else
+		PHL_DBG_MON_INFO(out_len, used, output + used,
+				out_len - used, "PHL CMD not found!\n");
+}
+#endif /*CONFIG_RTW_DEBUG*/
+
 void phl_dbg_cmd_parser(struct phl_info_t *phl_info, char input[][MAX_ARGV],
 		        u32 input_num, char *output, u32 out_len)
 {
@@ -1233,13 +1338,13 @@ void phl_dbg_cmd_parser(struct phl_info_t *phl_info, char input[][MAX_ARGV],
 		u32 ret = 0;
 
 		PHL_DBG_MON_INFO(out_len, used, output + used, out_len - used,
-			"[DBG] PHL_DBG_COMP [1=set, 2=clear] [comp_bit] \n");
+			"[DBG] PHL_DBG_COMP [1=set comp_bit, 2=clear comp_bit, 4=set value]\n");
 		if (input_num <= 2)
 			break;
 		_get_hex_from_string(input[1], &ctrl);
 		_get_hex_from_string(input[2], &comp);
 
-		ret = rtw_phl_dbg_ctrl_comp((u8)ctrl, (u8)comp);
+		ret = rtw_phl_dbg_ctrl_comp((u8)ctrl, comp);
 		PHL_DBG_MON_INFO(out_len, used, output + used, out_len - used,
 			"[DBG] PHL_DBG_COMP (COMP = 0x%x) \n", (int)ret);
 	}
@@ -1312,7 +1417,7 @@ void phl_dbg_cmd_parser(struct phl_info_t *phl_info, char input[][MAX_ARGV],
 #ifdef CONFIG_MCC_SUPPORT
 	case PHL_DBG_MCC:
 	{
-		_dump_mcc_info(phl_info, input, input_num, output, out_len);
+		_mcc_cmd_parser(phl_info, input, input_num, output, out_len);
 	}
 	break;
 #endif /* CONFIG_MCC_SUPPORT */
@@ -1390,6 +1495,13 @@ void phl_dbg_cmd_parser(struct phl_info_t *phl_info, char input[][MAX_ARGV],
 			"[DBG] Current TX duty control: %d \n", tx_duty);
 	}
 	break;
+
+	case PHL_DBG_SET_LEVEL:
+	#ifdef CONFIG_RTW_DEBUG
+		_phl_set_level(phl_info, input, input_num, output, out_len);
+	#endif /*CONFIG_RTW_DEBUG*/
+	break;
+
 	default:
 		PHL_DBG_MON_INFO(out_len, used, output + used,
 			out_len - used, "[DBG] Do not support this command\n");

@@ -23,10 +23,12 @@
 #define STA_SCH_WMM_NUM_8852A 4
 #define STA_SCH_WMM_NUM_8852B 2
 #define STA_SCH_WMM_NUM_8852C 4
+#define STA_SCH_WMM_NUM_8192XB  4
 
 #define STA_SCH_UL_SUPPORT_8852A 1
 #define STA_SCH_UL_SUPPORT_8852B 0
 #define STA_SCH_UL_SUPPORT_8852C 1
+#define STA_SCH_UL_SUPPORT_8192XB 1
 
 #define CTRL1_R_NEXT_LINK 20
 
@@ -99,5 +101,20 @@ struct mac_ax_sta_bmp_ctrl {
 u32 mac_ss_wmm_sta_move(struct mac_ax_adapter *adapter,
 			enum mac_ax_ss_wmm src_wmm,
 			enum mac_ax_ss_wmm_tbl dst_link);
+
+/**
+ * @brief mac_ss_wmm_map_upd
+ *
+ * @param *adapter
+ * @param src_wmm
+ * @param dst_link
+ * @param chk_emp
+ * @return Please Place Description here.
+ * @retval u32
+ */
+u32 mac_ss_wmm_map_upd(struct mac_ax_adapter *adapter,
+		       enum mac_ax_ss_wmm src_wmm,
+		       enum mac_ax_ss_wmm_tbl dst_link,
+		       u8 chk_emp);
 
 #endif

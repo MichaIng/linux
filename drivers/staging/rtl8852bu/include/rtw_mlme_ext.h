@@ -186,6 +186,41 @@ enum TDLS_option {
 
 #endif /* CONFIG_TDLS */
 
+typedef enum {
+	DISCONNECTION_NOT_YET_OCCUR,
+	DISCONNECTION_BY_SYSTEM_DUE_TO_HIGH_LAYER_COMMAND,
+	DISCONNECTION_BY_SYSTEM_DUE_TO_NET_DEVICE_DOWN,
+	DISCONNECTION_BY_SYSTEM_DUE_TO_SYSTEM_IN_SUSPEND,
+	DISCONNECTION_BY_DRIVER_DUE_TO_CONNECTION_EXIST,
+	DISCONNECTION_BY_DRIVER_DUE_TO_EACH_IFACE_CHBW_NOT_SYNC,
+	DISCONNECTION_BY_DRIVER_DUE_TO_DFS_DETECTION,
+	DISCONNECTION_BY_DRIVER_DUE_TO_IOCTL_DBG_PORT,
+	DISCONNECTION_BY_DRIVER_DUE_TO_AP_BEACON_CHANGED,
+	DISCONNECTION_BY_DRIVER_DUE_TO_KEEPALIVE_TIMEOUT,
+	DISCONNECTION_BY_DRIVER_DUE_TO_LAYER2_ROAMING_TERMINATE,
+	DISCONNECTION_BY_DRIVER_DUE_TO_JOINBSS_TIMEOUT,
+	DISCONNECTION_BY_FW_DUE_TO_FW_DECISION_IN_WOW_RESUME,
+	DISCONNECTION_BY_AP_DUE_TO_RECEIVE_DISASSOC_IN_WOW_RESUME,
+	DISCONNECTION_BY_AP_DUE_TO_RECEIVE_DEAUTH_IN_WOW_RESUME,
+	DISCONNECTION_BY_AP_DUE_TO_RECEIVE_DEAUTH,
+	DISCONNECTION_BY_AP_DUE_TO_RECEIVE_DISASSOC,
+	DISCONNECTION_BY_DRIVER_DUE_TO_RECEIVE_CSA_NON_DFS,
+	DISCONNECTION_BY_DRIVER_DUE_TO_RECEIVE_CSA_DFS,
+	DISCONNECTION_BY_DRIVER_DUE_TO_RECEIVE_INVALID_CSA,
+	DISCONNECTION_BY_DRIVER_DUE_TO_JOIN_WRONG_CHANNEL,
+	DISCONNECTION_BY_DRIVER_DUE_TO_FT,
+	DISCONNECTION_BY_DRIVER_DUE_TO_ROAMING,
+	DISCONNECTION_BY_DRIVER_DUE_TO_SA_QUERY_TIMEOUT,
+} Disconnect_type;
+
+#define SSID_CHANGED BIT0
+#define SSID_LENGTH_CHANGED BIT1
+#define BEACON_CHANNEL_CHANGED BIT2
+#define ENCRYPT_PROTOCOL_CHANGED BIT3
+#define PAIRWISE_CIPHER_CHANGED BIT4
+#define GROUP_CIPHER_CHANGED BIT5
+#define IS_8021X_CHANGED BIT6
+
 /*
  * Usage:
  * When one iface acted as AP mode and the other iface is STA mode and scanning,
@@ -266,6 +301,10 @@ struct mlme_ext_info {
 	NDIS_802_11_RATES_EX	SupportedRates_infra_ap;
 	u8 ht_vht_received;/*ht_vht_received used to show debug msg BIT(0):HT BIT(1):VHT */
 #endif /* ROKU_PRIVATE */
+	Disconnect_type disconnect_code;
+	u32 illegal_beacon_code;
+	u32 wifi_reason_code;
+	u32 disconnect_occurred_time;
 };
 
 enum {
@@ -634,7 +673,8 @@ bool is_hidden_ssid(char *ssid, int len);
 bool hidden_ssid_ap(WLAN_BSSID_EX *snetwork);
 void rtw_absorb_ssid_ifneed(_adapter *padapter, WLAN_BSSID_EX *bssid, u8 *pframe);
 
-int rtw_get_bcn_keys(_adapter *adapter, u8 *whdr, u32 flen, struct beacon_keys *bcn_keys);
+int rtw_get_bcn_keys(_adapter *adapter
+	, u8 *whdr, u32 flen, struct beacon_keys *bcn_keys);
 int rtw_get_bcn_keys_from_bss(WLAN_BSSID_EX *bss, struct beacon_keys *bcn_keys);
 int rtw_update_bcn_keys_of_network(struct wlan_network *network);
 
@@ -765,7 +805,9 @@ void start_clnt_assoc(_adapter *padapter);
 void start_clnt_auth(_adapter *padapter);
 void start_clnt_join(_adapter *padapter);
 void start_create_ibss(_adapter *padapter);
-
+#if defined(CONFIG_LAYER2_ROAMING) && defined(CONFIG_RTW_80211K)
+void rtw_roam_nb_discover(_adapter *padapter, u8 bfroce);
+#endif
 unsigned int OnAssocReq(_adapter *padapter, union recv_frame *precv_frame);
 unsigned int OnAssocRsp(_adapter *padapter, union recv_frame *precv_frame);
 unsigned int OnProbeReq(_adapter *padapter, union recv_frame *precv_frame);
@@ -837,6 +879,7 @@ void mlmeext_sta_add_event_callback(_adapter *padapter, struct sta_info *psta);
 int rtw_get_rx_chk_limit(_adapter *adapter);
 void rtw_set_rx_chk_limit(_adapter *adapter, int limit);
 void linked_status_chk(_adapter *padapter, u8 from_timer);
+void dynamic_update_bcn_check(_adapter *padapter);
 
 #define rtw_get_bcn_cnt(adapter)	(adapter->mlmeextpriv.cur_bcn_cnt)
 #define rtw_get_bcn_dtim_period(adapter)	(adapter->mlmeextpriv.dtim)

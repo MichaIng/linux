@@ -600,6 +600,9 @@ _phl_mrc_module_ap_stop_pre_hdlr(struct phl_info_t *phl_info,
 		goto _exit;
 	}
 #endif
+	PHL_INFO("%s, try to cancel ecsa\n", __func__);
+	psts = rtw_phl_ecsa_cancel((void*)phl_info, wrole);
+	psts = RTW_PHL_STATUS_SUCCESS; /* ecsa cancel fail does not block ap stop */
 
 _exit:
 	PHL_TRACE(COMP_PHL_MCC, _PHL_INFO_, "%s: psts(%d)\n",
@@ -1518,6 +1521,14 @@ _mrc_module_msg_post_hdl(void *dispr, void *priv, struct phl_msg *msg)
 		phl_mr_coex_handle(phl_info, NULL, (u16)(*(u32 *)msg->inbuf),
 			msg->band_idx, MR_COEX_TRIG_BY_BT);
 #endif
+		ret = MDL_RET_SUCCESS;
+		break;
+	case MSG_EVT_SER_M5_READY:
+		if (MSG_MDL_ID_FIELD(msg->msg_id) != PHL_MDL_SER)
+			return MDL_RET_IGNORE;
+
+		PHL_INFO("%s: MSG_EVT_SER_M5_READY\n", __func__);
+		phl_mr_err_recovery(phl_info, MSG_EVT_ID_FIELD(msg->msg_id));
 		ret = MDL_RET_SUCCESS;
 		break;
 	default:
@@ -2584,12 +2595,6 @@ static bool _mr_tdmra_need(struct phl_info_t *phl_info,
 	u8 ridx;
 	u8 tdmra_need = false;
 
-	if (phl_com->dev_cap.mcc_sup == false) {
-		PHL_INFO("%s: don't support MCC\n", __func__);
-		tdmra_need = false;
-		goto exit;
-	}
-
 	ctx_num = phl_mr_get_chanctx_num(phl_info, band_ctrl);
 	if (ctx_num == 0)
 		goto exit;
@@ -2631,7 +2636,12 @@ static bool _mr_tdmra_need(struct phl_info_t *phl_info,
 			tdmra_need = false;
 		}
 	} else if (ctx_num == 2) {
-		tdmra_need = true;
+		if (phl_com->dev_cap.mcc_sup == false) {
+			PHL_INFO("_mr_tdmra_need(): don't support MCC\n");
+			tdmra_need = false;
+		} else {
+			tdmra_need = true;
+		}
 	} else {
 		PHL_INFO("[MR]%s: Do not support ctx_num(%d)\n",
 			__func__, ctx_num);
@@ -2850,7 +2860,9 @@ bool phl_mr_noa_dur_lim_change (struct phl_info_t *phl_info, struct rtw_wifi_rol
 			but will process tdmra if need_tdmra = true
 			then, tdmra will qurey NoA parameter
 		*/
+#ifdef CONFIG_MCC_SUPPORT
 		need_tdmra = _mr_tdmra_need(phl_info, wrole->hw_band, &ap_role_idx);
+#endif
 		if (need_tdmra)
 			ctrl_by_tdmra = true;
 		else
@@ -3167,9 +3179,8 @@ void rtw_phl_mr_ops_init(void *phl, struct rtw_phl_mr_ops *mr_ops)
 	mr_ctl->mr_ops.phl_mr_update_noa = mr_ops->phl_mr_update_noa;
 #endif /* CONFIG_PHL_P2PPS */
 #ifdef CONFIG_MCC_SUPPORT
-	if (phl_com->dev_cap.mcc_sup == true) {
+	if (mr_ops->mcc_ops != NULL)
 		rtw_phl_mcc_init_ops(phl_info, mr_ops->mcc_ops);
-	}
 #endif
 }
 
@@ -3278,6 +3289,17 @@ phl_mr_check_ecsa(struct phl_info_t *phl_info,
 			}
 		}
 	}
+
+	if (sta_wr == NULL) {
+		PHL_TRACE(COMP_PHL_ECSA, _PHL_WARNING_, "[ECSA] Sta role not found!\n");
+		return;
+	}
+
+	if (ap_wr == NULL) {
+		PHL_TRACE(COMP_PHL_ECSA, _PHL_WARNING_, "[ECSA] AP role not found!\n");
+		return;
+	}
+
 	if(sta_band_type == BAND_ON_24G){
 		if(ap_band_type == BAND_ON_24G)
 			reason = ECSA_START_MCC_24G_TO_24G;
@@ -3369,11 +3391,6 @@ u8 phl_mr_query_mcc_inprogress (struct phl_info_t *phl_info, struct rtw_wifi_rol
 	u8 ret = false;
 	u8 mcc_inprogress = false;
 
-	if (phl_com->dev_cap.mcc_sup == false) {
-		ret = false;
-		goto _exit;
-	}
-
 	chanctx_num = phl_mr_get_chanctx_num(phl_info, band_ctrl);
 	mcc_inprogress = rtw_phl_mcc_inprogress(phl_info, wrole->hw_band);
 
@@ -3397,8 +3414,6 @@ u8 phl_mr_query_mcc_inprogress (struct phl_info_t *phl_info, struct rtw_wifi_rol
 		ret = false;
 		break;
 	}
-
-_exit:
 	return ret;
 }
 
@@ -3410,6 +3425,19 @@ u8 rtw_phl_mr_query_mcc_inprogress (void *phl, struct rtw_wifi_role_t *wrole,
 	return phl_mr_query_mcc_inprogress(phl_info, wrole, check_type);
 }
 #endif
+
+enum rtw_phl_status
+phl_mr_err_recovery(struct phl_info_t *phl, enum phl_msg_evt_id eid)
+{
+	enum rtw_phl_status status = RTW_PHL_STATUS_SUCCESS;
+
+	if (eid == MSG_EVT_SER_M5_READY) {
+		/* SER L1 DONE event */
+		rtw_phl_mcc_recovery(phl, HW_BAND_0);
+	}
+
+	return status;
+}
 
 /* MR coex related code */
 #ifdef CONFIG_MCC_SUPPORT

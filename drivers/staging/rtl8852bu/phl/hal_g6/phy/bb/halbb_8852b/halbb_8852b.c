@@ -26,6 +26,48 @@
 
 #ifdef BB_8852B_SUPPORT
 
+#ifdef BB_DYN_DTR
+void halbb_dyn_dtr_en_8852b(struct bb_info *bb, bool en)
+{
+	bb->bb_8852b_i.dyn_dtr_en = en;
+}
+
+void halbb_dyn_dtr_init_8852b(struct bb_info *bb)
+{
+	bb->bb_8852b_i.dyn_dtr_en = false;
+	bb->bb_8852b_i.dyn_dtr_rssi_th = 67;
+}
+
+void halbb_dyn_dtr_8852b(struct bb_info *bb)
+{
+	struct bb_link_info *link = &bb->bb_link_i;
+
+	if (!bb->bb_8852b_i.dyn_dtr_en) {
+		halbb_set_reg(bb, 0x4454, BIT(9), 0x0);
+		return;
+	}
+
+	if (!link->is_linked)
+		return;
+
+	if (!link->is_one_entry_only)
+		return;
+
+	BB_DBG(bb, DBG_IC_API, "[%s]\n", __func__);
+
+	if ((bb->bb_physts_i.bb_physts_rslt_hdr_i.rssi_avg >> 1) > bb->bb_8852b_i.dyn_dtr_rssi_th) {
+		// RSSI > th, enable DTR for 1ss 1R 
+		halbb_set_reg(bb, 0x4454, BIT(9), 0x1);
+		BB_DBG(bb, DBG_IC_API, "[DYN DTR] rssi=0x%x, Enable, 1ss w/ 1R\n", bb->bb_physts_i.bb_physts_rslt_hdr_i.rssi_avg >> 1);
+	} else if ((bb->bb_physts_i.bb_physts_rslt_hdr_i.rssi_avg >> 1) < (bb->bb_8852b_i.dyn_dtr_rssi_th - 2)) {
+		// RSSI < th - 2, disable DTR for 1ss 2R
+		halbb_set_reg(bb, 0x4454, BIT(9), 0x0);
+		BB_DBG(bb, DBG_IC_API, "[DYN DTR] rssi=0x%x, Disable, 1ss w/ 2R\n", bb->bb_physts_i.bb_physts_rslt_hdr_i.rssi_avg >> 1);
+	}
+
+}
+#endif
+
 bool halbb_chk_pkg_valid_8852b(struct bb_info *bb, u8 bb_ver, u8 rf_ver)
 {
 	bool valid = true;
@@ -171,6 +213,27 @@ void halbb_ic_hw_setting_init_8852b(struct bb_info *bb)
 		halbb_set_reg(bb, 0xd7c, BIT(1), 0);
 		halbb_set_reg(bb, 0x2d7c, BIT(1), 0);
 	}
+}
+
+void halbb_ic_hw_setting_8852b(struct bb_info *bb)
+{
+	bool btg_en;
+	
+	BB_DBG(bb, DBG_PHY_CONFIG, "<====== %s ======>\n", __func__);
+	
+	btg_en = (bb->hal_com->band[0].cur_chandef.band == BAND_ON_24G) &&
+		((bb->rx_path == RF_PATH_B) || (bb->rx_path == RF_PATH_AB)) ? true : false;
+	
+	if (btg_en && bb->bb_link_i.is_linked && (bb->bb_ch_i.rssi_min < (75 << 1))) {// if rssi < -35 dbm
+		halbb_set_reg(bb, 0x4aa4, BIT(18), 0x0);
+		BB_DBG(bb, DBG_PHY_CONFIG, "[BT] BTG enable, Is linked\n");
+		BB_DBG(bb, DBG_PHY_CONFIG, "[BT][RSSI] rssi_min=0x%x\n", bb->bb_ch_i.rssi_min >> 1);
+	} else {
+		halbb_set_reg(bb, 0x4aa4, BIT(18), 0x1);
+		BB_DBG(bb, DBG_PHY_CONFIG, "[BT] btg_en=%d, is_linked=%d\n", btg_en, bb->bb_link_i.is_linked);
+		BB_DBG(bb, DBG_PHY_CONFIG, "[BT][RSSI] rssi_min=0x%x\n", bb->bb_ch_i.rssi_min >> 1);
+	}
+
 }
 
 bool halbb_set_pd_lower_bound_8852b(struct bb_info *bb, u8 bound,

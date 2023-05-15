@@ -257,12 +257,6 @@ static inline void rtw_hal_dump_trx_mode(void *sel, _adapter *adapter)
 static inline void rtw_hal_phy_adaptivity_parm_msg(void *sel, _adapter *adapter)
 {}
 
-static inline void rtw_hal_phy_adaptivity_parm_set(_adapter *adapter,
-					s8 th_l2h_ini, s8 th_edcca_hl_diff)
-{}
-
-
-
 #if defined(CONFIG_RTW_LED) && defined(CONFIG_RTW_SW_LED)
 #ifndef CONFIG_RTW_SW_LED_TRX_DA_CLASSIFY
 #define CONFIG_RTW_SW_LED_TRX_DA_CLASSIFY 0

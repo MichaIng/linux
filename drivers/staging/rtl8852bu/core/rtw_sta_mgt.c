@@ -566,6 +566,8 @@ static struct sta_info *_rtw_alloc_core_stainfo(struct sta_priv *pstapriv,
 
 		pstapriv->asoc_sta_count++;
 
+		rtw_mi_update_iface_status(&(pstapriv->padapter->mlmepriv), 0);
+
 		/* _rtw_spinunlock_bh(&(pstapriv->sta_hash_lock)); */
 
 		/* Commented by Albert 2009/08/13
@@ -679,30 +681,6 @@ struct sta_info *rtw_alloc_stainfo(struct	sta_priv *stapriv, const u8 *hwaddr)
 
 	/* can not use in interrupt context */
 	_rtw_alloc_phl_stainfo(sta, stapriv, hwaddr);
-
-	return sta;
-}
-
-struct sta_info *rtw_alloc_stainfo_sw(struct	sta_priv *stapriv, const u8 *hwaddr)
-{
-	struct sta_info *sta;
-	/* can use in interrupt context */
-	sta = _rtw_alloc_core_stainfo(stapriv, hwaddr);
-
-	if (sta != NULL) {
-		sta->phl_sta = rtw_phl_alloc_stainfo_sw(
-			GET_PHL_INFO(adapter_to_dvobj(stapriv->padapter)),
-			(u8 *)hwaddr, stapriv->padapter->phl_role);
-
-		if (sta->phl_sta) {
-			rtw_dump_phl_sta_info(RTW_DBGDUMP, sta);
-		} else {
-			RTW_ERR(FUNC_ADPT_FMT ": fail to alloc PHL sta "
-				"for " MAC_FMT " !\n",
-				FUNC_ADPT_ARG(stapriv->padapter),
-				MAC_ARG(hwaddr));
-		}
-	}
 
 	return sta;
 }
@@ -1007,6 +985,32 @@ static void _rtw_free_phl_stainfo(_adapter *adapter, struct sta_info *sta, u8 on
 	}
 }
 
+struct sta_info *rtw_alloc_stainfo_sw(struct	sta_priv *stapriv, const u8 *hwaddr)
+{
+	struct sta_info *sta;
+	/* can use in interrupt context */
+	sta = _rtw_alloc_core_stainfo(stapriv, hwaddr);
+
+	if (sta != NULL) {
+		sta->phl_sta = rtw_phl_alloc_stainfo_sw(
+			GET_PHL_INFO(adapter_to_dvobj(stapriv->padapter)),
+			(u8 *)hwaddr, stapriv->padapter->phl_role);
+
+		if (sta->phl_sta) {
+			rtw_dump_phl_sta_info(RTW_DBGDUMP, sta);
+		} else {
+			RTW_ERR(FUNC_ADPT_FMT ": fail to alloc PHL sta "
+				"for " MAC_FMT " !\n",
+				FUNC_ADPT_ARG(stapriv->padapter),
+				MAC_ARG(hwaddr));
+			_rtw_free_core_stainfo(stapriv->padapter, sta);
+			sta = NULL;
+		}
+	}
+
+	return sta;
+}
+
 u32	rtw_free_stainfo(_adapter *padapter, struct sta_info *psta)
 {
 	_rtw_free_core_stainfo(padapter, psta);
@@ -1089,7 +1093,7 @@ struct sta_info *rtw_get_stainfo(struct sta_priv *pstapriv, const u8 *hwaddr)
 
 	if (pstapriv->padapter->phl_role == NULL) {
 		RTW_ERR(FUNC_ADPT_FMT" phl_role == NULL\n", FUNC_ADPT_ARG(pstapriv->padapter));
-		rtw_warn_on(1);
+//		rtw_warn_on(1);
 		return NULL;
 	}
 	phl_role = pstapriv->padapter->phl_role;

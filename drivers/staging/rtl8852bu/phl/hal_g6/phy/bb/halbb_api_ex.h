@@ -25,6 +25,7 @@ struct bb_mcc_i {
 	u8 macid_map_len;
 	u8 self_macid;
 };
+u8 halbb_ex_cn_report(struct bb_info * bb);
 void halbb_dyn_1r_cca_en(struct bb_info *bb, bool en);
 u8 halbb_wifi_event_notify(struct bb_info *bb, enum phl_msg_evt_id event, enum phl_phy_idx phy_idx);
 u16 halbb_get_csi_buf_idx(struct bb_info *bb, u8 buf_idx, u8 txsc_idx);

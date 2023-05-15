@@ -145,7 +145,9 @@
 #define MACFWPCHANG	126 /* FW PC hang error */
 #define MACRXDMAHANG	127 /*USB RXDMA HANG */
 #define MACUSBRXHANG	128 /*USB RX HANG */
-#define MACCPWMINTFERR  129 /* CPWM interface error */
+#define MACCPWMINTFERR	129 /* CPWM interface error */
+#define MACUSBPAUSEERR	130 /* USB EP PAUSE error */
+#define MACARDYDONE	131 /* The flow is already done */
 
 /*MAC DBG Status Indication*/
 #define MACSCH_NONEMPTY	1 /* MAC Scheduler non empty */

@@ -29,7 +29,8 @@ enum halrf_rfk_type {
 	RF_BTC_TXGAPK		= 3,
 	RF_BTC_DACK		= 4,
 	RF_BTC_RXDCK		= 5,
-	RF_BTC_TSSI		= 6
+	RF_BTC_TSSI		= 6,
+	RF_BTC_CHLK		= 7
 };
 
 enum halrf_rfk_process {
@@ -96,4 +97,5 @@ void halrf_write_fwofld_start(struct rf_info *rf);
 void halrf_write_fwofld_end(struct rf_info *rf);
 
 void  halrf_quick_check_rf(void *rf_void);
+void  halrf_watchdog_stop(struct rf_info *rf, bool is_stop);
 #endif

@@ -78,6 +78,7 @@
 #endif
 
 #define HALBB_DIV(a, b) ((b) ? ((a) / (b)) : 0)
+#define HALBB_CEIL(a, b) ((b) ? ((a) / (b) + (a > (a / b) * b)) : 0)
 #define ABS_32(X) (((X) & BIT(31)) ? (0 - (X)) : (X))
 #define ABS_16(X) (((X) & BIT(15)) ? (0 - (X)) : (X))
 #define ABS_8(X) (((X) & BIT(7)) ? (0 - (X)) : (X))

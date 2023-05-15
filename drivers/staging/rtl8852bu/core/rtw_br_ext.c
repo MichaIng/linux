@@ -830,6 +830,7 @@ int nat25_db_handle(_adapter *priv, struct sk_buff *skb, int method)
 		}
 	}
 
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 15, 0))
 	/*---------------------------------------------------*/
 	/*                 Handle ARP frame                 */
 	/*---------------------------------------------------*/
@@ -1266,6 +1267,7 @@ int nat25_db_handle(_adapter *priv, struct sk_buff *skb, int method)
 			return -1;
 		}
 	}
+#endif
 
 	/*---------------------------------------------------*/
 	/*                 Handle EAP frame                 */

@@ -904,7 +904,7 @@ enum rtw_hal_status rtw_hal_init(void *drv_priv,
 	else if(ic_id == RTL8852C)
 		chip_id = CHIP_WIFI6_8852C;
 	else
-		return RTW_HAL_STATUS_FAILURE;
+		chip_id = CHIP_WIFI6_MAX;
 
 	hal_info = _os_mem_alloc(drv_priv, sizeof(struct hal_info_t));
 	if (hal_info == NULL) {
@@ -920,7 +920,7 @@ enum rtw_hal_status rtw_hal_init(void *drv_priv,
 		PHL_ERR("alloc hal_com failed\n");
 		goto error_hal_com_mem;
 	}
-
+	hal_info->phl_com = phl_com;
 	hal_info->hal_com = hal_com;
 	hal_com->drv_priv = drv_priv;
 	hal_com->hal_priv = hal_info;
@@ -952,6 +952,12 @@ enum rtw_hal_status rtw_hal_init(void *drv_priv,
 		goto error_io_priv;
 	}
 
+	hal_status = rtw_hal_mac_init(phl_com, hal_info);
+	if ((hal_status != RTW_HAL_STATUS_SUCCESS) || (hal_info->mac == NULL)) {
+		PHL_ERR("rtw_hal_mac_init failed\n");
+		goto error_mac_init;
+	}
+
 	/*set hal_ops and hal_hook_trx_ops*/
 	hal_status = hal_set_ops(phl_com, hal_info);
 	if (hal_status != RTW_HAL_STATUS_SUCCESS) {
@@ -963,12 +969,6 @@ enum rtw_hal_status rtw_hal_init(void *drv_priv,
 	if (hal_status != RTW_HAL_STATUS_SUCCESS) {
 		PHL_ERR("hal_ops.hal_init failed\n");
 		goto error_hal_init;
-	}
-
-	hal_status = rtw_hal_mac_init(phl_com, hal_info);
-	if ((hal_status != RTW_HAL_STATUS_SUCCESS) || (hal_info->mac == NULL)) {
-		PHL_ERR("rtw_hal_mac_init failed\n");
-		goto error_mac_init;
 	}
 
 	hal_status = rtw_hal_efuse_init(phl_com, hal_info);
@@ -1020,13 +1020,13 @@ error_bb_init:
 	rtw_hal_efuse_deinit(phl_com, hal_info);
 
 error_efuse_init:
-	rtw_hal_mac_deinit(phl_com, hal_info);
-
-error_mac_init:
 	hal_info->hal_ops.hal_deinit(phl_com, hal_info);
 
 error_hal_init:
 error_hal_ops:
+	rtw_hal_mac_deinit(phl_com, hal_info);
+
+error_mac_init:
 	hal_deinit_io_priv(hal_com);
 
 error_io_priv:
@@ -1454,7 +1454,7 @@ hal_ver_check(struct rtw_hal_com_t *hal_com)
 
 
 enum rtw_hal_status
-rtw_hal_watchdog(void *hal)
+rtw_hal_watchdog(void *hal, struct rtw_phl_com_t *phl_com)
 {
 	struct hal_info_t *hal_info = (struct hal_info_t *)hal;
 	enum rtw_hal_status hal_status = RTW_HAL_STATUS_FAILURE;
@@ -1471,7 +1471,7 @@ rtw_hal_watchdog(void *hal)
 		goto exit;
 	}
 
-	hal_status = rtw_hal_mac_watchdog(hal_info);
+	hal_status = rtw_hal_mac_watchdog(hal_info, phl_com);
 	if (hal_status != RTW_HAL_STATUS_SUCCESS) {
 		PHL_ERR("%s rtw_hal_mac_watchdog fail (%x)\n", __FUNCTION__, hal_status);
 		goto exit;

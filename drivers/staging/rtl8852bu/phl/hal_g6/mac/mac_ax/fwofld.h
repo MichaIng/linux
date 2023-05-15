@@ -30,10 +30,6 @@
 #define CONF_OFLD_RESTORE 0
 #define CONF_OFLD_BACKUP 1
 
-#define SCAN_OP_STOP	0
-#define SCAN_OP_START	1
-#define SCAN_OP_SETPARM	2
-
 #define CMD_OFLD_SIZE sizeof(struct fwcmd_cmd_ofld)
 
 /* Generate 8-bit mask for a 4-byte alignment offset */
@@ -60,8 +56,9 @@
 	poll_mac_reg_ofld(adapter, offset, mask, val, lc)
 
 #define DELAY_OFLD(val, lc) \
-	poll_mac_reg_ofld(adapter, val, lc)
-
+	delay_ofld(adapter, val, lc)
+#define CMD_OFLD \
+	mac_cmd_ofld(adapter)
 /**
  * @enum PKT_OFLD_OP
  *
@@ -678,6 +675,31 @@ u32 mac_general_pkt_ids(struct mac_ax_adapter *adapter,
  */
 
 /**
+ * @brief mac_cmd_ofld
+ *
+ * This is the function for FW IO offload.
+ * Users could call the function to add write BB/RF/MAC REG command.
+ * When the aggregated commands are full or the command is last,
+ * FW would receive a H2C containing aggreated IO command.
+ *
+ * @param *adapter
+ * @return 0 for success. Others are fail.
+ * @retval u32
+ */
+u32 mac_cmd_ofld(struct mac_ax_adapter *adapter);
+/**
+ * @}
+ * @}
+ */
+
+/**
+ * @addtogroup Firmware
+ * @{
+ * @addtogroup FW_Offload
+ * @{
+ */
+
+/**
  * @brief mac_add_cmd_ofld
  *
  * This is the function for FW IO offload.
@@ -747,6 +769,14 @@ u32 get_ccxrpt_event(struct mac_ax_adapter *adapter,
  * @addtogroup FW_Offload
  * @{
  */
+
+u32 get_ftmrpt_event(struct mac_ax_adapter *adapter,
+		     struct rtw_c2h_info *c2h,
+		     enum phl_msg_evt_id *id, u8 *c2h_info);
+
+u32 get_ftmackrpt_event(struct mac_ax_adapter *adapter,
+			struct rtw_c2h_info *c2h,
+			enum phl_msg_evt_id *id, u8 *c2h_info);
 
 /**
  * @brief mac_scanofld_ch_list_clear
@@ -933,4 +963,76 @@ u32 mac_get_ch_switch_rpt(struct mac_ax_adapter *adapter, struct mac_ax_ch_switc
  * @}
  */
 
+/**
+ * @addtogroup Firmware
+ * @{
+ * @addtogroup FW_Offload
+ * @{
+ */
+
+/**
+ * @brief mac_cfg_bcn_filter
+ *
+ * config bcn filter
+ *
+ * @param *adapter
+ * @param cfg
+ * @return 0 for success.
+ * @retval
+ */
+u32 mac_cfg_bcn_filter(struct mac_ax_adapter *adapter, struct mac_ax_bcn_fltr cfg);
+/**
+ * @}
+ * @}
+ */
+
+/**
+ * @addtogroup Firmware
+ * @{
+ * @addtogroup FW_Offload
+ * @{
+ */
+
+/**
+ * @brief mac_bcn_filter_rssi
+ *
+ * offload rssi to fw for bcn filter
+ *
+ * @param *adapter
+ * @param macid
+ * @param size
+ * @param rssi
+ * @return 0 for success.
+ * @retval
+ */
+u32 mac_bcn_filter_rssi(struct mac_ax_adapter *adapter, u8 macid, u8 size, u8 *rssi);
+/**
+ * @}
+ * @}
+ */
+
+/**
+ * @addtogroup Firmware
+ * @{
+ * @addtogroup FW_Offload
+ * @{
+ */
+
+/**
+ * @brief mac_bcn_filter_tp
+ *
+ * offload tp to fw for bcn filter
+ *
+ * @param *adapter
+ * @param macid
+ * @param tx
+ * @param rx
+ * @return 0 for success.
+ * @retval
+ */
+u32 mac_bcn_filter_tp(struct mac_ax_adapter *adapter, u8 macid, u16 tx, u16 rx);
+/**
+ * @}
+ * @}
+ */
 #endif

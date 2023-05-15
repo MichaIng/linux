@@ -133,7 +133,14 @@ void halrf_wrf(struct rf_info *rf, enum rf_path path, u32 addr, u32 mask, u32 va
 
 		hal_mem_set(rf->hal_com, fwofld_info, 0, sizeof(*fwofld_info));
 
-		cmd.src = RTW_MAC_RF_CMD_OFLD;
+		if (addr & BIT(16)) {
+			cmd.src = RTW_MAC_RF_DDIE_CMD_OFLD;
+			fwofld_info->src = RTW_MAC_RF_DDIE_CMD_OFLD;
+		} else {
+			cmd.src = RTW_MAC_RF_CMD_OFLD;
+			fwofld_info->src = RTW_MAC_RF_CMD_OFLD;
+		}
+
 		cmd.type = RTW_MAC_WRITE_OFLD;
 		cmd.lc = 0;
 		cmd.rf_path = path;
@@ -141,13 +148,15 @@ void halrf_wrf(struct rf_info *rf, enum rf_path path, u32 addr, u32 mask, u32 va
 		cmd.value = val;
 		cmd.mask = mask;
 
-		fwofld_info->src = RTW_MAC_RF_CMD_OFLD;
 		fwofld_info->type = RTW_MAC_WRITE_OFLD;
 		fwofld_info->lc = 1;
 		fwofld_info->rf_path = path;
 		fwofld_info->offset = (u16)addr;
 		fwofld_info->value = val;
 		fwofld_info->mask = mask;
+
+		RF_DBG(rf, DBG_RF_FW,
+			"[FW_Ofld] cmd.src=0x%x   addr=0x%x\n", cmd.src, addr);
 
 		rtn = halrf_mac_add_cmd_ofld(rf, &cmd);
 		if (rtn) {
@@ -160,12 +169,12 @@ void halrf_wrf(struct rf_info *rf, enum rf_path path, u32 addr, u32 mask, u32 va
 }
 
 
-void halrf_delay_10us(struct rf_info *rf, u32 count)
+void halrf_delay_us(struct rf_info *rf, u32 count)
 {
 	u32 i;
 
 	for (i = 0; i < count; i++)
-		halrf_delay_us(rf, 10);
+		halrf_os_delay_us(rf, 1);
 }
 
 void halrf_fill_h2c_cmd(struct rf_info *rf, u16 cmdlen, u8 cmdid,

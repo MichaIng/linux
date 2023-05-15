@@ -28,7 +28,5 @@ int rtw_phl_btc_notify(void *phl, enum RTW_PHL_BTC_NOTIFY notify,
 	struct rtw_phl_btc_ntfy *info);
 void rtw_phl_btc_role_notify(void *phl, u8 role_id, enum role_state rstate);
 void rtw_phl_btc_hub_msg_hdl(void *phl, struct phl_msg *msg);
-void rtw_phl_btc_packet_event_notify(void *phl, u8 role_id, u8 pkt_evt_type);
-u8 rtw_phl_btc_pkt_2_evt_type(u8 packet_type);
 
 #endif /* __PHL_BTC_H__ */

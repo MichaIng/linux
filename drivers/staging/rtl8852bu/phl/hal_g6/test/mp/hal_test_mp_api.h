@@ -73,8 +73,10 @@ enum rtw_hal_status rtw_hal_mp_config_set_ch_bw(
 enum rtw_hal_status rtw_hal_mp_config_swith_btc_path(
 	struct mp_context *mp, struct mp_config_arg *arg);
 enum rtw_hal_status rtw_hal_mp_trigger_fw_conflict(struct mp_context *mp, struct mp_config_arg *arg);
+enum rtw_hal_status rtw_hal_mp_config_set_gpio(struct mp_context *mp, struct mp_config_arg *arg);
 enum rtw_hal_status rtw_hal_mp_ic_hw_setting_init(
 	struct mp_context *mp);
+u32 rtw_hal_get_uuid(struct mp_context *mp);
 /* WIFI EFUSE */
 enum rtw_hal_status rtw_hal_mp_efuse_wifi_shadow_read(
 	struct mp_context *mp, struct mp_efuse_arg *arg);
@@ -106,6 +108,8 @@ enum rtw_hal_status rtw_hal_mp_efuse_file_mask_load(
 	struct mp_context *mp, char *pfilepath);
 enum rtw_hal_status rtw_hal_mp_efuse_get_info(
 	struct mp_context *mp, struct mp_efuse_arg *arg);
+enum rtw_hal_status rtw_hal_mp_efuse_wifi_get_mask_buf(
+	struct mp_context *mp, struct mp_efuse_arg *arg);
 
 /* BT EFUSE */
 enum rtw_hal_status rtw_hal_mp_efuse_bt_shadow_read(
@@ -135,6 +139,8 @@ enum rtw_hal_status rtw_hal_mp_efuse_bt_file_mask_load(
 enum rtw_hal_status rtw_hal_mp_efuse_bt_read_hidden(
 	struct mp_context *mp, struct mp_efuse_arg *arg);
 enum rtw_hal_status rtw_hal_mp_efuse_bt_write_hidden(
+	struct mp_context *mp, struct mp_efuse_arg *arg);
+enum rtw_hal_status rtw_hal_mp_efuse_bt_get_mask_buf(
 	struct mp_context *mp, struct mp_efuse_arg *arg);
 enum rtw_hal_status rtw_hal_mp_efuse_read_phy_map(
 	struct mp_context *mp, struct mp_efuse_arg *arg, u8 type);
@@ -203,9 +209,6 @@ enum rtw_hal_status rtw_hal_mp_tx_phy_ok_cnt(
 	struct mp_context *mp, struct mp_tx_arg *arg);
 enum rtw_hal_status rtw_hal_mp_tx_mode_switch(
 	struct mp_context *mp, struct mp_tx_arg *arg);
-enum rtw_hal_status rtw_hal_mp_tx_f2p_cmd(
-	struct mp_context *mp, struct mp_tx_arg *arg, struct mp_mac_ax_f2p_test_para *f2p_para_struct,
-	struct mp_mac_ax_f2p_wd *f2p_wd_struct, struct mp_mac_ax_f2p_tx_cmd *f2p_tx_cmd_struct);
 void rtw_hal_mp_check_tx_idle(
 	struct mp_context *mp, struct mp_tx_arg *arg);
 enum rtw_hal_status rtw_hal_mp_set_dpd_bypass(

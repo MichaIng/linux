@@ -22,6 +22,8 @@
 #include "chip_cfg.h"
 #include "mac_ax/state_mach.h"
 #include "errors.h"
+#include "mac_exp_def.h"
+#include "mac_outsrc_def.h"
 
 #if MAC_AX_FEATURE_HV
 #include "hv_type.h"
@@ -1141,6 +1143,7 @@ enum mac_ax_hw_id {
 	MAC_AX_HW_GET_LIMIT_EFUSE_MASK_SIZE,
 	MAC_AX_HW_GET_BT_EFUSE_MASK_SIZE,
 	MAC_AX_HW_GET_EFUSE_VERSION_SIZE,
+	MAC_AX_HW_GET_DAV_LOG_EFUSE_SIZE,
 	MAC_AX_HW_GET_CH_STAT_CNT,
 	MAC_AX_HW_GET_LIFETIME_CFG,
 	MAC_AX_HW_GET_APP_FCS,
@@ -1218,6 +1221,7 @@ enum mac_ax_hw_id {
 	MAC_AX_HW_SET_RRSR_CFG,
 	MAC_AX_HW_SET_CTS_RRSR_CFG,
 	MAC_AX_HW_SET_GT3_TIMER,
+	MAC_AX_HW_SET_ADAPTER,
 };
 
 /**
@@ -2500,6 +2504,21 @@ enum mac_ax_efuse_feature_id {
 	MAC_AX_DUMP_LOGICAL_EFUSE_MASK, /* Support */
 };
 
+/**
+ * @enum mac_ax_efuse_hidden_cfg
+ *
+ * @brief mac_ax_efuse_hidden_cfg
+ *
+ * @var mac_ax_efuse_hidden_cfg::MAC_AX_EFUSE_HIDDEN_RF
+ * Please Place Description here.
+ * @var mac_ax_efuse_hidden_cfg::MAC_AX_EFUSE_HIDDEN_MAC
+ * Please Place Description here.
+ */
+enum mac_ax_efuse_hidden_cfg {
+	MAC_AX_EFUSE_HIDDEN_RF,
+	MAC_AX_EFUSE_HIDDEN_MAC,
+};
+
 /*--------------------Define TRX PKT INFO/RPT related enum--------------------*/
 
 /**
@@ -2570,6 +2589,7 @@ enum mac_ax_qta_mode {
 	MAC_AX_QTA_DLFW,
 	MAC_AX_QTA_BCN_TEST,
 	MAC_AX_QTA_LAMODE,
+	MAC_AX_QTA_SCC_TURBO,
 
 	/* keep last */
 	MAC_AX_QTA_LAST,
@@ -3896,7 +3916,11 @@ enum mac_ax_net_type {
 	MAC_AX_NET_TYPE_NO_LINK,
 	MAC_AX_NET_TYPE_ADHOC,
 	MAC_AX_NET_TYPE_INFRA,
-	MAC_AX_NET_TYPE_AP
+	MAC_AX_NET_TYPE_AP,
+
+	MAC_AX_NET_TYPE_LAST,
+	MAC_AX_NET_TYPE_MAX = MAC_AX_NET_TYPE_LAST,
+	MAC_AX_NET_TYPE_INVLAID = MAC_AX_NET_TYPE_LAST,
 };
 
 /**
@@ -4010,13 +4034,19 @@ enum mac_ax_opmode {
  * Please Place Description here.
  * @var mac_ax_upd_mode::MAC_AX_ROLE_CON_DISCONN
  * Please Place Description here.
+ * @var mac_ax_upd_mode::MAC_AX_ROLE_BAND_SW
+ * Please Place Description here.
+ * @var mac_ax_upd_mode::MAC_AX_ROLE_FW_RESTORE
+ * Please Place Description here.
  */
 enum mac_ax_upd_mode {
 	MAC_AX_ROLE_CREATE,
 	MAC_AX_ROLE_REMOVE,
 	MAC_AX_ROLE_TYPE_CHANGE,
 	MAC_AX_ROLE_INFO_CHANGE,
-	MAC_AX_ROLE_CON_DISCONN
+	MAC_AX_ROLE_CON_DISCONN,
+	MAC_AX_ROLE_BAND_SW,
+	MAC_AX_ROLE_FW_RESTORE,
 };
 
 /**
@@ -4034,88 +4064,6 @@ enum mac_ax_host_rpr_mode {
 	MAC_AX_RPR_MODE_STF
 };
 
-#ifndef CONFIG_FW_IO_OFLD_SUPPORT
-/**
- * @enum rtw_mac_src_cmd_ofld
- *
- * @brief rtw_mac_src_cmd_ofld
- *
- * @var rtw_mac_src_cmd_ofld::MAC_AX_BB_CMD_OFLD
- * Please Place Description here.
- * @var rtw_mac_src_cmd_ofld::MAC_AX_RF_CMD_OFLD
- * Please Place Description here.
- * @var rtw_mac_src_cmd_ofld::MAC_AX_MAC_CMD_OFLD
- * Please Place Description here.
- * @var rtw_mac_src_cmd_ofld::MAC_AX_OTHER_CMD_OFLD
- * Please Place Description here.
- */
-enum rtw_mac_src_cmd_ofld {
-	RTW_MAC_BB_CMD_OFLD = 0,
-	RTW_MAC_RF_CMD_OFLD,
-	RTW_MAC_MAC_CMD_OFLD,
-	RTW_MAC_OTHER_CMD_OFLD
-};
-
-/**
- * @enum rtw_mac_cmd_type_ofld
- *
- * @brief rtw_mac_cmd_type_ofld
- *
- * @var rtw_mac_cmd_type_ofld::MAC_AX_WRITE_OFLD
- * Please Place Description here.
- * @var rtw_mac_cmd_type_ofld::MAC_AX_POLLING_OFLD
- * Please Place Description here.
- * @var rtw_mac_cmd_type_ofld::MAC_AX_DELAY_OFLD
- * Please Place Description here.
- */
-enum rtw_mac_cmd_type_ofld {
-	RTW_MAC_WRITE_OFLD = 0,
-	RTW_MAC_COMPARE_OFLD,
-	RTW_MAC_DELAY_OFLD
-};
-
-/**
- * @enum mac_ax_cmd_id
- *
- * @brief mac_ax_cmd_id
- *
- * @var mac_ax_host_rpr_mode::MAC_AX_ID_0
- * Please Place Description here.
- * @var mac_ax_host_rpr_mode::MAC_AX_ID_1
- * Please Place Description here.
- */
-enum mac_ax_cmd_id {
-	MAC_AX_ID_0 = 0,
-	MAC_AX_ID_1
-};
-
-/**
- * @enum rtw_mac_rf_path
- *
- * @brief rtw_mac_rf_path
- *
- * @var rtw_mac_rf_path::RF_PATH_A
- * Please Place Description here.
- * @var rtw_mac_rf_path::RF_PATH_B
- * Please Place Description here.
- * @var rtw_mac_rf_path::RF_PATH_C
- * Please Place Description here.
- * @var rtw_mac_rf_path::RF_PATH_D
- * Please Place Description here.
- */
-enum rtw_mac_rf_path {
-	RTW_MAC_RF_PATH_A = 0,   //Radio Path A
-	RTW_MAC_RF_PATH_B,	//Radio Path B
-	RTW_MAC_RF_PATH_C,	//Radio Path C
-	RTW_MAC_RF_PATH_D,	//Radio Path D
-};
-
-enum rtw_fw_cap {
-	FW_CAP_IO_OFLD = BIT(0),
-};
-
-#endif
-
 /**
  * @struct mac_ax_role_opmode
  * @brief mac_ax_role_opmode
@@ -4131,6 +4079,37 @@ enum mac_ax_role_opmode {
 	ADD = 0,
 	CHG,
 	RMV
+};
+
+/**
+ * @enum mac_ax_dbcc_wmm
+ *
+ * @brief mac_ax_dbcc_wmm
+ *
+ * @var mac_ax_dbcc_wmm::MAC_AX_DBCC_WMM0
+ * Please Place Description here.
+ * @var mac_ax_dbcc_wmm::MAC_AX_DBCC_WMM1
+ * Please Place Description here.
+ * @var mac_ax_dbcc_wmm::MAC_AX_DBCC_WMM2
+ * Please Place Description here.
+ * @var mac_ax_dbcc_wmm::MAC_AX_DBCC_WMM3
+ * Please Place Description here.
+ * @var mac_ax_dbcc_wmm::MAC_AX_DBCC_WMM_LAST
+ * Please Place Description here.
+ * @var mac_ax_dbcc_wmm::MAC_AX_DBCC_WMM_MAX
+ * Please Place Description here.
+ * @var mac_ax_dbcc_wmm::MAC_AX_DBCC_WMM_INVALID
+ * Please Place Description here.
+ */
+enum mac_ax_dbcc_wmm {
+	MAC_AX_DBCC_WMM0 = 0,
+	MAC_AX_DBCC_WMM1,
+	MAC_AX_DBCC_WMM2,
+	MAC_AX_DBCC_WMM3,
+
+	MAC_AX_DBCC_WMM_LAST,
+	MAC_AX_DBCC_WMM_MAX = MAC_AX_DBCC_WMM_LAST,
+	MAC_AX_DBCC_WMM_INVALID = MAC_AX_DBCC_WMM_LAST,
 };
 
 /*--------------------Define FAST_CH_SW related enum-------------------------------------*/
@@ -4329,6 +4308,8 @@ enum mac_ax_ps_advance_parm_op{
  * leace ch
  * @var mac_ax_scanofld_notify_reason::MAC_AX_SCAN_END_SCAN_NOTIFY
  * scan stop
+ * @var mac_ax_scanofld_notify_reason::MAC_AX_SCAN_GET_RPT_NOTIFY
+ * scan stop
  */
 enum mac_ax_scanofld_notify_reason {
 	MAC_AX_SCAN_DWELL_NOTIFY = 0,
@@ -4337,6 +4318,27 @@ enum mac_ax_scanofld_notify_reason {
 	MAC_AX_SCAN_ENTER_CH_NOTIFY = 3,
 	MAC_AX_SCAN_LEAVE_CH_NOTIFY = 4,
 	MAC_AX_SCAN_END_SCAN_NOTIFY = 5,
+	MAC_AX_SCAN_GET_RPT_NOTIFY = 6,
+};
+
+/**
+ * @struct mac_ax_scanofld_notify_status
+ * @brief mac_ax_scanofld_notify_status
+ *
+ * @var mac_ax_scanofld_notify_status::MAC_AX_SCAN_STATUS_NOTIFY
+ * just notify
+ * @var mac_ax_scanofld_notify_status::MAC_AX_SCAN_STATUS_SUCCESS
+ * success
+ * @var mac_ax_scanofld_notify_status::MAC_AX_SCAN_STATUS_FAIL
+ * fail
+ * @var mac_ax_scanofld_notify_status::MAC_AX_SCAN_STATUS_MAX
+ * max
+ */
+enum mac_ax_scanofld_notify_status {
+	MAC_AX_SCAN_STATUS_NOTIFY = 0,
+	MAC_AX_SCAN_STATUS_SUCCESS = 1,
+	MAC_AX_SCAN_STATUS_FAIL = 2,
+	MAC_AX_SCAN_STATUS_MAX
 };
 
 /**
@@ -4349,6 +4351,8 @@ enum mac_ax_scanofld_notify_reason {
  * start scan
  * @var mac_ax_scan_ofld_op::MAC_AX_SCAN_OP_SETPARM
  * set parameter only
+ * @var mac_ax_scan_ofld_op::MAC_AX_SCAN_OP_GETRPT
+ * get rpt during scanning
  * @var mac_ax_scan_ofld_op::MAC_AX_SCAN_OP_MAX
  * max
  */
@@ -4356,6 +4360,7 @@ enum mac_ax_scan_ofld_op {
 	MAC_AX_SCAN_OP_STOP = 0,
 	MAC_AX_SCAN_OP_START = 1,
 	MAC_AX_SCAN_OP_SETPARM = 2,
+	MAC_AX_SCAN_OP_GETRPT = 3,
 	MAC_AX_SCAN_OP_MAX
 };
 
@@ -4397,6 +4402,117 @@ enum mac_ax_scanofld_start_mode {
 	MAC_AX_SCAN_START_NOW = 0,
 	MAC_AX_SCAN_START_TSF = 1,
 	MAC_AX_SCAN_START_MAX
+};
+
+/**
+ * @enum mac_ax_dma_ch
+ *
+ * @brief mac_ax_dma_ch
+ *
+ * @var mac_ax_dma_ch::MAC_AX_DMA_ACH0
+ * Please Place Description here.
+ * @var mac_ax_dma_ch::MAC_AX_DMA_ACH1
+ * Please Place Description here.
+ * @var mac_ax_dma_ch::MAC_AX_DMA_ACH2
+ * Please Place Description here.
+ * @var mac_ax_dma_ch::MAC_AX_DMA_ACH3
+ * Please Place Description here.
+ * @var mac_ax_dma_ch::MAC_AX_DMA_ACH4
+ * Please Place Description here.
+ * @var mac_ax_dma_ch::MAC_AX_DMA_ACH5
+ * Please Place Description here.
+ * @var mac_ax_dma_ch::MAC_AX_DMA_ACH6
+ * Please Place Description here.
+ * @var mac_ax_dma_ch::MAC_AX_DMA_ACH7
+ * Please Place Description here.
+ * @var mac_ax_dma_ch::MAC_AX_DMA_B0MG
+ * Please Place Description here.
+ * @var mac_ax_dma_ch::MAC_AX_DMA_B0HI
+ * Please Place Description here.
+ * @var mac_ax_dma_ch::MAC_AX_DMA_B1MG
+ * Please Place Description here.
+ * @var mac_ax_dma_ch::MAC_AX_DMA_B1HI
+ * Please Place Description here.
+ * @var mac_ax_dma_ch::MAC_AX_DMA_H2C
+ * Please Place Description here.
+ * @var mac_ax_dma_ch::MAC_AX_DMA_CH_NUM
+ * Please Place Description here.
+ */
+enum mac_ax_dma_ch {
+	MAC_AX_DMA_ACH0 = 0,
+	MAC_AX_DMA_ACH1,
+	MAC_AX_DMA_ACH2,
+	MAC_AX_DMA_ACH3,
+	MAC_AX_DMA_ACH4,
+	MAC_AX_DMA_ACH5,
+	MAC_AX_DMA_ACH6,
+	MAC_AX_DMA_ACH7,
+	MAC_AX_DMA_B0MG,
+	MAC_AX_DMA_B0HI,
+	MAC_AX_DMA_B1MG,
+	MAC_AX_DMA_B1HI,
+	MAC_AX_DMA_H2C,
+	MAC_AX_DMA_CH_NUM
+};
+
+/**
+ * @enum mac_ax_bcn_fltr_notify
+ *
+ * @brief mac_ax_bcn_fltr_notify
+ *
+ * @var mac_ax_bcn_fltr_notify::BCNFLTR_NOTI_BCN_LOSS
+ * Please Place Description here.
+ * @var mac_ax_bcn_fltr_notify::BCNFLTR_NOTI_RSSI
+ * Please Place Description here.
+ * @var mac_ax_bcn_fltr_notify::BCNFLTR_NOTI_DENY_SCAN
+ * Please Place Description here.
+ */
+enum mac_ax_bcn_fltr_notify {
+	BCNFLTR_NOTI_BCN_LOSS = 0,
+	BCNFLTR_NOTI_RSSI,
+	BCNFLTR_NOTI_DENY_SCAN,
+	BCNFLTR_NOTI_MAX,
+};
+
+/**
+ * @enum mac_ax_bcn_fltr_rssi_evt
+ *
+ * @brief mac_ax_bcn_fltr_rssi_evt
+ *
+ * @var mac_ax_bcn_fltr_rssi_evt::BCNFLTR_RSSI_EVT_NOT_CHANGED
+ * Please Place Description here.
+ * @var mac_ax_bcn_fltr_rssi_evt::BCNFLTR_RSSI_EVT_HIGH
+ * Please Place Description here.
+ * @var mac_ax_bcn_fltr_rssi_evt::BCNFLTR_RSSI_EVT_LOW
+ * Please Place Description here.
+ */
+enum mac_ax_bcn_fltr_rssi_evt {
+	BCNFLTR_RSSI_EVT_NOT_CHANGED = 0,
+	BCNFLTR_RSSI_EVT_HIGH,
+	BCNFLTR_RSSI_EVT_LOW,
+	BCNFLTR_RSSI_EVT_MAX,
+};
+
+/**
+ * @enum mac_ax_bcn_fltr_tp_thld
+ *
+ * @brief mac_ax_bcn_fltr_tp_thld
+ *
+ * @var mac_ax_bcn_fltr_tp_thld::BCNFLTR_TP_THLD_1M
+ * Please Place Description here.
+ * @var mac_ax_bcn_fltr_tp_thld::BCNFLTR_TP_THLD_3M
+ * Please Place Description here.
+ * @var mac_ax_bcn_fltr_tp_thld::BCNFLTR_TP_THLD_10M
+ * Please Place Description here.
+ * @var mac_ax_bcn_fltr_tp_thld::BCNFLTR_TP_THLD_50M
+ * Please Place Description here.
+ */
+enum mac_ax_bcn_fltr_tp_thld {
+	BCNFLTR_TP_THLD_1M = 0,
+	BCNFLTR_TP_THLD_3M,
+	BCNFLTR_TP_THLD_10M,
+	BCNFLTR_TP_THLD_50M,
+	BCNFLTR_TP_THLD_MAX
 };
 
 /*--------------------Define Struct-------------------------------------*/
@@ -4455,6 +4571,67 @@ struct mac_ax_sch_tx_en {
 	u8 ul:1;
 	u8 twt0:1;
 	u8 twt1:1;
+};
+
+/**
+ * @var mac_ax_drv_wdt_ctrl::autok_wdt_ctrl
+ * Please Place Description here.
+ * @var mac_ax_drv_wdt_ctrl::tp_wdt_ctrl
+ * Please Place Description here.
+ */
+struct mac_ax_drv_wdt_ctrl {
+	enum mac_ax_pcie_func_ctrl autok_wdt_ctrl;
+	enum mac_ax_pcie_func_ctrl tp_wdt_ctrl;
+};
+
+/**
+ * @var mac_ax_processor_id::proc_id_h
+ * Please Place Description here.
+ * @var mac_ax_processor_id::proc_id_l
+ * Please Place Description here.
+ */
+struct mac_ax_processor_id {
+	u32 proc_id_h;
+	u32 proc_id_l;
+};
+
+/**
+ * @var mac_ax_tp_ctrl::tx_tp
+ * Please Place Description here.
+ * @var mac_ax_tp_ctrl::rx_tp
+ * Please Place Description here.
+ */
+struct mac_ax_tp_param {
+	u16 tx_tp;
+	u16 rx_tp;
+};
+
+/**
+ * @var mac_ax_wdt_param::tp
+ * Please Place Description here.
+ */
+struct mac_ax_wdt_param {
+	struct mac_ax_drv_wdt_ctrl drv_ctrl;
+	struct mac_ax_tp_param tp;
+};
+
+/**
+ * @var mac_ax_cust_proc_id::proc_id
+ * Please Place Description here.
+ * @var mac_ax_cust_proc_id::customer_id
+ * Please Place Description here.
+ */
+struct mac_ax_cust_proc_id {
+	struct mac_ax_processor_id proc_id;
+	u32 customer_id;
+};
+
+/**
+ * @var mac_ax_adapter_info::cust_proc_id
+ * Please Place Description here.
+ */
+struct mac_ax_adapter_info {
+	struct mac_ax_cust_proc_id cust_proc_id;
 };
 
 /**
@@ -4551,7 +4728,8 @@ struct mac_ax_hw_info {
 	u32 limit_efuse_size_sdio;
 	u32 bt_efuse_size;
 	u32 bt_log_efuse_size;
-	u8 hidden_efuse_size;
+	u8 hidden_efuse_rf_size;
+	u8 hidden_efuse_mac_size;
 	u32 sec_ctrl_efuse_size;
 	u32 sec_data_efuse_size;
 	struct sec_cam_table_t *sec_cam_table;
@@ -4573,6 +4751,7 @@ struct mac_ax_hw_info {
 	u32 ind_aces_cnt;
 	u32 dbg_port_cnt;
 	u8 core_swr_volt;
+	struct mac_ax_adapter_info adpt_info;
 	enum mac_ax_core_swr_volt core_swr_volt_sel;
 	mac_ax_mutex ind_access_lock;
 	mac_ax_mutex lte_rlock;
@@ -5871,6 +6050,9 @@ struct mac_ax_port_info {
 #define MAC_AX_PORT_H2C_BUSY 1
 #define MAC_AX_PORT_H2C_FAIL 2
 	u8 h2c_sm;
+#define MAC_AX_MBSSID_INIT 0
+#define MAC_AX_MBSSID_ENABLED 1
+	u8 mbssid_en_stat;
 };
 
 struct mac_ax_int_stats {
@@ -6112,12 +6294,26 @@ struct mac_ax_ulru_fixtbl {
  * whether tx probe req + additional pkt or not
  * @var mac_ax_scanofld_chinfo::pause_tx_data
  * wherther disable tx (except manage pkt) after sending probe req
+ * @var mac_ax_scanofld_chinfo::ch_band
+ * 0:2.4G; 1:5G; 2:6G
+ * @var mac_ax_scanofld_chinfo::probe_req_pkt_id
+ * probe req pkt id
+ * @var mac_ax_scanofld_chinfo::dfs_ch
+ * this is dfs ch
+ * @var mac_ax_scanofld_chinfo::tx_null
+ * tx null when entering / leaving ch
+ * @var mac_ax_scanofld_chinfo::rand_seq_num
+ * enable random seq num for probe req
+ * @var mac_ax_scanofld_chinfo::cfg_tx_pwr
+ * cfg tx pwr or not
  * @var mac_ax_scanofld_chinfo::rsvd0
- * Please Place Description here.
- * @var mac_ax_scanofld_chinfo::rsvd1
- * Please Place Description here.
+ * rsvd
  * @var mac_ax_scanofld_chinfo::additional_pkt_id
  * id of additional pkts to send
+ * @var mac_ax_scanofld_chinfo::tx_pwr_idx
+ * tx pwr idx to write
+ * @var mac_ax_scanofld_chinfo::rsvd1
+ * rsvd
  */
 #pragma pack(push)
 #pragma pack(1)
@@ -6137,10 +6333,40 @@ struct mac_ax_scanofld_chinfo {
 	u8 num_addition_pkt:4;
 	u8 tx_pkt: 1;
 	u8 pause_tx_data: 1;
-	u8 rsvd0: 2;
-	u16 rsvd1;
-	/* dword 2 2*/
+	u8 ch_band: 2;
+	u8 probe_req_pkt_id;
+	u8 dfs_ch: 1;
+	u8 tx_null: 1;
+	u8 rand_seq_num: 1;
+	u8 cfg_tx_pwr: 1;
+	u8 rsvd0: 4;
+	/* dword 2 3*/
 	u8 additional_pkt_id[SCANOFLD_MAX_ADDITION_PKT_NUM];
+	/* dword 4 */
+	u16 tx_pwr_idx;
+	u16 rsvd1;
+};
+
+/**
+ * @struct mac_ax_scanofld_chrpt
+ * @brief mac_ax_scanofld_chrpt
+ *
+ * @var mac_ax_scanofld_chrpt::pri_ch
+ * pri ch
+ * @var mac_ax_scanofld_chrpt::rx_cnt
+ * beacon / probe rsp rx in this ch during scanning lifetime
+ * @var mac_ax_scanofld_chrpt::tx_fail
+ * num of tx fail caused by scanofld in this ch during scanning lifetime
+ * @var mac_ax_scanofld_chrpt::parsed
+ * have ever parsed a matched SSID in this ch during scanning lifetime
+ */
+struct mac_ax_scanofld_chrpt {
+	/* dword 0 */
+	u8 pri_ch;
+	u8 rx_cnt;
+	u8 tx_fail: 7;
+	u8 parsed: 1;
+	u8 rsvd;
 };
 
 #pragma pack(pop)
@@ -6159,6 +6385,8 @@ struct mac_ax_scanofld_chinfo {
  * band
  * @var mac_ax_scanofld_param::operation
  * 1: start scanning. 0: stop. 2: set param
+ * @var mac_ax_scanofld_param::target_ch_ch_band
+ * ch band of target channel (0: 2.4, 1:5, 2:6)
  * @var mac_ax_scanofld_param::rsvd0
  * rsvd
  * @var mac_ax_scanofld_param::c2h_end
@@ -6196,7 +6424,8 @@ struct mac_ax_scanofld_param {
 	u32 port_id:3;
 	u32 band:1;
 	u32 operation:2;
-	u32 rsvd0:10;
+	u32 target_ch_ch_band:2;
+	u32 rsvd0:8;
 	/* dword1 */
 	u32 c2h_end:1;
 	u32 target_ch_mode:1;
@@ -6216,6 +6445,54 @@ struct mac_ax_scanofld_param {
 };
 
 /**
+ * @struct mac_ax_scanofld_rsp
+ * @brief mac_ax_scanofld_rsp
+ *
+ * @var mac_ax_scanofld_rsp::pri_ch
+ * pri ch
+ * @var mac_ax_scanofld_rsp::scanned_round
+ * current passed round (valid when reason in [5, 6])
+ * @var mac_ax_scanofld_rsp::notify reason
+ * ref to mac_ax_scanofld_notify_reason
+ * @var mac_ax_scanofld_rsp::status
+ * ref to mac_ax_scanofld_notify_status
+ * @var mac_ax_scanofld_rsp::actual_period
+ * actual period of this channel (valid when reason in [4, 5, 6])
+ * @var mac_ax_scanofld_rsp::spent_low
+ * lower 32 of spent time from scan start (valid when reason in [5, 6])
+ * @var mac_ax_scanofld_rsp::spent_high
+ * higher 32 of spent time from scan start (valid when reason in [5, 6])
+ * @var mac_ax_scanofld_rsp::tx_fail_cnt
+ * tx fail count caused by scanofld (valid when reason in [4, 5, 6])
+ * @var mac_ax_scanofld_rsp::air_density
+ * air_density in this channel (valid when reason in [5, 6])
+ * @var mac_ax_scanofld_rsp::num_ch_rpt
+ * num of ch rpt below (valid when reason in [5, 6] and wow scanofld)
+ * @var mac_ax_scanofld_rsp::ch_rpt_size
+ * size of an chrpt in dword (valid when reason in [5, 6] and wow scanofld)
+ * @var mac_ax_scanofld_rsp::rsvd0
+ * rsvd
+ */
+struct mac_ax_scanofld_rsp {
+	/* dword0 */
+	u32 pri_ch:8;
+	u32 scanned_round:8;
+	u32 notify_reason:4;
+	u32 status:4;
+	u32 actual_period:8;
+	/* dword1 */
+	u32 spent_low;
+	/* dword2 */
+	u32 spent_high;
+	/* dword3 */
+	u32 tx_fail_cnt:4;
+	u32 air_density:4;
+	u32 num_ch_rpt:8;
+	u32 ch_rpt_size:8;
+	u32 rsvd0:8;
+};
+
+/**
  * @struct mac_ax_scanofld_info
  * @brief mac_ax_scanofld_info
  *
@@ -6225,9 +6502,13 @@ struct mac_ax_scanofld_param {
  * halmac CHlist is busy or not
  * @var mac_ax_scanofld_info::FwChListBusy
  * fw CHlist is busy or not
+ * @var mac_ax_scanofld_info::last_fw_chlist_busy
+ * fw CHlist is busy or not
  * @var mac_ax_scanofld_info::clearHalmacList
  * clear halmac-hold CHlist after sending to fw or not
  * @var mac_ax_scanofld_info::scanBusy
+ * fw scanning or not
+ * @var mac_ax_scanofld_info::last_fw_scan_busy
  * fw scanning or not
  */
 struct mac_ax_scanofld_info{
@@ -6236,8 +6517,10 @@ struct mac_ax_scanofld_info{
 	mac_ax_mutex fw_chlist_state_lock;
 	u8 drv_chlist_busy;
 	u8 fw_chlist_busy;
+	u8 last_fw_chlist_busy;
 	u8 clear_drv_ch_list;
 	u8 fw_scan_busy;
+	u8 last_fw_scan_busy;
 };
 
 /*--------------------END Define Struct needed to be moved--------------------*/
@@ -6689,6 +6972,10 @@ struct mac_ax_pg_efuse_info {
  * Please Place Description here.
  * @var mac_ax_efuse_param::dav_log_efuse_map_valid
  * Please Place Description here.
+ * @var mac_ax_efuse_param::hidden_rf_map
+ * Please Place Description here.
+ * @var mac_ax_efuse_param::hidden_rf_map_valid
+ * Please Place Description here.
  */
 struct mac_ax_efuse_param {
 	u8 *efuse_map;
@@ -6707,6 +6994,8 @@ struct mac_ax_efuse_param {
 	u32 dav_efuse_end;
 	u8 dav_efuse_map_valid;
 	u8 dav_log_efuse_map_valid;
+	u8 *hidden_rf_map;
+	u8 hidden_rf_map_valid;
 };
 
 /*-------------------- Define offload related Struct -------------------------*/
@@ -6959,41 +7248,6 @@ struct mac_ax_general_pkt_ids {
 	u8 probereq;
 	u8 apcsa;
 };
-
-#ifndef CONFIG_FW_IO_OFLD_SUPPORT
-/**
- * @struct rtw_mac_cmd
- * @brief rtw_mac_cmd
- *
- * @var rtw_mac_cmd::src
- * Please Place Description here.
- * @var rtw_mac_cmd::type
- * Please Place Description here.
- * @var rtw_mac_cmd::lc
- * Please Place Description here.
- * @var rtw_mac_cmd::rf_path
- * Please Place Description here.
- * @var rtw_mac_cmd::offset
- * Please Place Description here.
- * @var rtw_mac_cmd::id
- * Please Place Description here.
- * @var rtw_mac_cmd::value
- * Please Place Description here.
- * @var rtw_mac_cmd::mask
- * Please Place Description here.
- */
-struct rtw_mac_cmd {
-	enum rtw_mac_src_cmd_ofld src;
-	enum rtw_mac_cmd_type_ofld type;
-	u8 lc;
-	enum rtw_mac_rf_path rf_path;
-	u16 offset;
-	u16 id;
-	u32 value;
-	u32 mask;
-};
-
-#endif
 
 /**
  * @struct mac_ax_cmd_ofld_info
@@ -8197,6 +8451,35 @@ struct mac_ax_rx_queue_empty {
 	u8 rsvd:4;
 };
 
+/**
+ * @struct mac_ax_dbcc_info
+ * @brief mac_ax_dbcc_info
+ *
+ * @var mac_ax_dbcc_info::ppdu_rpt_bkp
+ * Please Place Description here.
+ * @var mac_ax_dbcc_info::chinfo_bkp
+ * Please Place Description here.
+ * @var mac_ax_dbcc_info::dbcc_role_cnt
+ * Please Place Description here.
+ * @var mac_ax_dbcc_info::dbcc_wmm_type
+ * Please Place Description here.
+ * @var mac_ax_dbcc_info::dbcc_wmm_bp
+ * Please Place Description here.
+ * @var mac_ax_dbcc_info::bkp_flag
+ * Please Place Description here.
+ * @var mac_ax_dbcc_info::dbcc_wmm_list
+ * Please Place Description here.
+ */
+struct mac_ax_dbcc_info {
+	struct mac_ax_phy_rpt_cfg ppdu_rpt_bkp[MAC_AX_BAND_NUM];
+	struct mac_ax_phy_rpt_cfg chinfo_bkp[MAC_AX_BAND_NUM];
+	u8 dbcc_role_cnt[MAC_AX_DBCC_WMM_MAX];
+	u8 dbcc_wmm_type[MAC_AX_DBCC_WMM_MAX]; // enum mac_ax_net_type
+	u8 dbcc_wmm_bp[MAC_AX_DBCC_WMM_MAX];
+	u8 bkp_flag[MAC_AX_BAND_NUM];
+	u8 *dbcc_wmm_list;
+};
+
 /*--------------------Define TF2PCMD related struct --------------------------*/
 
 /**
@@ -8607,6 +8890,20 @@ struct mac_ax_ccxrpt {
 	u32 pkt_ok_num:8;
 	u32 data_txcnt:6;
 	u32 rsvd0:5;
+};
+
+struct mac_ax_ftmrpt {
+	u32 macid:7;
+	u32 FTM_error_status:2;
+	u32 rsvd0:23;
+	u32 t2r_t14;
+};
+
+struct mac_ax_ftmackrpt {
+	u32 macid:7;
+	u32 FTM_error_status:2;
+	u32 rsvd0:23;
+	u32 r2t_t23;
 };
 
 /**
@@ -10587,6 +10884,8 @@ struct mac_ax_wake_ctrl_info {
  * Please Place Description here.
  * @var mac_ax_gtk_ofld_info::pairwise_wakeup
  * Please Place Description here.
+ * @var mac_ax_gtk_ofld_info::norekey_wakeup
+ * Please Place Description here.
  * @var mac_ax_gtk_ofld_info::bip_sec_algo
  * Please Place Description here.
  * @var mac_ax_gtk_ofld_info::rsvd
@@ -10601,8 +10900,9 @@ struct mac_ax_gtk_ofld_info {
 	u8 tkip_en: 1;
 	u8 ieee80211w_en: 1;
 	u8 pairwise_wakeup: 1;
+	u8 norekey_wakeup: 1;
 	u8 bip_sec_algo: 2;
-	u8 rsvd: 2;
+	u8 rsvd: 1;
 	u8 gtk_rsp_id: 8;
 	u8 pmf_sa_query_id: 8;
 	u8 algo_akm_suit: 8;
@@ -11217,6 +11517,29 @@ struct mac_ax_usb_info {
 	u8 ep12;
 	u8 max_bulkout_wd_num;
 	enum mac_ax_use_mode usb_mode;
+};
+
+/**
+ * @struct mac_ax_usb_ep
+ * @brief mac_ax_usb_ep
+ *
+ * @var mac_ax_usb_ep::band
+ * Please Place Description here.
+
+ */
+struct mac_ax_usb_ep {
+	u8 ep4;
+	u8 ep5;
+	u8 ep6;
+	u8 ep7;
+	u8 ep8;
+	u8 ep9;
+	u8 ep10;
+	u8 ep11;
+	u8 ep12;
+	u8 ep13;
+	u8 ep14;
+	u8 ep15;
 };
 
 /**
@@ -12054,6 +12377,16 @@ struct mac_ax_shcut_mhdr {/*need to revise note by kkbomb 0204*/
 struct mac_ax_fwstatus_payload {
 	u32 dword0;
 	u32 dword1;
+	u32 dword2;
+	u32 dword3;
+	u32 dword4;
+	u32 dword5;
+	u32 dword6;
+	u32 dword7;
+	u32 dword8;
+	u32 dword9;
+	u32 dword10;
+	u32 dword11;
 };
 
 /**
@@ -12258,6 +12591,13 @@ struct mac_ax_sec_cam_info {
 	u8 ext_key : 1;
 	u8 spp_mode : 1;
 	u32 key[4];
+};
+
+struct mac_ax_ftm_para {
+	u8 pktid;
+	u8 rsp_ch;
+	u8 tsf_timer_offset;
+	u8 asap;
 };
 
 /**
@@ -12740,8 +13080,6 @@ struct mac_ax_dctl_info {
  * Please Place Description here.
  * @var mac_ax_role_info::macid
  * Please Place Description here.
- * @var mac_ax_role_info::wmm
- * Please Place Description here.
  * @var mac_ax_role_info::self_mac
  * Please Place Description here.
  * @var mac_ax_role_info::target_mac
@@ -12776,6 +13114,10 @@ struct mac_ax_dctl_info {
  * Please Place Description here.
  * @var mac_ax_role_info::sec_ent_mode
  * Please Place Description here.
+ * @var mac_ax_role_info::wmm
+ * Please Place Description here.
+ * @var mac_ax_role_info::dbcc_role
+ * Please Place Description here.
  * @var mac_ax_role_info::is_hesta
  * Please Place Description here.
  * @var mac_ax_role_info::dl_bw
@@ -12806,33 +13148,41 @@ struct mac_ax_role_info {
 	enum mac_ax_addr_msk_sel mask_sel;
 	enum mac_ax_addr_msk addr_mask;
 	u8 macid;
-	u8 wmm:2;
 	u8 self_mac[6];
 	u8 target_mac[6];
 	u8 bssid[6];
+
 	u8 bss_color:6;
 	u8 bcn_hit_cond:2;
+
 	u8 hit_rule:2;
 	u8 is_mul_ent:1;
 	u8 tsf_sync:3;
 	u8 trigger:1;
 	u8 lsig_txop:1;
+
 	u8 tgt_ind:3;
 	u8 frm_tgt_ind:3;
 	u8 wol_pattern:1;
 	u8 wol_uc:1;
+
 	u8 wol_magic:1;
 	u8 wapi:1;
 	u8 sec_ent_mode:2;
+	u8 wmm:2;
+	u8 dbcc_role:1;
+	u8 rsvd:1;
+
 	u8 is_hesta:1;
 	u8 dl_bw:2;
 	u8 tf_mac_padding:2;
 	u8 dl_t_pe: 3;
+
 	u16 aid;
 	struct mac_ax_addr_cam_info a_info;
 	struct mac_ax_bssid_cam_info b_info;
 	struct mac_ax_sec_cam_info s_info;
-	struct mac_ax_cctl_info c_info;
+	struct rtw_hal_mac_ax_cctl_info c_info;
 };
 
 /**
@@ -13103,7 +13453,11 @@ struct mac_ax_mcc_start {
 	u32 btc_in_group: 1;
 	u32 old_group_action: 2;
 	u32 old_group:2;
-	u32 rsvd0: 17;
+	u32 rsvd0:9;
+	u32 notify_cnt:3;
+	u32 rsvd1:2;
+	u32 notify_rxdbg_en:1;
+	u32 rsvd2:2;
 	u32 macid: 8;
 	/* dword1 */
 	u32 tsf_low;
@@ -13423,6 +13777,66 @@ struct mac_ax_ss_link_info {
 	u8 link_bitmap[SS_LINK_SIZE];
 };
 
+/**
+ * @struct mac_ax_dbcc_pcie_ctrl
+ * @brief mac_ax_dbcc_pcie_ctrl
+ *
+ * @var mac_ax_dbcc_pcie_ctrl::out_host_idx_l
+ * Please Place Description here.
+ * @var mac_ax_dbcc_pcie_ctrl::out_hw_idx_l
+ * Please Place Description here.
+ * @var mac_ax_dbcc_pcie_ctrl::clr_txch_map
+ * Please Place Description here.
+ */
+struct mac_ax_dbcc_pcie_ctrl {
+	u16 out_host_idx_l[MAC_AX_DMA_CH_NUM];
+	u16 out_hw_idx_l[MAC_AX_DMA_CH_NUM];
+	struct mac_ax_txdma_ch_map clr_txch_map;
+};
+
+/**
+ * @struct mac_ax_dbcc_usb_ctrl
+ * @brief mac_ax_dbcc_usb_ctrl
+ *
+ * @var mac_ax_dbcc_usb_ctrl::rsvd
+ * Please Place Description here.
+ */
+struct mac_ax_dbcc_usb_ctrl {
+	u32 rsvd;
+};
+
+/**
+ * @struct mac_ax_dbcc_sdio_ctrl
+ * @brief mac_ax_dbcc_sdio_ctrl
+ *
+ * @var mac_ax_dbcc_sdio_ctrl::rsvd
+ * Please Place Description here.
+ */
+struct mac_ax_dbcc_sdio_ctrl {
+	u32 rsvd;
+};
+
+/**
+ * @struct mac_ax_dbcc_hci_ctrl
+ * @brief mac_ax_dbcc_hci_ctrl
+ *
+ * @var mac_ax_dbcc_hci_ctrl::band
+ * Please Place Description here.
+ * @var mac_ax_dbcc_hci_ctrl::pause
+ * Please Place Description here.
+ * @var mac_ax_dbcc_hci_ctrl::u
+ * Please Place Description here.
+ */
+struct mac_ax_dbcc_hci_ctrl {
+	enum mac_ax_band band;
+	u8 pause;
+	union {
+		struct mac_ax_dbcc_pcie_ctrl pcie_ctrl;
+		struct mac_ax_dbcc_usb_ctrl usb_ctrl;
+		struct mac_ax_dbcc_sdio_ctrl sdio_ctrl;
+	} u;
+};
+
 /*------------------- Define FAST_CH_SW related structure ---------------------------*/
 
 /**
@@ -13624,6 +14038,72 @@ struct mac_ax_ps_adv_parm {
 	u32 rsvd0:22;
 	u32 trxtimeouttimeval:8;
 	u32 rsvd1:24;
+};
+
+/**
+ * @struct mac_ax_bcn_fltr
+ * @brief mac_ax_bcn_fltr
+ *
+ * @var mac_ax_bcn_fltr::mon_rssi
+ * Please Place Description here.
+ * @var mac_ax_bcn_fltr::mon_bcn
+ * Please Place Description here.
+ * @var mac_ax_bcn_fltr::mon_tp
+ * Please Place Description here.
+ * @var mac_ax_bcn_fltr::tp_thld
+ * Please Place Description here.
+ * @var mac_ax_bcn_fltr::bcn_loss_cnt
+ * Please Place Description here.
+ * @var mac_ax_bcn_fltr::rssi_hys
+ * Please Place Description here.
+ * @var mac_ax_bcn_fltr::rssi_thld
+ * Please Place Description here.
+ * @var mac_ax_bcn_fltr::macid
+ * Please Place Description here.
+ */
+struct mac_ax_bcn_fltr {
+	u32 mon_rssi: 1;
+	u32 mon_bcn: 1;
+	u32 mon_tp: 1;
+	u32 tp_thld: 2;
+	u32 rsvd0: 3;
+	u32 bcn_loss_cnt: 4;
+	u32 rssi_hys: 4;
+	u32 rssi_thld: 8;
+	u32 macid: 8;
+};
+
+/**
+ * @struct mac_ax_bcn_fltr_rpt
+ * @brief mac_ax_bcn_fltr_rpt
+ *
+ * @var mac_ax_bcn_fltr_rpt::macid
+ * Please Place Description here.
+ * @var mac_ax_bcn_fltr_rpt::type
+ * Please Place Description here.
+ * @var mac_ax_bcn_fltr_rpt::rssi_evt
+ * Please Place Description here.
+ * @var mac_ax_bcn_fltr_rpt::rssi_ma
+ * Please Place Description here.
+ */
+struct mac_ax_bcn_fltr_rpt {
+	u32 macid: 8;
+	u32 type: 2;
+	u32 rssi_evt: 2;
+	u32 rsvd0: 4;
+	u32 rssi_ma: 8;
+	u32 rsvd1: 8;
+};
+
+struct mac_ax_multicast_info {
+	u8 mc_addr[6];
+	u8 bssid[6];
+	enum mac_ax_addr_msk mc_msk;
+	/* the mask is for multicast address */
+	/* each bit is mapped to one-byte mc_addr */
+	/* 0: do not compare the mc_addr byte. 1: compare the mc_addr byte */
+	/* mc_msk bit0 is mapped to mc_addr[0] */
+	/* mc_msk bit1 is mapped to mc_addr[1] */
 };
 
 /*--------------------Define Adapter & OPs------------------------------------*/
@@ -13881,6 +14361,7 @@ struct mac_ax_adapter {
 	struct mac_ax_fw_log log_cfg;
 	struct mac_ax_scanofld_info scanofld_info;
 	struct mac_ax_ch_switch_rpt *ch_switch_rpt;
+	struct mac_ax_dbcc_info *dbcc_info;
 };
 
 /**
@@ -14097,6 +14578,21 @@ struct mac_ax_intf_ops {
 	 * may cause system crash or segmentation fault.
 	 */
 	u32 (*pcie_autok_counter_avg)(struct mac_ax_adapter *adapter);
+
+	/**
+	 * @tp_adjust
+	 * Only support PCIE interface. Using this API in other interface
+	 * may cause system crash or segmentation fault.
+	 */
+	u32 (*tp_adjust)(struct mac_ax_adapter *adapter,
+			 struct mac_ax_tp_param tp);
+
+	/**
+	 * @dbcc_hci_pause
+	 * Support all interface.
+	 */
+	u32 (*dbcc_hci_ctrl)(struct mac_ax_adapter *adapter,
+			     struct mac_ax_dbcc_hci_ctrl *info);
 };
 
 /**
@@ -14403,6 +14899,8 @@ struct mac_ax_intf_ops {
  * Please Place Description here.
  * @var mac_ax_ops::read_efuse
  * Please Place Description here.
+ * @var mac_ax_ops::read_hidden_efuse
+ * Please Place Description here.
  * @var mac_ax_ops::get_efuse_avl_size
  * Please Place Description here.
  * @var mac_ax_ops::get_efuse_avl_size_bt
@@ -14609,6 +15107,8 @@ struct mac_ax_ops {
 	u32 (*disable_cpu)(struct mac_ax_adapter *adapter);
 	u32 (*fwredl)(struct mac_ax_adapter *adapter, u8 *fw, u32 len);
 	u32 (*fwdl)(struct mac_ax_adapter *adapter, u8 *fw, u32 len);
+	u32 (*query_fw_buff)(struct mac_ax_adapter *adapter,
+			     enum rtw_fw_type cat, u8 **fw, u32 *fw_len);
 	u32 (*enable_fw)(struct mac_ax_adapter *adapter,
 			 enum rtw_fw_type cat);
 	u32 (*lv1_rcvy)(struct mac_ax_adapter *adapter,
@@ -14624,7 +15124,8 @@ struct mac_ax_ops {
 			     struct mac_ax_refill_info *info);
 	u32 (*parse_rxdesc)(struct mac_ax_adapter *adapter,
 			    struct mac_ax_rxpkt_info *info, u8 *buf, u32 len);
-	u32 (*watchdog)(struct mac_ax_adapter *adapter);
+	u32 (*watchdog)(struct mac_ax_adapter *adapter,
+			struct mac_ax_wdt_param *wdt_param);
 	/*FW offload related*/
 	u32 (*reset_fwofld_state)(struct mac_ax_adapter *adapter, u8 op);
 	u32 (*check_fwofld_done)(struct mac_ax_adapter *adapter, u8 op);
@@ -14643,8 +15144,8 @@ struct mac_ax_ops {
 			     struct mac_ax_dctl_info *mask, u8 macid,
 			     u8 operation);
 	u32 (*upd_cctl_info)(struct mac_ax_adapter *adapter,
-			     struct mac_ax_cctl_info *info,
-			     struct mac_ax_cctl_info *mask, u8 macid,
+			     struct rtw_hal_mac_ax_cctl_info *info,
+			     struct rtw_hal_mac_ax_cctl_info *mask, u8 macid,
 			     u8 operation);
 	u32 (*ie_cam_upd)(struct mac_ax_adapter *adapter,
 			  struct mac_ax_ie_cam_cmd_info *info);
@@ -14845,6 +15346,8 @@ struct mac_ax_ops {
 	u32 (*write_xcap_reg)(struct mac_ax_adapter *adapter, u8 sc_xo,
 			      u32 val);
 	u32 (*write_bbrst_reg)(struct mac_ax_adapter *adapter, u8 val);
+	u32 (*tx_path_map_cfg)(struct mac_ax_adapter *adapter,
+			       struct hal_txmap_cfg *cfg);
 	/*sounding related*/
 	u32 (*get_csi_buffer_index)(struct mac_ax_adapter *adapter, u8 band,
 				    u8 csi_buffer_id);
@@ -14939,11 +15442,12 @@ struct mac_ax_ops {
 				struct mac_ax_aoac_report *rpt_buf, u8 rx_ready);
 	u32 (*check_aoac_report_done)(struct mac_ax_adapter *adapter);
 	u32 (*wow_stop_trx)(struct mac_ax_adapter *adapter);
+	u32 (*cfg_wow_auto_test)(struct mac_ax_adapter *adapter, u8 rxtest);
 	/*system related*/
 	u32 (*dbcc_enable)(struct mac_ax_adapter *adapter,
 			   struct mac_ax_trx_info *info, u8 dbcc_en);
-	u32 (*dbcc_move_macid)(struct mac_ax_adapter *adapter,
-			       u8 macid, u8 dbcc_en);
+	u32 (*dbcc_trx_ctrl)(struct mac_ax_adapter *adapter,
+			     enum mac_ax_band band, u8 pause);
 	u32 (*port_cfg)(struct mac_ax_adapter *adapter,
 			enum mac_ax_port_cfg_type type,
 			struct mac_ax_port_cfg_para *para);
@@ -14961,6 +15465,9 @@ struct mac_ax_ops {
 			   enum mac_ax_efuse_bank bank);
 	u32 (*read_efuse)(struct mac_ax_adapter *adapter, u32 addr, u32 size,
 			  u8 *val, enum mac_ax_efuse_bank bank);
+	u32 (*read_hidden_efuse)(struct mac_ax_adapter *adapter, u32 addr,
+				 u32 size, u8 *val,
+				 enum mac_ax_efuse_hidden_cfg hidden_cfg);
 	u32 (*get_efuse_avl_size)(struct mac_ax_adapter *adapter, u32 *size);
 	u32 (*get_efuse_avl_size_bt)(struct mac_ax_adapter *adapter, u32 *size);
 	u32 (*dump_log_efuse)(struct mac_ax_adapter *adapter,
@@ -15107,6 +15614,11 @@ struct mac_ax_ops {
 	u32 (*cfg_wps)(struct mac_ax_adapter *adapter,
 		       struct mac_ax_cfg_wps *wps);
 	u32 (*get_wl_dis_val)(struct mac_ax_adapter *adapter, u8 *val);
+	/* ftm related */
+	u32 (*ista_ftm_proc)(struct mac_ax_adapter *adapter,
+			     struct mac_ax_ftm_para *ftmr);
+	u32 (*ista_ftm_enable)(struct mac_ax_adapter *adapter,
+			       u8 macid, bool enable);
 #if MAC_AX_FEATURE_DBGPKG
 	u32 (*fwcmd_lb)(struct mac_ax_adapter *adapter, u32 len, u8 burst);
 	u32 (*mem_dump)(struct mac_ax_adapter *adapter, enum mac_ax_mem_sel sel,
@@ -15151,6 +15663,7 @@ struct mac_ax_ops {
 #endif
 	u32 (*add_cmd_ofld)(struct mac_ax_adapter *adapter,
 			    struct rtw_mac_cmd *cmd);
+	u32 (*cmd_ofld)(struct mac_ax_adapter *adapter);
 	/* flash related*/
 	u32 (*flash_erase)(struct mac_ax_adapter *adapter,
 			   u32 addr,
@@ -15176,6 +15689,8 @@ struct mac_ax_ops {
 	u32 (*tx_duty)(struct mac_ax_adapter *adapter,
 		       u16 pause_intvl, u16 tx_intvl);
 	u32 (*tx_duty_stop)(struct mac_ax_adapter *adapter);
+	u32 (*get_phy_rpt_cfg)(struct mac_ax_adapter *adapter,
+			       struct mac_ax_phy_rpt_cfg *cfg);
 #if MAC_AX_FEATURE_DBGCMD
 	s32 (*halmac_cmd)(struct mac_ax_adapter *adapter, char *input, char *output, u32 out_len);
 	void (*halmac_cmd_parser)(struct mac_ax_adapter *adapter,
@@ -15207,6 +15722,24 @@ struct mac_ax_ops {
 	u32 (*role_sync)(struct mac_ax_adapter *adapter, struct mac_ax_role_info *info);
 	u32 (*ch_switch_ofld)(struct mac_ax_adapter *adapter, struct mac_ax_ch_switch_parm parm);
 	u32 (*get_ch_switch_rpt)(struct mac_ax_adapter *adapter, struct mac_ax_ch_switch_rpt *rpt);
+	u32 (*cfg_bcn_filter)(struct mac_ax_adapter *adapter, struct mac_ax_bcn_fltr cfg);
+	u32 (*bcn_filter_rssi)(struct mac_ax_adapter *adapter, u8 macid, u8 size, u8 *rssi);
+	u32 (*bcn_filter_tp)(struct mac_ax_adapter *adapter, u8 macid, u16 tx, u16 rx);
+	u32 (*proxyofld)(struct mac_ax_adapter *adapter, struct rtw_hal_mac_proxyofld *pcfg);
+	u32 (*proxy_mdns_serv_pktofld)(struct mac_ax_adapter *adapter,
+				       struct rtw_hal_mac_proxy_mdns_service *pserv, u8 *pktid);
+	u32 (*proxy_mdns_txt_pktofld)(struct mac_ax_adapter *adapter,
+				      struct rtw_hal_mac_proxy_mdns_txt *ptxt, u8 *pktid);
+	u32 (*proxy_mdns)(struct mac_ax_adapter *adapter, struct rtw_hal_mac_proxy_mdns *pmdns);
+	u32 (*check_proxy_done)(struct mac_ax_adapter *adapter, u8 *fw_ret);
+	/* MP security related */
+	u32 (*mp_chk_sec_rec)(struct mac_ax_adapter *adapter);
+	u32 (*mp_pg_sec_phy_wifi)(struct mac_ax_adapter *adapter);
+	u32 (*mp_cmp_sec_phy_wifi)(struct mac_ax_adapter *adapter);
+	u32 (*mp_pg_sec_hid_wifi)(struct mac_ax_adapter *adapter);
+	u32 (*mp_cmp_sec_hid_wifi)(struct mac_ax_adapter *adapter);
+	u32 (*mp_pg_sec_dis)(struct mac_ax_adapter *adapter);
+	u32 (*mp_cmp_sec_dis)(struct mac_ax_adapter *adapter);
 };
 
 #endif

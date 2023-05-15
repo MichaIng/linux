@@ -96,7 +96,7 @@ CONFIG_DBG_AX_CAM = y
 
 USE_TRUE_PHY = y
 CONFIG_I386_BUILD_VERIFY = n
-CONFIG_RTW_MBO = n
+CONFIG_RTW_MBO = y
 ########################## Android ###########################
 # CONFIG_RTW_ANDROID - 0: no Android, 4/5/6/7/8/9/10 : Android version
 CONFIG_RTW_ANDROID = 0
@@ -106,8 +106,8 @@ EXTRA_CFLAGS += -DCONFIG_RTW_ANDROID=$(CONFIG_RTW_ANDROID)
 endif
 
 ########################## Debug ###########################
-CONFIG_RTW_DEBUG = y
-# default log level is _DRV_NONE_ = 0,
+CONFIG_RTW_DEBUG = n
+# default log level is _DRV_INFO_ = 4,
 # please refer to "How_to_set_driver_debug_log_level.doc" to set the available level.
 CONFIG_RTW_LOG_LEVEL = 0
 
@@ -136,7 +136,6 @@ CONFIG_HIGH_ACTIVE_DEV2HST = n
 CONFIG_ONE_PIN_GPIO = n
 CONFIG_HIGH_ACTIVE_HST2DEV = n
 CONFIG_PNO_SUPPORT = n
-CONFIG_PNO_SET_DEBUG = n
 CONFIG_AP_WOWLAN = n
 ######### Notify SDIO Host Keep Power During Syspend ##########
 CONFIG_RTW_SDIO_PM_KEEP_POWER = y
@@ -430,9 +429,6 @@ endif
 
 ifeq ($(CONFIG_PNO_SUPPORT), y)
 EXTRA_CFLAGS += -DCONFIG_PNO_SUPPORT
-ifeq ($(CONFIG_PNO_SET_DEBUG), y)
-EXTRA_CFLAGS += -DCONFIG_PNO_SET_DEBUG
-endif
 endif
 
 ifeq ($(CONFIG_GPIO_WAKEUP), y)

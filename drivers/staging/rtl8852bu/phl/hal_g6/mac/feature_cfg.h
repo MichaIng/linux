@@ -81,6 +81,10 @@
 
 /* Debug Log Decode */
 #define MAC_AX_FEATURE_DBGDEC		1
+
+# /* For USB IO Offload Accelerate*/
+#define MAC_USB_IO_ACC 		1
+
 #endif // #else /* for WD1 test program */
 
 #endif

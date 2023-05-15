@@ -76,7 +76,7 @@ static int rtw_net_set_mac_address(struct net_device *pnetdev, void *addr)
 	}
 
 	_rtw_memcpy(adapter_mac_addr(padapter), sa->sa_data, ETH_ALEN); /* set mac addr to adapter */
-	_rtw_memcpy(pnetdev->dev_addr, sa->sa_data, ETH_ALEN); /* set mac addr to net_device */
+	dev_addr_mod(pnetdev, 0, sa->sa_data, ETH_ALEN);
 
 	/* Since the net_device is in down state, there is no wrole at this moment.
 	 * The new mac address will be set to hw when changing the net_device to up state.
@@ -314,6 +314,16 @@ void rtw_ndev_uninit(struct net_device *dev)
 #endif /* CONFIG_RTW_NAPI */
 }
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 0))
+static int rtw_siocdevprivate(struct net_device *dev, struct ifreq *ifr,
+			      void __user *data, int cmd)
+{
+	/* handle cmd(s) between SIOCDEVPRIVATE and SIOCDEVPRIVATE + 15 */
+
+	return rtw_ioctl(dev, ifr, cmd);
+}
+#endif
+
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 29))
 static const struct net_device_ops rtw_netdev_ops = {
 	.ndo_init = rtw_ndev_init,
@@ -327,6 +337,9 @@ static const struct net_device_ops rtw_netdev_ops = {
 	.ndo_set_mac_address = rtw_net_set_mac_address,
 	.ndo_get_stats = rtw_net_get_stats,
 	.ndo_do_ioctl = rtw_ioctl,
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 0))
+	.ndo_siocdevprivate = rtw_siocdevprivate,
+#endif
 };
 #endif
 
@@ -620,7 +633,7 @@ int rtw_os_ndev_register(_adapter *adapter, const char *name)
 	/* alloc netdev name */
 	rtw_init_netdev_name(ndev, name);
 
-	_rtw_memcpy(ndev->dev_addr, adapter_mac_addr(adapter), ETH_ALEN);
+	dev_addr_mod(ndev, 0, adapter_mac_addr(adapter), ETH_ALEN);
 
 	/* Tell the network stack we exist */
 
@@ -957,7 +970,14 @@ u8 rtw_init_default_value(_adapter *padapter)
 	padapter->tx_amsdu = 2;
 	padapter->tx_amsdu_rate = 10;
 #endif
-	padapter->driver_tx_max_agg_num = 0xFF;
+	if (pregistrypriv->adaptivity_idle_probability == 1) {
+#ifdef CONFIG_TX_AMSDU
+		padapter->tx_amsdu = 0;
+		padapter->tx_amsdu_rate = 0;
+#endif
+		padapter->dis_turboedca = 1;
+	}
+
 #ifdef DBG_RX_COUNTER_DUMP
 	padapter->dump_rx_cnt_mode = 0;
 	padapter->drv_rx_cnt_ok = 0;
@@ -2444,12 +2464,19 @@ static int netdev_close(struct net_device *pnetdev)
 	_adapter *padapter = (_adapter *)rtw_netdev_priv(pnetdev);
 	struct pwrctrl_priv *pwrctl = adapter_to_pwrctl(padapter);
 	struct mlme_priv	*pmlmepriv = &padapter->mlmepriv;
+	struct mlme_ext_priv *pmlmeext = &padapter->mlmeextpriv;
+	struct mlme_ext_info *pmlmeinfo = &pmlmeext->mlmext_info;
 	struct dvobj_priv *dvobj = adapter_to_dvobj(padapter);
 
 	RTW_INFO(FUNC_NDEV_FMT" , netif_up=%d\n", FUNC_NDEV_ARG(pnetdev), padapter->netif_up);
 
-
 	pmlmepriv->LinkDetectInfo.bBusyTraffic = _FALSE;
+
+	rtw_scan_abort(padapter, 0); /* stop scanning process before wifi is going to down */
+#ifdef CONFIG_IOCTL_CFG80211
+	rtw_cfg80211_wait_scan_req_empty(padapter, 200);
+	/* padapter->rtw_wdev->iftype = NL80211_IFTYPE_MONITOR; */ /* set this at the end */
+#endif /* CONFIG_IOCTL_CFG80211 */
 
 	if (pwrctl->rf_pwrstate == rf_on) {
 		RTW_INFO("netif_up=%d, hw_init_completed=%s\n",
@@ -2460,7 +2487,6 @@ static int netdev_close(struct net_device *pnetdev)
 		if (pnetdev)
 			rtw_netif_stop_queue(pnetdev);
 
-#ifndef CONFIG_RTW_ANDROID
 		/* s2. */
 		LeaveAllPowerSaveMode(padapter);
 		if (check_fwstate(pmlmepriv, WIFI_ASOC_STATE)) {
@@ -2476,9 +2502,12 @@ static int netdev_close(struct net_device *pnetdev)
 			rtw_indicate_disconnect(padapter, 0, _FALSE);
 			/* s2-4. */
 			rtw_free_network_queue(padapter, _TRUE);
+
+			pmlmeinfo->disconnect_occurred_time = rtw_systime_to_ms(rtw_get_current_time());
+			pmlmeinfo->disconnect_code = DISCONNECTION_BY_SYSTEM_DUE_TO_NET_DEVICE_DOWN;
+			pmlmeinfo->wifi_reason_code = WLAN_REASON_DEAUTH_LEAVING;
 		}
 
-#endif
 #ifdef CONFIG_STA_CMD_DISPR
 		rtw_connect_abort_wait(padapter);
 		rtw_disconnect_abort_wait(padapter);
@@ -2497,12 +2526,6 @@ static int netdev_close(struct net_device *pnetdev)
 	if (!rtw_p2p_chk_role(&padapter->wdinfo, P2P_ROLE_DISABLE))
 		rtw_p2p_enable(padapter, P2P_ROLE_DISABLE);
 #endif /* CONFIG_P2P */
-
-	rtw_scan_abort(padapter, 0); /* stop scanning process before wifi is going to down */
-#ifdef CONFIG_IOCTL_CFG80211
-	rtw_cfg80211_wait_scan_req_empty(padapter, 200);
-	/* padapter->rtw_wdev->iftype = NL80211_IFTYPE_MONITOR; */ /* set this at the end */
-#endif /* CONFIG_IOCTL_CFG80211 */
 
 #ifdef CONFIG_WAPI_SUPPORT
 	rtw_wapi_disable_tx(padapter);
@@ -2842,6 +2865,8 @@ int	rtw_gw_addr_query(_adapter *padapter)
 int rtw_suspend_free_assoc_resource(_adapter *padapter)
 {
 	struct mlme_priv *pmlmepriv = &padapter->mlmepriv;
+	struct mlme_ext_priv *pmlmeext = &padapter->mlmeextpriv;
+	struct mlme_ext_info *pmlmeinfo = &pmlmeext->mlmext_info;
 #ifdef CONFIG_P2P
 	struct wifidirect_info	*pwdinfo = &padapter->wdinfo;
 #endif /* CONFIG_P2P */
@@ -2881,8 +2906,12 @@ int rtw_suspend_free_assoc_resource(_adapter *padapter)
 			rtw_free_assoc_resources(padapter, _TRUE);
 
 		/* s2-3.  indicate disconnect to os */
-		if (MLME_IS_STA(padapter))
+		if (MLME_IS_STA(padapter)) {
 			rtw_indicate_disconnect(padapter, 0, _FALSE);
+			pmlmeinfo->disconnect_occurred_time = rtw_systime_to_ms(rtw_get_current_time());
+			pmlmeinfo->disconnect_code = DISCONNECTION_BY_SYSTEM_DUE_TO_SYSTEM_IN_SUSPEND;
+			pmlmeinfo->wifi_reason_code = WLAN_REASON_DEAUTH_LEAVING;
+		}
 	}
 	/* s2-4. */
 	rtw_free_network_queue(padapter, _TRUE);
@@ -2896,6 +2925,9 @@ int rtw_suspend_free_assoc_resource(_adapter *padapter)
 	if (check_fwstate(pmlmepriv, WIFI_UNDER_LINKING) == _TRUE) {
 		RTW_PRINT("%s: fw_under_linking\n", __FUNCTION__);
 		rtw_indicate_disconnect(padapter, 0, _FALSE);
+		pmlmeinfo->disconnect_occurred_time = rtw_systime_to_ms(rtw_get_current_time());
+		pmlmeinfo->disconnect_code = DISCONNECTION_BY_SYSTEM_DUE_TO_SYSTEM_IN_SUSPEND;
+		pmlmeinfo->wifi_reason_code = WLAN_REASON_DEAUTH_LEAVING;
 	}
 
 	RTW_INFO("<== "FUNC_ADPT_FMT" exit....\n", FUNC_ADPT_ARG(padapter));
@@ -2921,6 +2953,9 @@ int rtw_suspend_wow(_adapter *padapter)
 #endif
 
 	if (pwrpriv->wowlan_mode == _TRUE) {
+#ifdef CONFIG_CMD_GENERAL
+		rtw_phl_watchdog_stop(dvobj->phl);
+#endif
 		rtw_mi_netif_stop_queue(padapter);
 		#ifdef CONFIG_CONCURRENT_MODE
 		rtw_mi_buddy_netif_carrier_off(padapter);
@@ -2954,23 +2989,6 @@ int rtw_suspend_wow(_adapter *padapter)
 		rtw_sdio_free_irq(dvobj);
 		#endif
 		#endif/*CONFIG_SDIO_HCI*/
-#if 1
-		if (rtw_mi_check_status(padapter, MI_LINKED)) {
-			ch =  rtw_mi_get_union_chan(padapter);
-			bw = rtw_mi_get_union_bw(padapter);
-			offset = rtw_mi_get_union_offset(padapter);
-			RTW_INFO(FUNC_ADPT_FMT" back to linked/linking union - ch:%u, bw:%u, offset:%u\n",
-				 FUNC_ADPT_ARG(padapter), ch, bw, offset);
-			set_channel_bwmode(padapter, ch, offset, bw, _FALSE);
-		}
-#else
-		if (rtw_mi_get_ch_setting_union(padapter, &ch, &bw, &offset) != 0) {
-			RTW_INFO(FUNC_ADPT_FMT" back to linked/linking union - ch:%u, bw:%u, offset:%u\n",
-				 FUNC_ADPT_ARG(padapter), ch, bw, offset);
-			set_channel_bwmode(padapter, ch, offset, bw, _FALSE);
-			rtw_mi_update_union_chan_inf(padapter, ch, offset, bw);
-		}
-#endif
 #ifdef CONFIG_CONCURRENT_MODE
 		rtw_mi_buddy_suspend_free_assoc_resource(padapter);
 #endif
@@ -3266,6 +3284,16 @@ int rtw_resume_process_wow(_adapter *padapter)
 			rtw_indicate_disconnect(padapter, 0, _FALSE);
 			pmlmeinfo->state = WIFI_FW_NULL_STATE;
 
+			pmlmeinfo->disconnect_occurred_time = rtw_systime_to_ms(rtw_get_current_time());
+			if (pwrpriv->wowlan_wake_reason == FW_DECISION_DISCONNECT)
+				pmlmeinfo->disconnect_code = DISCONNECTION_BY_FW_DUE_TO_FW_DECISION_IN_WOW_RESUME;
+			else if (pwrpriv->wowlan_wake_reason == RX_DISASSOC)
+				pmlmeinfo->disconnect_code = DISCONNECTION_BY_AP_DUE_TO_RECEIVE_DISASSOC_IN_WOW_RESUME;
+			else if (pwrpriv->wowlan_wake_reason == RX_DEAUTH)
+				pmlmeinfo->disconnect_code = DISCONNECTION_BY_AP_DUE_TO_RECEIVE_DEAUTH_IN_WOW_RESUME;
+
+			pmlmeinfo->wifi_reason_code = WLAN_REASON_UNSPECIFIED;
+
 		} else {
 			RTW_INFO("%s: do roaming\n", __func__);
 			rtw_roaming(padapter, NULL);
@@ -3273,9 +3301,9 @@ int rtw_resume_process_wow(_adapter *padapter)
 	}
 #endif
 	if (pwrpriv->wowlan_mode == _TRUE) {
-		#if 0 /*#ifdef CONFIG_CORE_DM_CHK_TIMER*/
-		_set_timer(&dvobj->dynamic_chk_timer, 2000);
-		#endif
+#ifdef CONFIG_CMD_GENERAL
+		rtw_phl_watchdog_start(dvobj->phl);
+#endif
 #if 0 /*ndef CONFIG_IPS_CHECK_IN_WD*/
 		rtw_set_pwr_state_check_timer(pwrpriv);
 #endif

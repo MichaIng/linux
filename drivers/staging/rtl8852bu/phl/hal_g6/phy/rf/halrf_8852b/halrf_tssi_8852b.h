@@ -16,8 +16,7 @@
 #define _HALRF_TSSI_8852B_H_
 #ifdef RF_8852B_SUPPORT
 
-#define TSSI_VER_8852B 0x18
-
+#define TSSI_VER_8852B 0x23
 #define TSSI_PATH_MAX_8852B 2
 
 /*@--------------------------Define Parameters-------------------------------*/

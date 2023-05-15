@@ -489,25 +489,38 @@ __iram_func__
 static bool _iqk_check_cal_8852b(struct rf_info *rf, u8 path, u8 ktype)
 {
 
-	//struct halrf_iqk_info *iqk_info = &rf->iqk;
+//struct halrf_iqk_info *iqk_info = &rf->iqk;
 	bool notready = true, fail = true;
-	u32 delay_count = 0x0;
-	//u32 tmp = 0x0;
+	u32 delay_count = 0x0, tmp;
 
 	//RF_DBG(rf, DBG_RF_IQK, "[IQK]===>%s\n", __func__);
 	delay_count = 0x0;
 	while (notready) {
 		if (halrf_rreg(rf, 0xbff8, MASKBYTE0) == 0x55) {
 			halrf_delay_us(rf, 1);
-			if(halrf_rreg(rf, 0x8010, MASKBYTE0) == 0x55)
-				notready = false;
+			notready = false;
 		} else {
 			halrf_delay_us(rf, 1);
 			delay_count++;
 		}
 		if (delay_count > 8200) {
 			fail = true;
-			RF_DBG(rf, DBG_RF_IQK, "[IQK]IQK timeout!!!\n");
+			RF_DBG(rf, DBG_RF_IQK, "[IQK]NCTL1 IQK timeout!!!\n");
+			break;
+		}
+	}
+	
+	while (notready) {
+		if (halrf_rreg(rf, 0x80fc, 0x0000ffff) == 0x8000) {
+			halrf_delay_us(rf, 1);
+			notready = false;
+		} else {
+			halrf_delay_us(rf, 1);
+			delay_count++;
+		}
+		if (delay_count > 200) {
+			fail = true;
+			RF_DBG(rf, DBG_RF_IQK, "[IQK]NCTL2 IQK timeout!!!\n");
 			break;
 		}
 	}
@@ -516,11 +529,10 @@ static bool _iqk_check_cal_8852b(struct rf_info *rf, u8 path, u8 ktype)
 	halrf_wreg(rf, 0x8010, MASKBYTE0, 0x0);
 
 	//DBG_LOG_SERIOUS(DBGMSG_RF, DBG_WARNING, "[IQK]%x\n", delay_count);
-/*
+
 	RF_DBG(rf, DBG_RF_IQK, "[IQK]S%x, cnt= %d\n", path, delay_count);
 	tmp = halrf_rreg(rf, 0x8008, MASKDWORD);
 	RF_DBG(rf, DBG_RF_IQK, "[IQK]S%x, type= %x, 0x8008 = 0x%x \n", path, ktype, tmp);
-*/
 	return fail;
 }
 
@@ -1435,11 +1447,14 @@ void iqk_restore_8852b(struct rf_info *rf, u8 path)
 {
 	struct halrf_iqk_info *iqk_info = &rf->iqk;
 	bool fail;
+	u32 i;
 
 	halrf_wreg(rf, 0x8138 + (path << 8), MASKDWORD, iqk_info->nb_txcfir[path]);
 	halrf_wreg(rf, 0x813c + (path << 8), MASKDWORD, iqk_info->nb_rxcfir[path]);
 	halrf_wreg(rf, 0x8000, MASKDWORD, 0x00000e19 + (path << 4));
-	halrf_delay_us(rf, 10);
+	for (i = 0; i < 10; i++)
+		halrf_delay_us(rf, 1);
+
 	fail = _iqk_check_cal_8852b(rf, path, 0x0);
 	
 	halrf_wreg(rf, 0x8010, 0x000000ff, 0x00);
@@ -1823,14 +1838,14 @@ bool halrf_check_fwiqk_done_8852b(struct rf_info *rf)
 	bool isfail = false;
 #if 1
 	while (1) {
-		if (halrf_rreg(rf, 0xbff8, MASKBYTE0) == 0xaa  || counter > 3000) {
+		if (halrf_rreg(rf, 0xbff8, MASKBYTE0) == 0xaa  || counter > 30000) {
 			if(halrf_rreg(rf, 0x8010, MASKBYTE0) == 0xaa) {
 				flag = true;
 				break;
 			}
 		}
 		counter++;
-		halrf_delay_us(rf, 10);
+		halrf_delay_us(rf, 1);
 	};
 #else
 	for(counter = 0; counter < 6000; counter++)
