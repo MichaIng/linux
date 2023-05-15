@@ -27,7 +27,8 @@ enum btc_cx_state_map {
 	BTC_WBUSY_BSCAN,
 	BTC_WSCAN_BNOSCAN,
 	BTC_WSCAN_BSCAN,
-	BTC_WLINKING
+	BTC_WLINKING,
+	BTC_WIDLE_BSCAN
 };
 
 enum btc_ant_phase {
@@ -261,7 +262,7 @@ void _action_common(struct btc_t *btc);
 //extern const u32 cxtbl[];
 
 void _update_btc_state_map(struct btc_t *btc);
-void _set_bt_ignore_wlan_act(struct btc_t *btc, u8 enable);
+void _set_bt_ignore_wl_act(struct btc_t *btc, u8 enable);
 void _set_wl_tx_power(struct btc_t *btc, u32 level);
 void _set_wl_rx_gain(struct btc_t *btc, u32 level);
 void _set_bt_tx_power(struct btc_t *btc, u32 level);

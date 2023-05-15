@@ -56,6 +56,10 @@
 #define WMAC_SPEC_SIFS_OFDM_52C 0x11
 #define WMAC_SPEC_SIFS_CCK	 0xA
 
+/* RRSR disable 5.5M CCK*/
+#define WMAC_CCK_EN_1M 0x1
+#define WMAC_RRSR_RATE_LEGACY_EN 0x1
+
 /* SRAM fifo address */
 #define CMAC_TBL_BASE_ADDR	0x18840000
 
@@ -93,7 +97,8 @@
 #define DMA_MOD_USB 0x2
 #define DMA_MOD_SDIO 0x3
 
-#define  NAV_12MS 0xBC // (12ms, unit: 64us)
+#define  NAV_12MS 0x5D // (12ms, unit: 128us)
+#define  NAV_25MS 0xC4 // (25ms, unit: 128us)
 
 #define FWD_TO_HOST 0
 #define FWD_TO_WLCPU 1

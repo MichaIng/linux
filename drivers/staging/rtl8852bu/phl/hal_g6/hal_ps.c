@@ -70,8 +70,9 @@ _hal_ps_lps_chk_leave(struct hal_info_t *hal_info, u16 macid)
 
 	} while (1);
 
-	rtw_hal_fw_dbg_dump(hal_info, false);
-
+#ifdef CONFIG_PHL_PS_FW_DBG
+	rtw_hal_fw_dbg_dump(hal_info);
+#endif
 	if (status != RTW_HAL_STATUS_SUCCESS)
 		PHL_TRACE(COMP_PHL_PS, _PHL_ERR_, "[HALPS], %s(): polling timeout!\n", __func__);
 
@@ -84,7 +85,7 @@ _hal_ps_lps_cfg(struct hal_info_t *hal_info,
 {
 	PHL_TRACE(COMP_PHL_PS, _PHL_INFO_,
 		"[HALPS], %s(): mode(%d), listen bcn mode(%d), awake interval(%d), smart_ps_mode(%d).\n",
-		__func__, lps_info->lps_en, lps_info->listen_bcn_mode,
+		__func__, lps_info->en, lps_info->listen_bcn_mode,
 		lps_info->awake_interval, lps_info->smart_ps_mode);
 
 	return rtw_hal_mac_lps_cfg(hal_info, lps_info);
@@ -123,7 +124,9 @@ _hal_ps_pwr_state_chk(struct hal_info_t *hal_info, u8 req_pwr_state)
 
 	} while (1);
 
-	rtw_hal_fw_dbg_dump(hal_info, true);
+#ifdef CONFIG_PHL_PS_FW_DBG
+	rtw_hal_fw_dbg_dump(hal_info);
+#endif
 
 	if (status != RTW_HAL_STATUS_SUCCESS)
 		PHL_TRACE(COMP_PHL_PS, _PHL_ERR_, "[HALPS], %s(): polling timeout!\n", __func__);
@@ -320,7 +323,7 @@ rtw_hal_ps_lps_cfg(void *hal, struct rtw_hal_lps_info *lps_info)
 	status = _hal_ps_lps_cfg(hal_info, lps_info);
 
 	if (status == RTW_HAL_STATUS_SUCCESS) {
-		if (lps_info->lps_en == false)
+		if (lps_info->en == false)
 			status = _hal_ps_lps_chk_leave(hal_info, lps_info->macid);
 	}
 
@@ -340,6 +343,20 @@ enum rtw_hal_status rtw_hal_ps_pwr_req(struct rtw_phl_com_t *phl_com, u8 src, bo
 	return RTW_HAL_STATUS_SUCCESS;
 }
 
+enum rtw_hal_status rtw_hal_ps_ips_cfg(void *hal,
+	struct rtw_hal_ips_info *ips_info)
+{
+	enum rtw_hal_status hstatus = RTW_HAL_STATUS_SUCCESS;
+	struct hal_info_t *hal_info = (struct hal_info_t *)hal;
+
+	hstatus = rtw_hal_mac_ips_cfg(hal, ips_info->macid, ips_info->en);
+
+	if (hstatus == RTW_HAL_STATUS_SUCCESS && !ips_info->en)
+		hstatus = rtw_hal_mac_ips_chk_leave(hal_info, ips_info->macid);
+
+	return hstatus;
+}
+
 void
 rtw_hal_ps_chk_hw_rf_state(struct rtw_phl_com_t *phl_com, void *hal)
 {
@@ -350,7 +367,8 @@ rtw_hal_ps_chk_hw_rf_state(struct rtw_phl_com_t *phl_com, void *hal)
 
 	hstatus = rtw_hal_mac_get_wl_dis_val(hal_info, &val);
 	if (hstatus != RTW_HAL_STATUS_SUCCESS) {
-		PHL_ERR("[HALPS], %s(): get wl dis val fail, status: %d\n", __func__, hstatus);
+		PHL_TRACE(COMP_PHL_PS, _PHL_ERR_, "[HALPS], %s(): get wl dis val fail, status: %d\n",
+			  __func__, hstatus);
 		return;
 	}
 
@@ -360,11 +378,21 @@ rtw_hal_ps_chk_hw_rf_state(struct rtw_phl_com_t *phl_com, void *hal)
 	} else if (val == 0) {
 		rf_state = RTW_RF_OFF;
 	} else {
-		PHL_INFO("[HALPS], %s(): wl_dis is invalid value: %d\n", __func__, val);
+		PHL_TRACE(COMP_PHL_PS, _PHL_INFO_, "[HALPS], %s(): wl_dis is invalid value: %d\n",
+			  __func__, val);
 		return;
 	}
 
-	PHL_INFO("[HALPS], %s(): rf state = %d\n", __func__, rf_state);
+	PHL_TRACE(COMP_PHL_PS, _PHL_INFO_, "[HALPS], %s(): rf state = %d\n",
+		  __func__, rf_state);
 	_hal_ps_ntfy_hw_rf_state(phl_com, rf_state);
 }
+
+void rtw_hal_ps_notify_wake(void *hal)
+{
+	struct hal_info_t *hal_info = (struct hal_info_t *)hal;
+
+	rtw_hal_mac_ps_notify_wake(hal_info);
+}
+
 #endif /* CONFIG_POWER_SAVE */

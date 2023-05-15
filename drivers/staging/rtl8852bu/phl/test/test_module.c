@@ -227,6 +227,7 @@ int test_thread(void *param)
 			test_mgnt->cur_test_obj = NULL;
 		}
 	}
+	_os_thread_wait_stop(d, &test_mgnt->thread);
 	CLEAR_STATUS_FLAG(test_mgnt->status, TM_STATUS_THREAD_START);
 	PHL_INFO("[TM]: test mgnt thread is down\n");
 	return 0;

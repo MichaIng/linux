@@ -615,7 +615,7 @@ static __inline u8 _os_thread_deinit(void *drv_priv, _os_thread *thread)
 {
 	if (CHK_THREAD_STATUS(thread, THREAD_STATUS_STARTED)) {
 		CLR_THREAD_STATUS(thread, THREAD_STATUS_STARTED);
-		return rtw_thread_stop(thread->thread_handler);
+		rtw_thread_stop(thread->thread_handler);
 	}
 
 	return RTW_PHL_STATUS_SUCCESS;
@@ -676,6 +676,16 @@ static inline u8 _os_workitem_deinit(void *drv_priv, _os_workitem *workitem)
 	_cancel_workitem_sync(workitem);
 	return 0;
 }
+
+#ifdef RTW_WKARD_SDIO_TX_USE_YIELD
+/**
+ * yield - yield the current processor to other threads.
+ */
+static inline void _os_yield(void *drv_priv)
+{
+	yield();
+}
+#endif /* RTW_WKARD_SDIO_TX_USE_YIELD */
 
 /* File Operation */
 static inline u32 _os_read_file(const char *path, u8 *buf, u32 sz)

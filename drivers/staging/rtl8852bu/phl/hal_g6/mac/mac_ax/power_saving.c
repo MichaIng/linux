@@ -124,19 +124,18 @@ static void send_rpwm(struct mac_ax_adapter *adapter,
 	u8 toggle = 0;
 	struct mac_ax_intf_ops *ops = adapter_to_intf_ops(adapter);
 
-	if (rpwm_seq_num == RPWM_SEQ_NUM_MAX)
-		rpwm_seq_num = 0;
-	else
-		rpwm_seq_num += 1;
-
 	rpwm_value = MAC_REG_R16(R_AX_RPWM);
 	if (0 == (rpwm_value & PS_RPWM_TOGGLE))
 		toggle = 1;
 
 	if (parm->notify_wake) {
-		rpwm_value = (PS_RPWM_NOTIFY_WAKE |
-			SET_CLR_WORD(rpwm_value, rpwm_seq_num, PS_RPWM_SEQ_NUM));
+		rpwm_value |= PS_RPWM_NOTIFY_WAKE;
 	} else {
+		if (rpwm_seq_num == RPWM_SEQ_NUM_MAX)
+			rpwm_seq_num = 0;
+		else
+			rpwm_seq_num += 1;
+
 		rpwm_value = (SET_WORD(parm->req_pwr_state, PS_RPWM_STATE) |
 			SET_WORD(rpwm_seq_num, PS_RPWM_SEQ_NUM));
 

@@ -205,6 +205,11 @@ struct mac_ax_state_mach {
 	u8 ser_ctrl_st;
 #define MAC_AX_CH_SWITCH_GET_RPT 4
 	u8 ch_switch;
+#define MAC_AX_PROXY_IDLE 0
+#define MAC_AX_PROXY_SENDING 1
+#define MAC_AX_PROXY_BUSY 2
+	u8 proxy_st;
+	u8 proxy_ret;
 };
 
 #define MAC_AX_DFLT_SM \
@@ -217,5 +222,5 @@ struct mac_ax_state_mach {
 	MAC_AX_FUNC_OFF, MAC_AX_FUNC_OFF, MAC_AX_FUNC_OFF, MAC_AX_FUNC_OFF, \
 	MAC_AX_FUNC_OFF, MAC_AX_WOW_STOPTRX_IDLE, MAC_AX_MAC_NOT_RDY, \
 	MAC_AX_ROLE_ALOC_SUCC, MAC_AX_PLAT_OFF, MAC_AX_IO_ST_NORM, \
-	MAC_AX_L2_EN, MAC_AX_SER_CTRL_SRT}
+	MAC_AX_L2_EN, MAC_AX_SER_CTRL_SRT, MAC_AX_OFLD_H2C_IDLE, MAC_AX_PROXY_IDLE}
 #endif

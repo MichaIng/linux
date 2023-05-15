@@ -131,6 +131,10 @@ struct bb_dig_cr_info {
 	u32 seg0r_pd_spatial_reuse_en_a_m;
 	u32 seg0r_pd_lower_bound_a;
 	u32 seg0r_pd_lower_bound_a_m;
+	u32 rssi_nocca_low_th_a;
+	u32 rssi_nocca_low_th_a_m;
+	u32 cca_rssi_lmt_en_a;
+	u32 cca_rssi_lmt_en_a_m;
 	u32 path0_p20_follow_by_pagcugc_en_a;
 	u32 path0_s20_follow_by_pagcugc_en_a;
 	u32 path1_p20_follow_by_pagcugc_en_a;
@@ -330,6 +334,9 @@ void halbb_cr_cfg_dig_init(struct bb_info *bb);
 
 void* halbb_get_dig_fa_statistic(struct bb_info *bb);
 void halbb_set_dig_pause_val(struct bb_info *bb, u32 *val_buf, u8 val_len);
+u8 halbb_get_lna_idx(struct bb_info *bb, enum rf_path path);
+u8 halbb_get_tia_idx(struct bb_info *bb, enum rf_path path);
+u8 halbb_get_rxb_idx(struct bb_info *bb, enum rf_path path);
 #ifdef HALBB_DIG_MCC_SUPPORT
 void Halbb_init_mccdm(struct bb_info *bb);
 void halbb_mccdm_switch(struct bb_info *bb);

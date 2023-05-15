@@ -41,6 +41,7 @@ struct halrf_gapk_info {
 	s32 track_ta[2][17];
 	s32 power_d[2][17];
 	s32 power_ta[2][17];
+	u32 txgapk_time;
 
 	bool	is_txgapk_ok;
 	u32     r0x8010[2]; /* before and after txgapk */

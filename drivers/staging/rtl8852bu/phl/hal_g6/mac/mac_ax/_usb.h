@@ -62,6 +62,9 @@
 #define PLE_PAGE_SIZE        0x80
 #define PINGPONG             0x2
 #define RX_POLLING_PERIOD    0x40
+#define USB_TX_IDLE          0x10
+#define USB_WAIT_CNT         2000
+#define USB_WAIT_US          1
 /**
  * @}
  * @}
@@ -116,6 +119,42 @@ u32 get_usb_mode(struct mac_ax_adapter *adapter);
  * @retval u32
  */
 u32 usb_autok_counter_avg(struct mac_ax_adapter *adapter);
+/**
+ * @}
+ * @}
+ */
+
+/**
+ * @brief usb_tp_adjust
+ *
+ * @param *adapter
+ * @param tp
+ * @return Please Place Description here.
+ * @retval u32
+ */
+u32 usb_tp_adjust(struct mac_ax_adapter *adapter, struct mac_ax_tp_param tp);
+/**
+ * @}
+ * @}
+ */
+
+/**
+ * @addtogroup HCI
+ * @{
+ * @addtogroup USB
+ * @{
+ */
+
+/**
+ * @brief dbcc_hci_ctrl_usb
+ *
+ * @param *adapter
+ * @param *info
+ * @return Please Place Description here.
+ * @retval u32
+ */
+u32 dbcc_hci_ctrl_usb(struct mac_ax_adapter *adapter,
+		      struct mac_ax_dbcc_hci_ctrl *info);
 /**
  * @}
  * @}

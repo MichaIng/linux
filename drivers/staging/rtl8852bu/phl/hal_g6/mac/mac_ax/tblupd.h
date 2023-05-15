@@ -35,6 +35,9 @@
 
 #define BACAM_RST_DLY_CNT	1000
 #define BACAM_RST_DLY_US	1
+
+#define NTX_PATH_EN_MASK 0xf
+#define PATH_MAP_MASK 0x3
 /*--------------------Define Enum---------------------------------------*/
 
 /**
@@ -297,8 +300,8 @@ u32 mac_upd_shcut_mhdr(struct mac_ax_adapter *adapter,
  * @retval u32
  */
 u32 mac_upd_cctl_info(struct mac_ax_adapter *adapter,
-		      struct mac_ax_cctl_info *info,
-		      struct mac_ax_cctl_info *mask, u8 macid, u8 operation);
+		      struct rtw_hal_mac_ax_cctl_info *info,
+		      struct rtw_hal_mac_ax_cctl_info *mask, u8 macid, u8 operation);
 /**
  * @}
  * @}
@@ -583,6 +586,8 @@ u32 mac_dumpwland(struct mac_ax_adapter *adapter,
  * @return Please Place Description here.
  * @retval u32
  */
+u32 mac_tx_path_map_cfg(struct mac_ax_adapter *adapter,
+			struct hal_txmap_cfg *cfg);
 
 #if MAC_AX_FEATURE_DBGPKG
 u32 cctl_info_debug_write(struct mac_ax_adapter *adapter, u8 macid,

@@ -44,6 +44,8 @@
 /*@--------------------------[Enum]------------------------------------------*/
 /*@--------------------------[Prptotype]-------------------------------------*/
 struct bb_info;
+u8 halbb_ex_cn_report_8852b(struct bb_info *bb);
+
 bool halbb_set_pwr_ul_tb_ofst_8852b(struct bb_info *bb,
 				    s16 pw_ofst, enum phl_phy_idx phy_idx);
 void halbb_tx_triangular_shap_cfg_8852b(struct bb_info *bb, u8 shape_idx,

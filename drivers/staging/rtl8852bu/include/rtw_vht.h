@@ -130,9 +130,6 @@ struct vht_bf_cap {
 };
 
 struct vht_priv {
-	/* VHT IE is configured by upper layer or not (hostapd or wpa_supplicant) */
-	u8 upper_layer_setting;
-
 	u8 vht_option;
 
 	u8 ldpc_cap;
@@ -219,4 +216,5 @@ void rtw_check_for_vht20(_adapter *adapter, u8 *ies, int ies_len);
 void rtw_update_drv_vht_cap(_adapter *padapter, u8 *vht_cap_ie);
 void rtw_check_vht_ies(_adapter *padapter, WLAN_BSSID_EX *pnetwork);
 void rtw_reattach_vht_ies(_adapter *padapter, WLAN_BSSID_EX *pnetwork);
+void rtw_update_probe_rsp_vht_cap(struct _ADAPTER *a, u8 *ies, sint ies_len);
 #endif /* _RTW_VHT_H_ */

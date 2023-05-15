@@ -160,7 +160,8 @@ struct gtk_ofld {
 	u32 tkip_en:1;
 	u32 ieee80211w_en:1;
 	u32 pairwise_wakeup:1;
-	u32 rsvd0:4;
+	u32 norekey_wakeup:1;
+	u32 rsvd0:3;
 	u32 aoac_rep_id:8;
 	u32 mac_id:8;
 	u32 gtk_rsp_id:8;
@@ -832,5 +833,30 @@ u32 free_aoac_report(struct mac_ax_adapter *adapter);
  * @}
  * @}
  */
+
+/**
+ * @brief mac_cfg_wow_auto_test
+ *
+ * @param *adapter
+ * @param rxtest
+ * @return Please Place Description here.
+ * @retval u32
+ */
+u32 mac_cfg_wow_auto_test(struct mac_ax_adapter *adapter, u8 rxtest);
+/**
+ * @}
+ */
+
+u32 mac_proxyofld(struct mac_ax_adapter *adapter, struct rtw_hal_mac_proxyofld *pcfg);
+
+u32 mac_proxy_mdns_serv_pktofld(struct mac_ax_adapter *adapter,
+				struct rtw_hal_mac_proxy_mdns_service *pserv, u8 *pktid);
+
+u32 mac_proxy_mdns_txt_pktofld(struct mac_ax_adapter *adapter,
+			       struct rtw_hal_mac_proxy_mdns_txt *ptxt, u8 *pktid);
+
+u32 mac_proxy_mdns(struct mac_ax_adapter *adapter, struct rtw_hal_mac_proxy_mdns *pmdns);
+
+u32 mac_check_proxy_done(struct mac_ax_adapter *adapter, u8 *fw_ret);
 
 #endif // #define _MAC_AX_WOWLAN_H_

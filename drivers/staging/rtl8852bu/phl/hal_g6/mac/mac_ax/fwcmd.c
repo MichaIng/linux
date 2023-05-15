@@ -57,6 +57,9 @@
 
 #define BCN_GRPIE_OFST_EN BIT(7)
 
+#define SCANOFLD_RSP_EVT_ID 0
+#define SCANOFLD_RSP_EVT_PARSE 0
+
 static struct h2c_buf_head h2cb_head[H2CB_CLASS_MAX];
 static struct fwcmd_wkb_head fwcmd_wq_head;
 
@@ -940,6 +943,7 @@ static u32 c2h_wow_rcv_ack_hdl(struct mac_ax_adapter *adapter,
 	switch (info->c2h_func) {
 	case FWCMD_H2C_FUNC_AOAC_REPORT_REQ:
 		state = &adapter->sm.aoac_rpt;
+		PLTFM_MSG_ERR("aoac_rpt rcv ack success\n");
 		break;
 
 	default:
@@ -967,6 +971,7 @@ static u32 c2h_fwofld_rcv_ack_hdl(struct mac_ax_adapter *adapter,
 		break;
 
 	case FWCMD_H2C_FUNC_PACKET_OFLD:
+		PLTFM_MSG_TRACE("pktofld rcv ack\n");
 		state = &adapter->sm.pkt_ofld;
 		break;
 
@@ -988,6 +993,35 @@ static u32 c2h_fwofld_rcv_ack_hdl(struct mac_ax_adapter *adapter,
 	if (*state == MAC_AX_OFLD_H2C_SENDING)
 		*state = MAC_AX_OFLD_H2C_RCVD;
 
+	return MACSUCCESS;
+}
+
+static u32 c2h_proxy_ack(struct mac_ax_adapter *adapter, struct rtw_c2h_info *info, u8 is_rcv) {
+	struct mac_ax_state_mach *sm = &adapter->sm;
+	switch (is_rcv) {
+	case 0:
+		if (sm->proxy_st != MAC_AX_PROXY_BUSY) {
+			PLTFM_MSG_ERR("[Proxy][DoneAck] is_rcv (%d) doesn't match sm (%d)\n", is_rcv, sm->proxy_st);
+			return MACPROCERR;
+		}
+		sm->proxy_st = MAC_AX_PROXY_IDLE;
+		sm->proxy_ret = info->h2c_return;
+		if (info->h2c_return != MACSUCCESS)
+			PLTFM_MSG_ERR("[Proxy][DoneAck] h2c return not success (%d)\n", info->h2c_return);
+		else
+			PLTFM_MSG_TRACE("[Proxy][DoneAck]\n");
+		break;
+	case 1:
+		if (sm->proxy_st != MAC_AX_PROXY_SENDING) {
+			PLTFM_MSG_ERR("[Proxy][RecvAck] is_rcv (%d) doesn't match sm (%d)\n", is_rcv, sm->proxy_st);
+			return MACPROCERR;
+		}
+		PLTFM_MSG_TRACE("[Proxy][RecvAck]\n");
+		sm->proxy_st = MAC_AX_PROXY_BUSY;
+		break;
+	default:
+		PLTFM_MSG_ERR("[Proxy][Ack] is_rcv bad value (%d)\n", is_rcv);
+	}
 	return MACSUCCESS;
 }
 
@@ -1021,6 +1055,11 @@ static u32 c2h_fwi_rev_ack(struct mac_ax_adapter *adapter, u8 *buf, u32 len,
 
 		case FWCMD_H2C_CL_FW_OFLD:
 			ret = c2h_fwofld_rcv_ack_hdl(adapter, info);
+			if (ret)
+				return ret;
+			break;
+		case FWCMD_H2C_CL_PROXY:
+			ret = c2h_proxy_ack(adapter, info, 1);
 			if (ret)
 				return ret;
 			break;
@@ -1062,11 +1101,15 @@ static u32 c2h_fwofld_done_ack_hdl(struct mac_ax_adapter *adapter,
 	case FWCMD_H2C_FUNC_PACKET_OFLD:
 		if (sm->pkt_ofld == MAC_AX_OFLD_H2C_RCVD) {
 			if (info->h2c_return == MACSUCCESS) {
+				PLTFM_MSG_TRACE("pktofld done ack ok\n");
+
 				if (ofld_info->last_op == PKT_OFLD_OP_READ)
 					sm->pkt_ofld = MAC_AX_OFLD_H2C_DONE;
 				else
 					sm->pkt_ofld = MAC_AX_OFLD_H2C_IDLE;
 			} else {
+				PLTFM_MSG_TRACE("pktofld done ack fail (%d)\n", info->h2c_return);
+
 				sm->pkt_ofld = MAC_AX_OFLD_H2C_ERROR;
 			}
 		} else {
@@ -1094,26 +1137,31 @@ static u32 c2h_fwofld_done_ack_hdl(struct mac_ax_adapter *adapter,
 	case FWCMD_H2C_FUNC_ADD_SCANOFLD_CH:
 		if (scanofld_info->clear_drv_ch_list && scanofld_info->list->head)
 			mac_scanofld_ch_list_clear(adapter, scanofld_info->list);
-		PLTFM_MSG_TRACE("[scan] got add scanofld done ack. clear chlist busy\n");
+		PLTFM_MSG_TRACE("[scnofld] got add scanofld done ack. clear chlist busy\n");
+
 		PLTFM_MUTEX_LOCK(&scanofld_info->drv_chlist_state_lock);
 		adapter->scanofld_info.drv_chlist_busy = 0;
 		PLTFM_MUTEX_UNLOCK(&scanofld_info->drv_chlist_state_lock);
+
 		PLTFM_MUTEX_LOCK(&scanofld_info->fw_chlist_state_lock);
 		adapter->scanofld_info.fw_chlist_busy = 0;
 		PLTFM_MUTEX_UNLOCK(&scanofld_info->fw_chlist_state_lock);
-		PLTFM_MSG_TRACE("[scan] drv_chlist_state = %d, fw_chlist_state = %d\n",
+
+		PLTFM_MSG_TRACE("[scnofld] drv_chlist_state = %d, fw_chlist_state = %d\n",
 				adapter->scanofld_info.drv_chlist_busy,
 				adapter->scanofld_info.fw_chlist_busy);
 		break;
 	case FWCMD_H2C_FUNC_SCANOFLD:
 		if (info->h2c_return != MACSUCCESS) {
-			PLTFM_MSG_TRACE("[scan]scan func fail, revert fwchlist and fw status\n");
+			PLTFM_MSG_TRACE("[scnofld] scan func fail,revert fwchlist and fw status\n");
+
 			PLTFM_MUTEX_LOCK(&scanofld_info->fw_chlist_state_lock);
-			scanofld_info->fw_chlist_busy = !scanofld_info->fw_chlist_busy;
+			scanofld_info->fw_chlist_busy = scanofld_info->last_fw_chlist_busy;
 			PLTFM_MUTEX_UNLOCK(&scanofld_info->fw_chlist_state_lock);
-			scanofld_info->fw_scan_busy = !scanofld_info->fw_scan_busy;
+
+			scanofld_info->fw_scan_busy = scanofld_info->last_fw_scan_busy;
 		}
-		PLTFM_MSG_TRACE("[scan] fw_scan_busy = %d, fw_chlist_state = %d\n",
+		PLTFM_MSG_TRACE("[scnofld] fw_scan_busy = %d, fw_chlist_state = %d\n",
 				scanofld_info->fw_scan_busy,
 				scanofld_info->fw_chlist_busy);
 		break;
@@ -1282,6 +1330,10 @@ static u32 c2h_fwi_done_ack(struct mac_ax_adapter *adapter, u8 *buf, u32 len,
 			ret = c2h_role_done_ack_hdl(adapter, info);
 			if (ret != MACSUCCESS)
 				return ret;
+		} else if (info->c2h_class == FWCMD_H2C_CL_PROXY) {
+			ret = c2h_proxy_ack(adapter, info, 0);
+			if (ret != MACSUCCESS)
+				return ret;
 		}
 	}
 
@@ -1412,7 +1464,7 @@ static u32 c2h_pkt_ofld_rsp_hdl(struct mac_ax_adapter *adapter, u8 *buf,
 	pkt_len = GET_FIELD(c2h_content, FWCMD_C2H_PKT_OFLD_RSP_PKT_LENGTH);
 	id = GET_FIELD(c2h_content, FWCMD_C2H_PKT_OFLD_RSP_PKT_ID);
 
-	PLTFM_MSG_TRACE("get pkt ofld rsp. pkt_op: %d, pkt_len: %d, id: %d\n", pkt_op, pkt_len, id);
+	PLTFM_MSG_TRACE("get pktofld rsp. pkt_op: %d, pkt_len: %d, id: %d\n", pkt_op, pkt_len, id);
 
 	switch (pkt_op) {
 	case PKT_OFLD_OP_ADD:
@@ -1564,35 +1616,92 @@ static u32 c2h_cmd_ofld_rsp_hdl(struct mac_ax_adapter *adapter, u8 *buf,
 static u32 c2h_scanofld_rsp_hdl(struct mac_ax_adapter *adapter, u8 *buf,
 				u32 len, struct rtw_c2h_info *info)
 {
-	struct fwcmd_scanofld_rsp rsp;
-	u32 *c2h_content = (u32 *)(buf + FWCMD_HDR_LEN);
-	u8 central_ch;
-	u8 scanned_ch;
-	u8 notify_reason;
-	u8 status;
-	u32 tsf_low;
-	u32 tsf_high;
-	u32 spent_low;
-	u32 spent_high;
+#if SCANOFLD_RSP_EVT_PARSE
+	return 0;
+#else
+	struct fwcmd_scanofld_rsp *pkg;
+	struct mac_ax_scanofld_rsp rsp;
+	struct mac_ax_scanofld_chrpt chrpt_struct;
+	u32 chrpt_size_h_dw;
+	u32 *chrpt;
+	u32 *chrpt_in;
+	u32 sh;
+	u32 chidx;
 
-	rsp.dword0 = le32_to_cpu(*c2h_content);
-	central_ch = GET_FIELD(rsp.dword0, FWCMD_C2H_SCANOFLD_RSP_CENTRAL_CH);
-	scanned_ch = GET_FIELD(rsp.dword0, FWCMD_C2H_SCANOFLD_RSP_SCANNED_CH);
-	notify_reason = GET_FIELD(rsp.dword0, FWCMD_C2H_SCANOFLD_RSP_NOTIFY_REASON);
-	status = GET_FIELD(rsp.dword0, FWCMD_C2H_SCANOFLD_RSP_STATUS);
-	tsf_low = le32_to_cpu(*(c2h_content + 1));
-	tsf_high = le32_to_cpu(*(c2h_content + 2));
-	spent_low = le32_to_cpu(*(c2h_content + 3));
-	spent_high = le32_to_cpu(*(c2h_content + 4));
-	PLTFM_MSG_TRACE("[scan rsp]cent = %d, scanned = %d, noti = %d, status = %d, tsf = %x.%x\n",
-			central_ch, scanned_ch, notify_reason, status, tsf_high, tsf_low);
-	if (notify_reason == MAC_AX_SCAN_END_SCAN_NOTIFY) {
+	pkg = (struct fwcmd_scanofld_rsp *)(buf + FWCMD_HDR_LEN);
+	chrpt_in = (u32 *)(buf + FWCMD_HDR_LEN + sizeof(struct fwcmd_scanofld_rsp));
+
+	chrpt_size_h_dw = sizeof(struct mac_ax_scanofld_chrpt) / sizeof(u32);
+
+	PLTFM_MEMSET(&rsp, 0, sizeof(struct mac_ax_scanofld_rsp));
+
+	pkg->dword0 = le32_to_cpu(pkg->dword0);
+	pkg->dword1 = le32_to_cpu(pkg->dword1);
+	pkg->dword2 = le32_to_cpu(pkg->dword2);
+	pkg->dword3 = le32_to_cpu(pkg->dword3);
+
+	rsp.pri_ch = GET_FIELD(pkg->dword0, FWCMD_C2H_SCANOFLD_RSP_PRI_CH);
+	rsp.notify_reason = GET_FIELD(pkg->dword0, FWCMD_C2H_SCANOFLD_RSP_NOTIFY_REASON);
+	rsp.status = GET_FIELD(pkg->dword0, FWCMD_C2H_SCANOFLD_RSP_STATUS);
+	PLTFM_MSG_TRACE("[scnofld][rsp]: Reason %d, ch %d, status %d\n",
+			rsp.notify_reason, rsp.pri_ch, rsp.status);
+
+	switch (rsp.notify_reason) {
+	case MAC_AX_SCAN_END_SCAN_NOTIFY:
 		PLTFM_MUTEX_LOCK(&adapter->scanofld_info.fw_chlist_state_lock);
 		adapter->scanofld_info.fw_chlist_busy = 0;
 		PLTFM_MUTEX_UNLOCK(&adapter->scanofld_info.fw_chlist_state_lock);
 		adapter->scanofld_info.fw_scan_busy = 0;
+		/* fall through */
+
+	case MAC_AX_SCAN_GET_RPT_NOTIFY:
+		rsp.scanned_round = GET_FIELD(pkg->dword0, FWCMD_C2H_SCANOFLD_RSP_SCANNED_ROUND);
+		rsp.spent_low = pkg->dword1;
+		rsp.spent_high = pkg->dword2;
+		rsp.air_density = GET_FIELD(pkg->dword3, FWCMD_C2H_SCANOFLD_RSP_AIR_DENSITY);
+		rsp.actual_period = GET_FIELD(pkg->dword0, FWCMD_C2H_SCANOFLD_RSP_ACTUAL_PERIOD);
+		rsp.tx_fail_cnt = GET_FIELD(pkg->dword3, FWCMD_C2H_SCANOFLD_RSP_TX_FAIL_CNT);
+		rsp.num_ch_rpt = GET_FIELD(pkg->dword3, FWCMD_C2H_SCANOFLD_RSP_NUM_CH_RPT);
+		rsp.ch_rpt_size = GET_FIELD(pkg->dword3, FWCMD_C2H_SCANOFLD_RSP_CH_RPT_SIZE);
+
+		PLTFM_MSG_TRACE("[scnofld][rsp][end] scan for %d rnd in %llu us, last slot %d us\n",
+				rsp.scanned_round, ((u64)rsp.spent_high << 32) + rsp.spent_low,
+				rsp.actual_period);
+		PLTFM_MSG_TRACE("[scnofld][rsp][end] airDense %d, txFail %d\n",
+				rsp.air_density, rsp.tx_fail_cnt);
+		PLTFM_MSG_TRACE("[scnofld][rsp][end] %d ch rpt (size %d)\n",
+				rsp.num_ch_rpt, rsp.ch_rpt_size);
+
+		if (!rsp.num_ch_rpt || !rsp.ch_rpt_size)
+			break;
+
+		for (chidx = 0; chidx < rsp.num_ch_rpt; chidx++) {
+			chrpt = (u32 *)&chrpt_struct;
+			for (sh = 0; sh < chrpt_size_h_dw; sh++) {
+				*chrpt_in = le32_to_cpu(*chrpt_in);
+				PLTFM_MEMCPY(chrpt++, chrpt_in++, sizeof(u32));
+			}
+			chrpt_in += (rsp.ch_rpt_size - chrpt_size_h_dw);
+			PLTFM_MSG_TRACE("[scnofld][rsp][end] ch %d, rx %d, txfail %x, parsed %d\n",
+					chrpt_struct.pri_ch, chrpt_struct.rx_cnt,
+					chrpt_struct.tx_fail, chrpt_struct.parsed);
+		}
+		break;
+
+	case MAC_AX_SCAN_LEAVE_CH_NOTIFY:
+		rsp.actual_period = GET_FIELD(pkg->dword0,
+					      FWCMD_C2H_SCANOFLD_RSP_ACTUAL_PERIOD);
+		rsp.tx_fail_cnt = GET_FIELD(pkg->dword3,
+					    FWCMD_C2H_SCANOFLD_RSP_TX_FAIL_CNT);
+		PLTFM_MSG_TRACE("[scnofld][rsp][leave] pd %d, txfail %d\n",
+				rsp.actual_period, rsp.tx_fail_cnt);
+		break;
+
+	default:
+		break;
 	}
 	return 0;
+#endif
 }
 
 static u32 c2h_ch_switch_rpt_hdl(struct mac_ax_adapter *adapter, u8 *buf,
@@ -1617,6 +1726,33 @@ static u32 c2h_ch_switch_rpt_hdl(struct mac_ax_adapter *adapter, u8 *buf,
 	return MACSUCCESS;
 }
 
+static u32 c2h_bcn_filter_rpt_hdl(struct mac_ax_adapter *adapter, u8 *buf,
+				  u32 len, struct rtw_c2h_info *info)
+{
+	struct fwcmd_bcnfltr_rpt *rpt = (struct fwcmd_bcnfltr_rpt *)(buf + FWCMD_HDR_LEN);
+	u32 dword;
+	u8 macid, type, rssi_evt, rssi_ma;
+
+	dword = le32_to_cpu(rpt->dword0);
+	macid = GET_FIELD(dword, FWCMD_C2H_BCNFLTR_RPT_MACID);
+	type = GET_FIELD(dword, FWCMD_C2H_BCNFLTR_RPT_TYPE);
+	rssi_evt = GET_FIELD(dword, FWCMD_C2H_BCNFLTR_RPT_RSSI_EVT);
+	rssi_ma = GET_FIELD(dword, FWCMD_C2H_BCNFLTR_RPT_RSSI_MA);
+
+	switch (type) {
+	case BCNFLTR_NOTI_BCN_LOSS:
+		PLTFM_MSG_TRACE("[BCNFLTR] bcn loss\n");
+		break;
+	case BCNFLTR_NOTI_DENY_SCAN:
+		PLTFM_MSG_TRACE("[BCNFLTR] deny scan\n");
+		break;
+	case BCNFLTR_NOTI_RSSI:
+		PLTFM_MSG_TRACE("[BCNFLTR] rssi: ma=%d, evt=%d\n", rssi_ma, rssi_evt);
+		break;
+	}
+	return MACSUCCESS;
+}
+
 static struct c2h_proc_func c2h_proc_fw_ofld_cmd[] = {
 	{FWCMD_C2H_FUNC_EFUSE_DUMP, c2h_dump_efuse_hdl},
 	{FWCMD_C2H_FUNC_READ_RSP, c2h_read_rsp_hdl},
@@ -1628,7 +1764,8 @@ static struct c2h_proc_func c2h_proc_fw_ofld_cmd[] = {
 	{FWCMD_C2H_FUNC_TX_DUTY_RPT, c2h_tx_duty_hdl},
 	{FWCMD_C2H_FUNC_SCANOFLD_RSP, c2h_scanofld_rsp_hdl},
 	{FWCMD_C2H_FUNC_CH_SWITCH_RPT, c2h_ch_switch_rpt_hdl},
-	{FWCMD_C2H_FUNC_NULL, NULL}
+	{FWCMD_C2H_FUNC_BCNFLTR_RPT, c2h_bcn_filter_rpt_hdl},
+	{FWCMD_C2H_FUNC_NULL, NULL},
 };
 
 u32 c2h_fw_ofld(struct mac_ax_adapter *adapter, u8 *buf, u32 len,
@@ -2845,7 +2982,7 @@ u32 _mac_send_h2creg(struct mac_ax_adapter *adapter,
 	MAC_REG_W32(R_AX_H2CREG_DATA1, h2creg.dword1);
 	MAC_REG_W32(R_AX_H2CREG_DATA2, h2creg.dword2);
 	MAC_REG_W32(R_AX_H2CREG_DATA3, h2creg.dword3);
-
+	H2CRegIncreaseCounter(adapter);
 	val = MAC_REG_R8(R_AX_H2CREG_CTRL);
 	MAC_REG_W8(R_AX_H2CREG_CTRL, val | B_AX_H2CREG_TRIGGER);
 
@@ -2932,7 +3069,7 @@ u32 __recv_c2hreg(struct mac_ax_adapter *adapter, struct fwcmd_c2hreg *c2h)
 		val = MAC_REG_R8(R_AX_C2HREG_CTRL);
 		MAC_REG_W8(R_AX_C2HREG_CTRL, val & ~B_AX_C2HREG_TRIGGER);
 	}
-
+	C2HRegIncreaseCounter(adapter);
 	return MACSUCCESS;
 }
 
@@ -3144,6 +3281,8 @@ u32 poll_c2hreg(struct mac_ax_adapter *adapter,
 		}
 	} else {
 		PLTFM_MSG_ERR("%s: polling c2hreg timeout\n", __func__);
+		PLTFM_MSG_ERR("c2h->polling_id: %x\n", c2h->polling_id);
+		PLTFM_MSG_ERR("c2hreg_cont->id: %x\n", c2hreg_cont->id);
 	}
 
 	return ret;
@@ -3231,6 +3370,99 @@ static u32 get_fw_rx_dbg_event(struct mac_ax_adapter *adapter,
 	return MACSUCCESS;
 }
 
+static u32 get_scanofld_event(struct mac_ax_adapter *adapter, struct rtw_c2h_info *c2h,
+			      enum phl_msg_evt_id *id, u8 *c2h_info)
+{
+#if SCANOFLD_RSP_EVT_PARSE
+	struct fwcmd_scanofld_rsp *pkg;
+	struct mac_ax_scanofld_rsp *rsp;
+	struct mac_ax_scanofld_chrpt chrpt_struct;
+	u32 chrpt_size_h_dw;
+	u32 *chrpt;
+	u32 *chrpt_in;
+	u32 sh;
+	u32 chidx;
+
+	pkg = (struct fwcmd_scanofld_rsp *)c2h->content;
+	rsp = (struct mac_ax_scanofld_rsp *)c2h_info;
+	chrpt_in = (u32 *)(c2h->content + sizeof(struct fwcmd_scanofld_rsp));
+
+	chrpt_size_h_dw = sizeof(struct mac_ax_scanofld_chrpt) / sizeof(u32);
+
+	PLTFM_MEMSET(rsp, 0, sizeof(struct mac_ax_scanofld_rsp));
+
+	pkg->dword0 = le32_to_cpu(pkg->dword0);
+	pkg->dword1 = le32_to_cpu(pkg->dword1);
+	pkg->dword2 = le32_to_cpu(pkg->dword2);
+	pkg->dword3 = le32_to_cpu(pkg->dword3);
+
+	rsp->pri_ch = GET_FIELD(pkg->dword0, FWCMD_C2H_SCANOFLD_RSP_PRI_CH);
+	rsp->notify_reason = GET_FIELD(pkg->dword0, FWCMD_C2H_SCANOFLD_RSP_NOTIFY_REASON);
+	rsp->status = GET_FIELD(pkg->dword0, FWCMD_C2H_SCANOFLD_RSP_STATUS);
+	PLTFM_MSG_TRACE("[scnofld][rsp]: Reason %d, ch %d, status %d\n",
+			rsp->notify_reason, rsp->pri_ch, rsp->status);
+
+	switch (rsp->notify_reason) {
+	case MAC_AX_SCAN_END_SCAN_NOTIFY:
+		PLTFM_MUTEX_LOCK(&adapter->scanofld_info.fw_chlist_state_lock);
+		adapter->scanofld_info.fw_chlist_busy = 0;
+		PLTFM_MUTEX_UNLOCK(&adapter->scanofld_info.fw_chlist_state_lock);
+		adapter->scanofld_info.fw_scan_busy = 0;
+		/* fall through */
+
+	case MAC_AX_SCAN_GET_RPT_NOTIFY:
+		rsp->scanned_round = GET_FIELD(pkg->dword0, FWCMD_C2H_SCANOFLD_RSP_SCANNED_ROUND);
+		rsp->spent_low = pkg->dword1;
+		rsp->spent_high = pkg->dword2;
+		rsp->air_density = GET_FIELD(pkg->dword3, FWCMD_C2H_SCANOFLD_RSP_AIR_DENSITY);
+		rsp->actual_period = GET_FIELD(pkg->dword0, FWCMD_C2H_SCANOFLD_RSP_ACTUAL_PERIOD);
+		rsp->tx_fail_cnt = GET_FIELD(pkg->dword3, FWCMD_C2H_SCANOFLD_RSP_TX_FAIL_CNT);
+		rsp->num_ch_rpt = GET_FIELD(pkg->dword3, FWCMD_C2H_SCANOFLD_RSP_NUM_CH_RPT);
+		rsp->ch_rpt_size = GET_FIELD(pkg->dword3, FWCMD_C2H_SCANOFLD_RSP_CH_RPT_SIZE);
+
+		PLTFM_MSG_TRACE("[scnofld][rsp][end] scan for %d rnd in %llu us, last slot %d us\n",
+				rsp->scanned_round, ((u64)rsp->spent_high << 32) + rsp->spent_low,
+				rsp->actual_period);
+		PLTFM_MSG_TRACE("[scnofld][rsp][end] airDense %d, txFail %d\n",
+				rsp->air_density, rsp->tx_fail_cnt);
+		PLTFM_MSG_TRACE("[scnofld][rsp] %d ch rpt (size %d)\n",
+				rsp->num_ch_rpt, rsp->ch_rpt_size);
+
+		if (!rsp->num_ch_rpt || !rsp->ch_rpt_size)
+			break;
+
+		for (chidx = 0; chidx < rsp->num_ch_rpt; chidx++) {
+			chrpt = (u32 *)&chrpt_struct;
+			for (sh = 0; sh < chrpt_size_h_dw; sh++) {
+				*chrpt_in = le32_to_cpu(*chrpt_in);
+				PLTFM_MEMCPY(chrpt++, chrpt_in++, sizeof(u32));
+			}
+			chrpt_in += (rsp->ch_rpt_size - chrpt_size_h_dw);
+			PLTFM_MSG_TRACE("[scnofld][rsp][end] ch %d, rx %d, txfail %x, parsed %d\n",
+					chrpt_struct.pri_ch, chrpt_struct.rx_cnt,
+					chrpt_struct.tx_fail, chrpt_struct.parsed);
+		}
+		break;
+
+	case MAC_AX_SCAN_LEAVE_CH_NOTIFY:
+		rsp->actual_period = GET_FIELD(pkg->dword0,
+					       FWCMD_C2H_SCANOFLD_RSP_ACTUAL_PERIOD);
+		rsp->tx_fail_cnt = GET_FIELD(pkg->dword3,
+					     FWCMD_C2H_SCANOFLD_RSP_TX_FAIL_CNT);
+		PLTFM_MSG_TRACE("[scnofld][rsp][leave] pd %d, txfail %d\n",
+				rsp->actual_period, rsp->tx_fail_cnt);
+		break;
+
+	default:
+		break;
+	}
+#endif //SCANOFLD_RSP_EVT_PARSE
+#if SCANOFLD_RSP_EVT_ID
+	*id = MSG_EVT_SCAN_OFLD;
+#endif //SCANOFLD_RSP_EVT_ID
+	return MACSUCCESS;
+}
+
 static struct c2h_event_id_proc event_proc[] = {
 	/* cat, class, func, hdl */
 	{FWCMD_C2H_CAT_MAC, FWCMD_C2H_CL_MISC,
@@ -3241,8 +3473,14 @@ static struct c2h_event_id_proc event_proc[] = {
 	 FWCMD_C2H_FUNC_TSF32_TOGL_RPT, get_tsf32_togl_rpt_event},
 	{FWCMD_C2H_CAT_MAC, FWCMD_C2H_CL_MISC,
 	 FWCMD_C2H_FUNC_CCXRPT, get_ccxrpt_event},
+	{FWCMD_C2H_CAT_MAC, FWCMD_C2H_CL_MISC,
+	 FWCMD_C2H_FUNC_FTMRPT, get_ftmrpt_event},
+	{FWCMD_C2H_CAT_MAC, FWCMD_C2H_CL_MISC,
+	 FWCMD_C2H_FUNC_FTMACKRPT, get_ftmackrpt_event},
 	{FWCMD_C2H_CAT_MAC, FWCMD_C2H_CL_FW_DBG,
 	 FWCMD_C2H_FUNC_RX_DBG, get_fw_rx_dbg_event},
+	{FWCMD_C2H_CAT_MAC, FWCMD_C2H_CL_FW_OFLD,
+	 FWCMD_C2H_FUNC_SCANOFLD_RSP, get_scanofld_event},
 	{FWCMD_C2H_CAT_NULL, FWCMD_C2H_CL_NULL,
 	 FWCMD_C2H_FUNC_NULL, NULL},
 };
@@ -3272,4 +3510,34 @@ u32 mac_get_c2h_event(struct mac_ax_adapter *adapter,
 	}
 
 	return MACSUCCESS;
+}
+
+void H2CRegIncreaseCounter(struct mac_ax_adapter *adapter)
+{
+	u8 val, low;
+	struct mac_ax_intf_ops *ops = adapter_to_intf_ops(adapter);
+
+	val = MAC_REG_R8(R_AX_UDM1 + 1);
+	low = val & B_AX_UDM1_WCPU_H2C_DEQ_CNT_MSK;
+	low++;
+	if (low > 15)
+		low = 0; //we just use 4 bit as counter
+	val = val & 0xf0;
+	val = val | low;
+	MAC_REG_W8(R_AX_UDM1 + 1, val);
+}
+
+void C2HRegIncreaseCounter(struct mac_ax_adapter *adapter)
+{
+	u8 val, high;
+	struct mac_ax_intf_ops *ops = adapter_to_intf_ops(adapter);
+
+	val = MAC_REG_R8(R_AX_UDM1 + 1);
+	high = (val >> B_AX_UDM1_WCPU_C2H_ENQ_CNT_SH) & B_AX_UDM1_WCPU_C2H_ENQ_CNT_MSK;
+	high++;
+	if (high > 15)
+		high = 0;//we just use 4 bit as counter
+	val = val & 0x0f;
+	val = val | (high << B_AX_UDM1_WCPU_C2H_ENQ_CNT_SH);
+	MAC_REG_W8(R_AX_UDM1 + 1, val);
 }

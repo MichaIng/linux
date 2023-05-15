@@ -1,6 +1,6 @@
 /******************************************************************************
  *
- * Copyright(c) 2019 Realtek Corporation.
+ * Copyright(c) 2019 - 2022 Realtek Corporation.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of version 2 of the GNU General Public License as
@@ -23,15 +23,19 @@ struct phl_ps_cmd_info {
 enum PHL_PS_CMD_ID {
 	PHL_PS_HELP,
 	PHL_PS_SHOW,
-	PHL_PS_TEST,
-	PHL_PS_STOP_PS
+	PHL_PS_FORCE_PS,
+	PHL_PS_STOP_PS,
+	PHL_PS_SET_PS_MODE,
+	PHL_PS_SET_PS_CAP
 };
 
 struct phl_ps_cmd_info phl_ps_cmd_i[] = {
 	{"-h", PHL_PS_HELP},
 	{"show", PHL_PS_SHOW},
-	{"test", PHL_PS_TEST},
-	{"stop_ps", PHL_PS_STOP_PS}
+	{"force", PHL_PS_FORCE_PS},
+	{"stop_ps", PHL_PS_STOP_PS},
+	{"ps_mode", PHL_PS_SET_PS_MODE},
+	{"ps_cap", PHL_PS_SET_PS_CAP}
 };
 
 /* echo phl ps show */
@@ -54,13 +58,30 @@ static void _phl_ps_cmd_stop_ps(struct phl_info_t *phl_info, u32 *used, char inp
 	phl_ps_dbg_stop_ps(phl_info, used, input, input_num, output, out_len);
 }
 
-static void _phl_ps_cmd_test_ps(struct phl_info_t *phl_info, u32 *used, char input[][MAX_ARGV],
+static void _phl_ps_cmd_ps_mode(struct phl_info_t *phl_info, u32 *used, char input[][MAX_ARGV],
 			u32 input_num, char *output, u32 out_len)
 {
 	if (phl_info == NULL)
 		return;
 
-	phl_ps_dbg_test_ps(phl_info, used, input, input_num, output, out_len);
+	phl_ps_dbg_ps_op_mode(phl_info, used, input, input_num, output, out_len);
+}
+
+static void _phl_ps_cmd_ps_cap(struct phl_info_t *phl_info, u32 *used, char input[][MAX_ARGV],
+			u32 input_num, char *output, u32 out_len)
+{
+	if (phl_info == NULL)
+		return;
+
+	phl_ps_dbg_ps_cap(phl_info, used, input, input_num, output, out_len);
+}
+static void _phl_ps_cmd_force_ps(struct phl_info_t *phl_info, u32 *used, char input[][MAX_ARGV],
+			u32 input_num, char *output, u32 out_len)
+{
+	if (phl_info == NULL)
+		return;
+
+	phl_ps_dbg_force_ps(phl_info, used, input, input_num, output, out_len);
 }
 
 void phl_ps_cmd_parser(struct phl_info_t *phl_info, char input[][MAX_ARGV],
@@ -84,8 +105,8 @@ void phl_ps_cmd_parser(struct phl_info_t *phl_info, char input[][MAX_ARGV],
 	}
 
 	switch (id) {
-	case PHL_PS_TEST:
-		_phl_ps_cmd_test_ps(phl_info, &used, input, input_num,
+	case PHL_PS_FORCE_PS:
+		_phl_ps_cmd_force_ps(phl_info, &used, input, input_num,
 					output, out_len);
 		break;
 	case PHL_PS_SHOW:
@@ -94,6 +115,14 @@ void phl_ps_cmd_parser(struct phl_info_t *phl_info, char input[][MAX_ARGV],
 		break;
 	case PHL_PS_STOP_PS:
 		_phl_ps_cmd_stop_ps(phl_info, &used, input, input_num,
+					output, out_len);
+		break;
+	case PHL_PS_SET_PS_MODE:
+		_phl_ps_cmd_ps_mode(phl_info, &used, input, input_num,
+					output, out_len);
+		break;
+	case PHL_PS_SET_PS_CAP:
+		_phl_ps_cmd_ps_cap(phl_info, &used, input, input_num,
 					output, out_len);
 		break;
 	default:
@@ -140,7 +169,7 @@ void phl_ps_dbg_dump(struct phl_info_t *phl_info, u32 *used,
 	if (info.sta != NULL) {
 		PS_CNSL(out_len, *used, output + *used, out_len - *used,
 				"chnl: %d, rssi: %d, rssi_bcn: %d\n",
-				info.sta->chandef.chan ,rtw_hal_get_sta_rssi(info.sta), phl_get_min_rssi_bcn(phl_info));
+				info.sta->chandef.chan, rtw_hal_get_sta_rssi(info.sta), phl_get_min_rssi_bcn(phl_info));
 	}
 
 	PS_CNSL(out_len, *used, output + *used, out_len - *used,
@@ -198,10 +227,10 @@ void phl_ps_dbg_stop_ps(struct phl_info_t *phl_info, u32 *used,
 		if (!_get_hex_from_string(input[2], &stop))
 			break;
 
-		if ((phl_com->dev_sw_cap.ps_cap.ips_en != PS_OP_MODE_AUTO)&&
-			(phl_com->dev_sw_cap.ps_cap.lps_en != PS_OP_MODE_AUTO)){
+		if ((phl_com->dev_sw_cap.ps_cap.ips_en != PS_OP_MODE_AUTO) &&
+			(phl_com->dev_sw_cap.ps_cap.lps_en != PS_OP_MODE_AUTO)) {
 				PS_CNSL(out_len, *used, output + *used, out_len - *used,
-					 "One of ips or lps should set PS_OP_MODE_AUTO\n");
+					 "Either ips or lps should be set PS_OP_MODE_AUTO\n");
 				break;
 		}
 
@@ -215,7 +244,206 @@ void phl_ps_dbg_stop_ps(struct phl_info_t *phl_info, u32 *used,
 	} while (0);
 }
 
-void phl_ps_dbg_test_ps(struct phl_info_t *phl_info, u32 *used,
+static void _ps_dbg_cmd_done(void *priv, struct phl_msg *msg)
+{
+	struct phl_info_t *phl_info = (struct phl_info_t *)priv;
+
+	if (msg->inbuf && msg->inlen) {
+		_os_mem_free(phl_to_drvpriv(phl_info),
+			msg->inbuf, msg->inlen);
+	}
+
+}
+
+void rtw_phl_dbg_ps_op_mode(void *phl, u8 band_idx, u8 ps_mode, u8 ps_op_mode)
+{
+	struct phl_info_t *phl_info = (struct phl_info_t *)phl;
+	struct phl_msg msg = {0};
+	struct phl_msg_attribute attr = {0};
+	struct ps_mdl_dbg_info *dbg_info = NULL;
+
+	dbg_info = (struct ps_mdl_dbg_info *)_os_mem_alloc(phl_to_drvpriv(phl_info),
+				sizeof(struct ps_mdl_dbg_info));
+	if (dbg_info == NULL) {
+		PHL_TRACE(COMP_PHL_PS, _PHL_ERR_, "[PS_CMD], %s(): fail to alloc memory.\n", __func__);
+		return;
+	}
+
+	if (ps_mode == PS_MODE_LPS)
+		dbg_info->op = SET_LPS_MODE;
+	else if (ps_mode == PS_MODE_IPS)
+		dbg_info->op = SET_IPS_MODE;
+	else
+		goto cmd_fail;
+
+	dbg_info->val = ps_op_mode;
+
+	SET_MSG_MDL_ID_FIELD(msg.msg_id, PHL_MDL_POWER_MGNT);
+	SET_MSG_EVT_ID_FIELD(msg.msg_id, MSG_EVT_PS_DBG_CMD);
+	msg.band_idx = band_idx;
+	msg.inbuf = (u8*)dbg_info;
+	msg.inlen = sizeof(*dbg_info);
+	attr.completion.completion = _ps_dbg_cmd_done;
+	attr.completion.priv = phl_info;
+
+	if (phl_disp_eng_send_msg(phl_info, &msg, &attr, NULL) !=
+				RTW_PHL_STATUS_SUCCESS) {
+		PHL_TRACE(COMP_PHL_PS, _PHL_ERR_, "[PS_CMD], %s(): fail to notify batter change.\n", __func__);
+		goto cmd_fail;
+	}
+
+	return;
+
+cmd_fail:
+	_os_mem_free(phl_to_drvpriv(phl_info), dbg_info, sizeof(dbg_info));
+}
+
+void phl_ps_dbg_ps_op_mode(struct phl_info_t *phl_info, u32 *used,
+	char input[][MAX_ARGV], u32 input_num, char *output, u32 out_len)
+{
+	u32 op_mode = 0;
+	u8 ps_mode = PS_MODE_NONE;
+
+	do {
+		if (input_num < 4) {
+			PS_CNSL(out_len, *used, output + *used, out_len - *used,
+					 "[DBG] echo phl ps_mode  <ips/lps> <0/1/2>\n");
+			break;
+		}
+
+		if (!_os_strcmp(input[2], "lps"))
+			ps_mode = PS_MODE_LPS;
+		else if (!_os_strcmp(input[2], "ips"))
+			ps_mode = PS_MODE_IPS;
+		else
+			break;
+
+		if (!_get_hex_from_string(input[3], &op_mode))
+			break;
+
+		rtw_phl_dbg_ps_op_mode((void*)phl_info, HW_BAND_0, ps_mode, (u8)op_mode);
+
+	} while (0);
+}
+
+void rtw_phl_dbg_ps_cap(void *phl, u8 band_idx, u8 ps_mode, u8 ps_cap)
+{
+	struct phl_info_t *phl_info = (struct phl_info_t *)phl;
+	struct phl_msg msg = {0};
+	struct phl_msg_attribute attr = {0};
+	struct ps_mdl_dbg_info *dbg_info = NULL;
+
+	dbg_info = (struct ps_mdl_dbg_info *)_os_mem_alloc(phl_to_drvpriv(phl_info),
+				sizeof(struct ps_mdl_dbg_info));
+	if (dbg_info == NULL) {
+		PHL_TRACE(COMP_PHL_PS, _PHL_ERR_, "[PS_CMD], %s(): fail to alloc memory.\n", __func__);
+		return;
+	}
+
+	if (ps_mode == PS_MODE_LPS)
+		dbg_info->op = SET_LPS_CAP;
+	else
+		goto cmd_fail;
+
+	dbg_info->val = ps_cap;
+
+	SET_MSG_MDL_ID_FIELD(msg.msg_id, PHL_MDL_POWER_MGNT);
+	SET_MSG_EVT_ID_FIELD(msg.msg_id, MSG_EVT_PS_DBG_CMD);
+	msg.band_idx = band_idx;
+	msg.inbuf = (u8*)dbg_info;
+	msg.inlen = sizeof(*dbg_info);
+	attr.completion.completion = _ps_dbg_cmd_done;
+	attr.completion.priv = phl_info;
+
+	if (phl_disp_eng_send_msg(phl_info, &msg, &attr, NULL) !=
+				RTW_PHL_STATUS_SUCCESS) {
+		PHL_TRACE(COMP_PHL_PS, _PHL_ERR_, "[PS_CMD], %s(): fail to notify batter change.\n", __func__);
+		goto cmd_fail;
+	}
+
+	return;
+
+cmd_fail:
+	_os_mem_free(phl_to_drvpriv(phl_info), dbg_info, sizeof(dbg_info));
+}
+
+void phl_ps_dbg_ps_cap(struct phl_info_t *phl_info, u32 *used,
+	char input[][MAX_ARGV], u32 input_num, char *output, u32 out_len)
+{
+	u8 ps_mode = PS_MODE_NONE, ps_cap = 0;
+
+	do {
+		if (input_num < 4) {
+			PS_CNSL(out_len, *used, output + *used, out_len - *used,
+					 "[DBG] echo phl ps ps_cap <lps> <rfoff/cg/pg>\n");
+			break;
+		}
+
+		/* Now, only support lps cap*/
+		if (!_os_strcmp(input[2], "lps"))
+			ps_mode = PS_MODE_LPS;
+		else
+			break;
+
+		if (!_os_strcmp(input[3], "rfoff"))
+			ps_cap = PS_CAP_PWRON | PS_CAP_RF_OFF;
+		else if (!_os_strcmp(input[3], "cg"))
+			ps_cap = PS_CAP_PWRON | PS_CAP_RF_OFF | PS_CAP_CLK_GATED;
+		else if (!_os_strcmp(input[3], "pg"))
+			ps_cap = PS_CAP_PWRON | PS_CAP_RF_OFF | PS_CAP_CLK_GATED | PS_CAP_PWR_GATED;
+		else
+			break;
+
+		rtw_phl_dbg_ps_cap((void*)phl_info, HW_BAND_0, ps_mode, ps_cap);
+
+	} while (0);
+}
+
+static void
+_ps_dbg_force_ps(struct phl_info_t *phl_info, u8 ps_mode, bool enter)
+{
+	struct phl_msg msg = {0};
+	struct phl_msg_attribute attr = {0};
+	struct ps_mdl_dbg_info *dbg_info = NULL;
+
+	dbg_info = (struct ps_mdl_dbg_info *)_os_mem_alloc(phl_to_drvpriv(phl_info),
+				sizeof(struct ps_mdl_dbg_info));
+	if (dbg_info == NULL) {
+		PHL_TRACE(COMP_PHL_PS, _PHL_ERR_, "[PS_CMD], %s(): fail to alloc memory.\n", __func__);
+		return;
+	}
+
+	if (ps_mode == PS_MODE_LPS)
+		dbg_info->op = (enter ? FORCE_LPS_ENTER : FORCE_LPS_LEAVE);
+	else if (ps_mode == PS_MODE_IPS)
+		dbg_info->op = (enter ? FORCE_IPS_ENTER : FORCE_IPS_LEAVE);
+	else
+		goto end;
+
+	PHL_TRACE(COMP_PHL_PS, _PHL_INFO_, "[PS_CMD], %s(): set %s %s\n", __func__,
+			phl_ps_ps_mode_to_str(ps_mode), (enter ? "enter" : "leave"));
+
+	SET_MSG_MDL_ID_FIELD(msg.msg_id, PHL_MDL_POWER_MGNT);
+	SET_MSG_EVT_ID_FIELD(msg.msg_id, MSG_EVT_PS_DBG_CMD);
+	msg.band_idx = HW_BAND_0;
+	msg.inbuf = (u8*)dbg_info;
+	msg.inlen = sizeof(struct ps_mdl_dbg_info);
+	attr.completion.completion = _ps_dbg_cmd_done;
+	attr.completion.priv = phl_info;
+
+	if (phl_disp_eng_send_msg(phl_info, &msg, &attr, NULL) !=
+				RTW_PHL_STATUS_SUCCESS) {
+		PHL_TRACE(COMP_PHL_PS, _PHL_ERR_, "[PS_CMD], %s(): fail to send ps dbg cmd.\n", __func__);
+		goto end;
+	}
+
+	return;
+
+end:
+	_os_mem_free(phl_to_drvpriv(phl_info), dbg_info, sizeof(struct ps_mdl_dbg_info));
+}
+
+void phl_ps_dbg_force_ps(struct phl_info_t *phl_info, u32 *used,
 	char input[][MAX_ARGV], u32 input_num, char *output, u32 out_len)
 {
 	u32 enter = 0;
@@ -224,7 +452,7 @@ void phl_ps_dbg_test_ps(struct phl_info_t *phl_info, u32 *used,
 	do {
 		if (input_num < 4){
 			PS_CNSL(out_len, *used, output + *used, out_len - *used,
-					 "[DBG] echo phl ps test <ips/lps> <0/1>\n");
+					 "[DBG] echo phl ps force <ips/lps> <0/1>\n");
 			break;
 		}
 
@@ -239,7 +467,7 @@ void phl_ps_dbg_test_ps(struct phl_info_t *phl_info, u32 *used,
 		if (!_get_hex_from_string(input[3], &enter))
 			break;
 
-		phl_ps_dbg_set_ps(phl_info, ps_mode, (enter ? true : false));
+		_ps_dbg_force_ps(phl_info, ps_mode, (enter ? true : false));
 
 	} while (0);
 }

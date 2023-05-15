@@ -16,6 +16,8 @@
 /***** temporarily flag *******/
 /*#define CONFIG_NO_FW*/
 /*#define CONFIG_DISABLE_ODM*/
+#define SCAN_PER_CH_EX_TIME 100
+#define CONFIG_MSG_NUM 128
 
 #define RTW_WKARD_CORE_RSSI_V1
 #ifdef RTW_WKARD_CORE_RSSI_V1
@@ -39,6 +41,10 @@
  * Work around Config
  */
 #define RTW_WKARD_DIS_PROBE_REQ_RPT_TO_HOSTAPD
+
+#ifdef CONFIG_BTC
+#define RTK_WKARD_CORE_BTC_STBC_CAP
+#endif
 
 /*
  * Public  General Config
@@ -106,8 +112,10 @@
 #endif
 /* #define CONFIG_FILE_FWIMG */
 
-/*#define CONFIG_XMIT_ACK*/
+#define CONFIG_XMIT_ACK
 #ifdef CONFIG_XMIT_ACK
+	#define RTW_WKARD_CCX_RPT_LIMIT_CTRL
+	#define CONFIG_PHL_DEFAULT_MGNT_Q_RPT_EN
 	#define CONFIG_ACTIVE_KEEP_ALIVE_CHECK
 #endif
 
@@ -147,8 +155,14 @@
 #endif /*CONFIG_POWER_SAVING*/
 
 #ifdef CONFIG_POWER_SAVE
-	/*#define CONFIG_RTW_IPS*/
-	/*#define CONFIG_RTW_LPS*/
+	#define CONFIG_RTW_IPS
+	#define CONFIG_RTW_LPS
+	#ifdef CONFIG_RTW_IPS
+		#define CONFIG_FWIPS
+	#endif
+	#if defined(CONFIG_RTW_IPS) || defined(CONFIG_RTW_LPS)
+//		#define CONFIG_PS_FW_DBG
+	#endif
 #endif
 
 #ifdef CONFIG_WOWLAN
@@ -246,7 +260,7 @@
 /* #define CONFIG_BACKGROUND_NOISE_MONITOR */
 #endif
 
-
+#define CONFIG_SCAN_BACKOP_STA
 
 /*
  * Interface  Related Config
@@ -285,7 +299,14 @@
  * If bus rate is lower than Wi-Fi phy rate, it probably causes unstable
  * throughput for rx. So disable AMSDU may be suggested by SD1.
  */
-/* #define CONFIG_DISBALE_RX_AMSDU_FOR_BUS_LOW_SPEED */
+#define CONFIG_DISBALE_RX_AMSDU_FOR_BUS_LOW_SPEED
+
+/*
+ * The CONFIG_QUOTA_TURBO_ENABLE flag to decide that whether halmac
+ * configures a part of the shared buffer to some fw features or not. If
+ * this flag is defined, it means the shared buffer doesn't allocate to fw.
+ */
+#define CONFIG_QUOTA_TURBO_ENABLE
 
 /*
  * HAL  Related Config
@@ -330,6 +351,15 @@
 #define MAX_RECVBUF_SZ 32768
 #define NR_RECVBUFF 128
 #define NR_RECV_URB 8
+
+#define CONFIG_RTW_REDUCE_MEM
+#ifdef CONFIG_RTW_REDUCE_MEM
+	#define MAX_PHL_TX_RING_ENTRY_NUM 512
+	#define MAX_PHL_RX_RING_ENTRY_NUM 1024
+	#define MAX_TX_RING_NUM MAX_PHL_TX_RING_ENTRY_NUM
+	#define NR_XMITFRAME MAX_PHL_TX_RING_ENTRY_NUM
+	#define RTW_MAX_FRAG_NUM 1
+#endif
 
 /*
  * Debug Related Config

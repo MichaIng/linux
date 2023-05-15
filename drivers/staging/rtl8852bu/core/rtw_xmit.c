@@ -7307,6 +7307,9 @@ void fill_txreq_mdata(_adapter *padapter, struct xmit_frame *pxframe)
 #ifdef CONFIG_XMIT_ACK
 	struct xmit_priv *pxmitpriv = &(GET_PRIMARY_ADAPTER(padapter))->xmitpriv;
 #endif
+	struct dvobj_priv *dvobj = adapter_to_dvobj(padapter);
+	struct rtw_phl_com_t *phl_com = GET_PHL_COM(dvobj);
+	struct rtw_wifi_role_t *phl_role = padapter->phl_role;
 
 	PHLTX_LOG;
 
@@ -7349,9 +7352,12 @@ void fill_txreq_mdata(_adapter *padapter, struct xmit_frame *pxframe)
 		mdata->ampdu_en = 1;
 		mdata->bk = 0;
 		mdata->ampdu_density = pxframe->attrib.ampdu_spacing;
-//		mdata->max_agg_num = 0x3F; /* temporally fix to 64 */
-//		mdata->max_agg_num = 0x25; /* temporally fix to 37 for 192k */
-		mdata->max_agg_num = 0x11; /* temporally fix to 17 for 128k */
+
+		/* set tx ampdu number */
+		if (phl_role->hw_band < HW_BAND_MAX)
+			mdata->max_agg_num = phl_com->phy_cap[phl_role->hw_band].txagg_num;
+		else
+			mdata->max_agg_num = 0x3F; /* temporally fix to 64 */
 	} else {
 		mdata->ampdu_en = 0;
 		mdata->bk = 1;

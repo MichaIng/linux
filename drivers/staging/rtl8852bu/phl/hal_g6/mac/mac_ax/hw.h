@@ -1158,9 +1158,12 @@ u32 mac_io_chk_access(struct mac_ax_adapter *adapter, u32 offset);
  *
  * @param *adapter
  * @return Please Place Description here.
+ * @param *wdt_param
+ * @return Please Place Description here.
  * @retval u32
  */
-u32 mac_watchdog(struct mac_ax_adapter *adapter);
+u32 mac_watchdog(struct mac_ax_adapter *adapter,
+		 struct mac_ax_wdt_param *wdt_param);
 /**
  * @}
  * @}

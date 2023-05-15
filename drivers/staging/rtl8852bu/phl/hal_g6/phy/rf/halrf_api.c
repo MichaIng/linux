@@ -212,11 +212,11 @@ void halrf_btc_rfk_ntfy(struct rf_info *rf, u8 phy_map, enum halrf_rfk_type type
 		(process == 2 ? "ONE-SHOT_START" : "ONE-SHOT_STOP")));
 #if 1
 	if (process == RFK_START && rf->is_bt_iqk_timeout == false) {
-		while (halrf_btc_ntfy(rf, phy_map, type, process) == 0 && cnt < 2500) {
-			halrf_delay_us(rf, 40);
+		while (halrf_btc_ntfy(rf, phy_map, type, process) == 0 && cnt < 100000) {
+			halrf_delay_us(rf, 1);
 			cnt++;
 		}
-		if (cnt == 2500) {
+		if (cnt == 100000) {
 			RF_DBG(rf, DBG_RF_RFK, "[RFK] Wait BT IQK timeout!!!!\n");
 			rf->is_bt_iqk_timeout = true;
 		}
@@ -272,24 +272,48 @@ void  halrf_quick_check_rf(void *rf_void)
 #endif
 }
 
+
+void  halrf_watchdog_stop(struct rf_info *rf, bool is_stop) {
+	if(is_stop)
+		rf->is_watchdog_stop = true;
+	else
+		rf->is_watchdog_stop = false;
+	RF_DBG(rf, DBG_RF_RFK, "is_watchdog_stop=%d\n", rf->is_watchdog_stop);
+}
+
 void halrf_wifi_event_notify(void *rf_void,
 			enum phl_msg_evt_id event, enum phl_phy_idx phy_idx)
 {
 	struct rf_info *rf = (struct rf_info *)rf_void;
 
-	if (event == MSG_EVT_SCAN_START) {
-		halrf_tssi_default_txagc(rf, phy_idx, true);
-		halrf_tssi_set_avg(rf, phy_idx, true);
-		halrf_dpk_track_onoff(rf, false);
-	} else if (event == MSG_EVT_SCAN_END) {
-		halrf_tssi_default_txagc(rf, phy_idx, false);
-		halrf_tssi_set_avg(rf, phy_idx, false);
-		halrf_dpk_track_onoff(rf, true);
-	} else if (event == MSG_EVT_DBG_RX_DUMP) {
-		halrf_quick_check_rf(rf);
-	} else if (event == MSG_EVT_SWCH_START) {
-		halrf_tssi_backup_txagc(rf, phy_idx, true);
+	switch (event) {
+		case MSG_EVT_SCAN_START:
+			halrf_tssi_default_txagc(rf, phy_idx, true);
+			halrf_tssi_set_avg(rf, phy_idx, true);
+			halrf_dpk_track_onoff(rf, false);
+		break;
+		case MSG_EVT_SCAN_END:
+			halrf_tssi_default_txagc(rf, phy_idx, false);
+			halrf_tssi_set_avg(rf, phy_idx, false);
+			halrf_dpk_track_onoff(rf, true);
+		break;
+		case MSG_EVT_DBG_RX_DUMP:
+			halrf_quick_check_rf(rf);
+		break;
+		case MSG_EVT_SWCH_START:
+			halrf_tssi_backup_txagc(rf, phy_idx, true);
+		break;
+		case MSG_EVT_MCC_START:
+			halrf_watchdog_stop(rf, true);
+		break;
+		case MSG_EVT_MCC_STOP:
+			halrf_watchdog_stop(rf, false);
+		break;
+		default:
+		break;
 	}
+
+	
 }
 
 void halrf_write_fwofld_start(struct rf_info *rf)

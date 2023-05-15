@@ -29,6 +29,10 @@
 #define HALRF_CONFIG_FW_IO_OFLD_SUPPORT
 #endif
 
+#ifdef CONFIG_HAL_THERMAL_PROTECT
+#define HALRF_THERMAL_PROTECT_SUPPORT
+#endif
+
 #define CF_PHL_BB_CTRL_RX_CCA
 
 /*@--------------------------[Define] ---------------------------------------*/
@@ -63,7 +67,7 @@
 
 /*[Delay]*/
 #define halrf_delay_ms(rf, ms) _os_delay_ms(rf->hal_com->drv_priv, ms)
-#define halrf_delay_us(rf, us) _os_delay_us(rf->hal_com->drv_priv, us)
+#define halrf_os_delay_us(rf, us) _os_delay_us(rf->hal_com->drv_priv, us)
 
 /*[Memory Access]*/
 #define halrf_mem_alloc(rf, buf_sz) _os_mem_alloc(rf->hal_com->drv_priv, buf_sz)
@@ -131,5 +135,5 @@ void halrf_wrf(struct rf_info *rf, enum rf_path path, u32 addr, u32 mask, u32 va
 
 void halrf_fill_h2c_cmd(struct rf_info *rf, u16 cmdlen, u8 cmdid,
 			u8 classid, u32 cmdtype, u32 *pval);
-void halrf_delay_10us(struct rf_info *rf, u32 count);
+void halrf_delay_us(struct rf_info *rf, u32 count);
 #endif

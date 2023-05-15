@@ -213,6 +213,7 @@ static u32 read_hw_efuse_dav(struct mac_ax_adapter *adapter, u32 offset, u32 siz
 static u32 write_hw_efuse_dav(struct mac_ax_adapter *adapter, u32 offset,
 			      u8 value);
 static void switch_dv(struct mac_ax_adapter *adapter, enum rtw_dv_sel);
+static u32 proc_dump_hidden(struct mac_ax_adapter *adapter);
 
 u32 mac_dump_efuse_map_wl_plus(struct mac_ax_adapter *adapter,
 			       enum mac_ax_efuse_read_cfg cfg, u8 *efuse_map)
@@ -602,6 +603,100 @@ u32 mac_read_efuse(struct mac_ax_adapter *adapter, u32 addr, u32 size, u8 *val,
 	ret = cnv_efuse_state(adapter, MAC_AX_EFUSE_IDLE);
 	if (ret != 0)
 		return ret;
+
+	return MACSUCCESS;
+}
+
+u32 mac_read_hidden_efuse(struct mac_ax_adapter *adapter, u32 addr, u32 size,
+			  u8 *val, enum mac_ax_efuse_hidden_cfg hidden_cfg)
+{
+	u32 ret, stat;
+	struct mac_ax_hw_info *hw_info = adapter->hw_info;
+	u32 log_sec_size = hw_info->efuse_size + hw_info->sec_data_efuse_size;
+
+	switch (hidden_cfg) {
+	case MAC_AX_EFUSE_HIDDEN_RF:
+		if (addr < log_sec_size || addr + size >
+		    log_sec_size + hw_info->hidden_efuse_rf_size) {
+			PLTFM_MSG_ERR("[ERR] Wrong hidden rf index\n");
+			return MACEFUSESIZE;
+		}
+		break;
+	default:
+		PLTFM_MSG_ERR("[ERR] Hidden config invalid\n");
+		return MACNOITEM;
+	}
+
+	ret = efuse_proc_ck(adapter);
+	if (ret != 0)
+		return ret;
+
+	ret = cnv_efuse_state(adapter, MAC_AX_EFUSE_PHY);
+	if (ret != 0)
+		return ret;
+
+	ret = switch_efuse_bank(adapter, MAC_AX_EFUSE_BANK_WIFI);
+	if (ret != 0) {
+		PLTFM_MSG_ERR("[ERR]switch efuse bank!!\n");
+		stat = cnv_efuse_state(adapter, MAC_AX_EFUSE_IDLE);
+		if (stat != 0)
+			return stat;
+		return ret;
+	}
+
+	ret = efuse_map_init(adapter, EFUSE_MAP_SEL_HIDDEN_RF);
+	if (ret != 0)
+		return ret;
+
+	ret = proc_dump_hidden(adapter);
+	if (ret != 0) {
+		PLTFM_MSG_ERR("[ERR]dump hidden!!\n");
+		stat = cnv_efuse_state(adapter, MAC_AX_EFUSE_IDLE);
+		if (stat != 0)
+			return stat;
+		return ret;
+	}
+
+	PLTFM_MEMCPY(val, adapter->efuse_param.hidden_rf_map +
+		     (addr - log_sec_size), size);
+
+	ret = cnv_efuse_state(adapter, MAC_AX_EFUSE_IDLE);
+	if (ret != 0)
+		return ret;
+
+	return MACSUCCESS;
+}
+
+static u32 proc_dump_hidden(struct mac_ax_adapter *adapter)
+{
+	u8 *map = NULL;
+	struct mac_ax_hw_info *hw_info = adapter->hw_info;
+	u32 efuse_size = hw_info->efuse_size;
+	u32 sec_data_efuse_size = hw_info->sec_data_efuse_size;
+	u32 hidden_efuse_rf_size = hw_info->hidden_efuse_rf_size;
+	u8 hidden_rf_map_valid = adapter->efuse_param.hidden_rf_map_valid;
+	u32 ret;
+
+	if (hidden_rf_map_valid == 0) {
+		map = (u8 *)PLTFM_MALLOC(hidden_efuse_rf_size);
+		if (!map) {
+			PLTFM_MSG_ERR("[ERR]malloc map\n");
+			return MACBUFALLOC;
+		}
+
+		ret = read_hw_efuse(adapter, efuse_size + sec_data_efuse_size,
+				    hidden_efuse_rf_size, map);
+		if (ret != 0) {
+			PLTFM_FREE(map, hidden_efuse_rf_size);
+			return ret;
+		}
+
+		PLTFM_MUTEX_LOCK(&efuse_tbl.lock);
+		PLTFM_MEMCPY(adapter->efuse_param.hidden_rf_map, map, hidden_efuse_rf_size);
+		adapter->efuse_param.hidden_rf_map_valid = 1;
+		PLTFM_MUTEX_UNLOCK(&efuse_tbl.lock);
+		PLTFM_FREE(map, hidden_efuse_rf_size);
+	}
 
 	return MACSUCCESS;
 }
@@ -2290,7 +2385,6 @@ u32 mac_check_OTP(struct mac_ax_adapter *adapter, u8 is_start)
 {
 #define is_read 0
 #define secure 1
-	u32 ret;
 	u8 val8;
 
 	if (is_start == 1) {
@@ -2299,8 +2393,8 @@ u32 mac_check_OTP(struct mac_ax_adapter *adapter, u8 is_start)
 		mac_set_efuse_ctrl(adapter, secure);
 		read_efuse_cnt = CHK_OTP_WAIT_CNT;
 
-		ret = mac_read_efuse_plus(adapter, CHK_OTP_ADDR, 1, &val8,
-					  MAC_AX_EFUSE_BANK_WIFI);
+		mac_read_efuse_plus(adapter, CHK_OTP_ADDR, 1, &val8,
+				    MAC_AX_EFUSE_BANK_WIFI);
 
 		disable_efuse_sw_pwr_cut(adapter, is_read);
 
@@ -2415,6 +2509,16 @@ static u32 efuse_map_init(struct mac_ax_adapter *adapter,
 			efuse_param->dav_log_efuse_map =
 				(u8 *)PLTFM_MALLOC(size);
 			if (!efuse_param->dav_log_efuse_map) {
+				PLTFM_MSG_ERR("[ERR]malloc map\n");
+				return MACBUFALLOC;
+			}
+		}
+		break;
+	case EFUSE_MAP_SEL_HIDDEN_RF:
+		size = adapter->hw_info->hidden_efuse_rf_size;
+		if (!efuse_param->hidden_rf_map) {
+			efuse_param->hidden_rf_map = (u8 *)PLTFM_MALLOC(size);
+			if (!efuse_param->hidden_rf_map) {
 				PLTFM_MSG_ERR("[ERR]malloc map\n");
 				return MACBUFALLOC;
 			}
@@ -2621,6 +2725,11 @@ static u32 read_hw_efuse(struct mac_ax_adapter *adapter, u32 offset, u32 size,
 				    & ~B_AX_EF_RDY);
 
 			cnt = read_efuse_cnt;
+			if ((is_chip_id(adapter, MAC_AX_CHIP_ID_8852B) ||
+			     is_chip_id(adapter, MAC_AX_CHIP_ID_8852C)) &&
+			    efuse_ctrl == R_AX_EFUSE_CTRL)
+				cnt = EFUSE_WAIT_CNT_PLUS;
+
 			while (--cnt) {
 				tmp32 = MAC_REG_R32(efuse_ctrl);
 				if (tmp32 & B_AX_EF_RDY)
@@ -2658,6 +2767,7 @@ static u32 write_hw_efuse(struct mac_ax_adapter *adapter, u32 offset, u8 value)
 	PLTFM_MUTEX_LOCK(&efuse_tbl.lock);
 	*bank_efuse_info.phy_map_valid = 0;
 	*bank_efuse_info.log_map_valid = 0;
+	efuse_param->hidden_rf_map_valid = 0;
 	PLTFM_MUTEX_UNLOCK(&efuse_tbl.lock);
 
 	offset += efuse_start;

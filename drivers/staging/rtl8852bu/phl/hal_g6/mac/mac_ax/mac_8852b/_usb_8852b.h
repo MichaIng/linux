@@ -506,4 +506,17 @@ u32 usb_get_rx_state_8852b(struct mac_ax_adapter *adapter, u32 *val);
  * @}
  * @}
  */
+
+/**
+ * @brief usb_ep_cfg_8852b
+ *
+ * @param *adapter
+ * @return Please Place Description here.
+ * @param *cfg
+ */
+u32 usb_ep_cfg_8852b(struct mac_ax_adapter *adapter, struct mac_ax_usb_ep *cfg);
+/**
+ * @}
+ * @}
+ */
 #endif

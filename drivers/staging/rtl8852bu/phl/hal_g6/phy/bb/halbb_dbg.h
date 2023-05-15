@@ -25,7 +25,6 @@
 #ifndef __HALBB_DBG_H__
 #define __HALBB_DBG_H__
 
-#include <rtw_debug.h>
 #include "../../hal_headers_le.h"
 
 /*@--------------------------[Define] ---------------------------------------*/
@@ -41,14 +40,14 @@
 	#ifdef HALBB_DBCC_SUPPORT
 		#define BB_DBG(bb, comp, fmt, ...)     \
 			do {\
-				if(((bb)->dbg_component & comp) && (_DRV_DEBUG_ <= rtw_drv_log_level)) {\
+				if(bb->dbg_component & comp) {\
 					_os_dbgdump("[BB][%d]" fmt, bb->bb_phy_idx, ##__VA_ARGS__);\
 				} \
 			} while (0)
 	#else
 		#define BB_DBG(bb, comp, fmt, ...)     \
 			do {\
-				if(((bb)->dbg_component & comp) && (_DRV_DEBUG_ <= rtw_drv_log_level)) {\
+				if(bb->dbg_component & comp) {\
 					_os_dbgdump("[BB]" fmt, ##__VA_ARGS__);\
 				} \
 			} while (0)
@@ -61,8 +60,7 @@
 		
 	#define BB_WARNING(fmt, ...)     \
 		do {\
-			if(_DRV_WARNING_ <= rtw_drv_log_level)\
-				_os_dbgdump("[WARNING][BB]" fmt, ##__VA_ARGS__);\
+			_os_dbgdump("[WARNING][BB]" fmt, ##__VA_ARGS__);\
 		} while (0)
 
 	#define	BB_DBG_CNSL2(in_cnsl, max_buff_len, used_len, buff_addr, remain_len, fmt, ...)\
@@ -92,8 +90,7 @@
 
 #define BB_DBG_VAST(max_buff_len, used_len, buff_addr, remain_len, fmt, ...)\
 	do {\
-		if(_DRV_DEBUG_ <= rtw_drv_log_level)\
-			_os_dbgdump("[CNSL]" fmt, ##__VA_ARGS__);\
+		_os_dbgdump("[CNSL]" fmt, ##__VA_ARGS__);\
 	} while (0)
 
 #define	BB_DBG_CNSL(max_buff_len, used_len, buff_addr, remain_len, fmt, ...)\
@@ -149,23 +146,46 @@ struct bb_dbg_cr_info {
 	u32 bb_monitor1_m;
 	/*mac_phy_intf*/
 	u32 mac_phy_ppdu_type;
-	u32 mac_phy_txpath_en;
-	u32 mac_phy_txcmd;
 	u32 mac_phy_txsc;
-	u32 mac_phy_bw;
-	u32 mac_phy_tx_pw;
-	u32 mac_phy_ndp_en;
 	u32 mac_phy_n_usr;
-	u32 mac_phy_gi;
-	u32 mac_phy_ltf;
-	u32 mac_phy_n_sts;
-	u32 mac_phy_fec;
-	u32 mac_phy_mcs_3_0;
-	u32 mac_phy_mcs_5_4;
 	u32 mac_phy_stbc;
+	u32 mac_phy_ndp_en;
+	u32 mac_phy_n_sts;
+	u32 mac_phy_mcs_5_4;
+	u32 mac_phy_n_sym;
 	u32 mac_phy_lsig;
 	u32 mac_phy_siga_0;
 	u32 mac_phy_siga_1;
+	u32 mac_phy_vht_sigb_0;
+};
+
+struct bb_mac_phy_intf {
+	/*From reg*/
+	u8 type;
+	u8 tx_path_en;
+	u8 txcmd_num;
+	u8 txsc;
+	u8 bw;
+	u16 tx_pw;
+	u8 n_usr;
+	bool stbc;
+	u8 gi;
+	u8 ltf;
+	bool ndp_en;
+	u8 n_sts;
+	bool fec;
+	u8 mcs;
+	bool dcm;
+	u16 n_sym;
+	u8 pkt_ext;
+	u8 pre_fec;
+	u32 l_sig;
+	u32 sig_a1;
+	u32 sig_a2;
+	u32 sig_b;
+	/*sw variable*/
+	u16 t_data;
+	u32 psdu_length;
 };
 
 struct bb_dbg_info {
@@ -186,6 +206,7 @@ struct bb_dbg_info {
 	u32		tdma_cr_period_0;
 	u32		tdma_cr_period_1;
 #endif
+	struct bb_mac_phy_intf mac_phy_intf_i;
 	struct bb_dbg_cr_info bb_dbg_cr_i;
 };
 
@@ -207,6 +228,10 @@ void halbb_set_bb_dbg_port_ip(struct bb_info *bb, enum bb_dbg_port_ip_t ip);
 void halbb_release_bb_dbg_port(struct bb_info *bb);
 bool halbb_bb_dbg_port_racing(struct bb_info *bb, u8 curr_dbg_priority);
 u32 halbb_get_bb_dbg_port_val(struct bb_info *bb);
+u16 halbb_rx_utility(struct bb_info *bb, u16 avg_phy_rate, u8 rx_max_ss,
+		     enum channel_width bw);
+u16 halbb_rx_avg_phy_rate(struct bb_info *bb);
+void halbb_get_tx_dbg_reg(struct bb_info *bb);
 void halbb_basic_dbg_message(struct bb_info *bb);
 void halbb_basic_profile_dbg(struct bb_info *bb, u32 *_used, char *output, u32 *_out_len);
 void halbb_dump_reg_dbg(struct bb_info *bb, char input[][16], u32 *_used, char *output, u32 *_out_len);
@@ -216,6 +241,8 @@ void halbb_dump_bb_reg(struct bb_info *bb, u32 *_used, char *output,
 			       u32 *_out_len, bool dump_2_buff);
 void halbb_show_rx_rate(struct bb_info *bb, char input[][16], u32 *_used,
 			      char *output, u32 *_out_len);
+void halbb_mac_phy_intf_dbg(struct bb_info *bb, char input[][16], u32 *_used,
+			  char *output, u32 *_out_len);
 void halbb_cmn_dbg(struct bb_info *bb, char input[][16], u32 *_used, char *output, u32 *_out_len);
 void halbb_dbg_setting_init(struct bb_info *bb);
 void halbb_cr_cfg_dbg_init(struct bb_info *bb);

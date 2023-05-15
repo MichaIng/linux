@@ -43,6 +43,11 @@ static struct mac_ax_host_rpr_cfg rpr_cfg_stf = {
 	MAC_AX_FUNC_DIS /* macid_drop_en */
 };
 
+static struct mac_ax_drv_wdt_ctrl wdt_ctrl_def = {
+	MAC_AX_PCIE_ENABLE,
+	MAC_AX_PCIE_ENABLE
+};
+
 static void get_delay_tx_cfg(struct mac_ax_adapter *adapter,
 			     struct mac_ax_delay_tx_cfg *cfg);
 static void set_delay_tx_cfg(struct mac_ax_adapter *adapter,
@@ -185,6 +190,11 @@ u32 set_enable_bb_rf(struct mac_ax_adapter *adapter, u8 enable)
 			value8 = PHYREG_SET_ALL_CYCLE;
 			MAC_REG_W8(R_AX_PHYREG_SET, value8);
 		} else if (is_chip_id(adapter, MAC_AX_CHIP_ID_8852B)) {
+			/* 0x200[18:17] = 2'b01 */
+			value32 = MAC_REG_R32(R_AX_SPS_DIG_ON_CTRL0);
+			value32 = SET_CLR_WORD(value32, 0x1, B_AX_REG_ZCDC_H);
+			MAC_REG_W32(R_AX_SPS_DIG_ON_CTRL0, value32);
+
 			/* RDC KS/BB suggest : write 1 then write 0 then write 1 */
 			value32 = MAC_REG_R32(R_AX_WLRF_CTRL);
 			value32 = (value32 | B_AX_AFC_AFEDIG);
@@ -196,12 +206,7 @@ u32 set_enable_bb_rf(struct mac_ax_adapter *adapter, u8 enable)
 			value32 = (value32 | B_AX_AFC_AFEDIG);
 			MAC_REG_W32(R_AX_WLRF_CTRL, value32);
 
-			ret = mac_read_xtal_si(adapter, XTAL_SI_WL_RFC_S0, &wl_rfc_s0);
-			if (ret) {
-				PLTFM_MSG_ERR("Read XTAL_SI fail!\n");
-				return ret;
-			}
-			wl_rfc_s0 = (wl_rfc_s0 | 0x07);
+			wl_rfc_s0 = 0xC7;
 			ret = mac_write_xtal_si(adapter, XTAL_SI_WL_RFC_S0, wl_rfc_s0,
 						FULL_BIT_MASK);
 			if (ret) {
@@ -209,12 +214,7 @@ u32 set_enable_bb_rf(struct mac_ax_adapter *adapter, u8 enable)
 				return ret;
 			}
 
-			ret = mac_read_xtal_si(adapter, XTAL_SI_WL_RFC_S1, &wl_rfc_s1);
-			if (ret) {
-				PLTFM_MSG_ERR("Read XTAL_SI fail!\n");
-				return ret;
-			}
-			wl_rfc_s1 = (wl_rfc_s1 | 0x07);
+			wl_rfc_s1 = 0xC7;
 			ret = mac_write_xtal_si(adapter, XTAL_SI_WL_RFC_S1, wl_rfc_s1,
 						FULL_BIT_MASK);
 			if (ret) {
@@ -362,12 +362,12 @@ u32 set_cctl_rty_limit(struct mac_ax_adapter *adapter,
 {
 #define DFLT_DATA_RTY_LIMIT 32
 #define DFLT_RTS_RTY_LIMIT 15
-	struct mac_ax_cctl_info info;
-	struct mac_ax_cctl_info mask;
+	struct rtw_hal_mac_ax_cctl_info info;
+	struct rtw_hal_mac_ax_cctl_info mask;
 	u32 data_rty, rts_rty;
 
-	PLTFM_MEMSET(&mask, 0, sizeof(struct mac_ax_cctl_info));
-	PLTFM_MEMSET(&info, 0, sizeof(struct mac_ax_cctl_info));
+	PLTFM_MEMSET(&mask, 0, sizeof(struct rtw_hal_mac_ax_cctl_info));
+	PLTFM_MEMSET(&info, 0, sizeof(struct rtw_hal_mac_ax_cctl_info));
 
 	data_rty = cfg->data_lmt_val == 0 ?
 		DFLT_DATA_RTY_LIMIT : cfg->data_lmt_val;
@@ -1053,6 +1053,18 @@ u32 mac_clr_tx_cnt(struct mac_ax_adapter *adapter,
 	return MACSUCCESS;
 }
 
+u32 mac_set_adapter_info(struct mac_ax_adapter *adapter,
+			 struct mac_ax_adapter_info *set)
+{
+#ifdef RTW_WKARD_GET_PROCESSOR_ID
+	adapter->hw_info->adpt_info.cust_proc_id.proc_id.proc_id_h =
+		set->cust_proc_id.proc_id.proc_id_h;
+	adapter->hw_info->adpt_info.cust_proc_id.proc_id.proc_id_l =
+		set->cust_proc_id.proc_id.proc_id_l;
+#endif
+	return MACSUCCESS;
+}
+
 u32 mac_set_hw_value(struct mac_ax_adapter *adapter,
 		     enum mac_ax_hw_id hw_id, void *val)
 {
@@ -1228,6 +1240,10 @@ u32 mac_set_hw_value(struct mac_ax_adapter *adapter,
 	case MAC_AX_HW_SET_GT3_TIMER:
 		ret = set_gt3_timer(adapter,
 				    (struct mac_ax_gt3_cfg *)val);
+		break;
+	case MAC_AX_HW_SET_ADAPTER:
+		ret = mac_set_adapter_info(adapter,
+					   (struct mac_ax_adapter_info *)val);
 		break;
 #if MAC_AX_SDIO_SUPPORT
 	case MAC_AX_HW_SDIO_INFO:
@@ -1501,6 +1517,9 @@ u32 mac_get_hw_value(struct mac_ax_adapter *adapter,
 		break;
 	case MAC_AX_HW_GET_BT_EFUSE_MASK_SIZE:
 		*(u32 *)val = adapter->hw_info->bt_log_efuse_size >> 4;
+		break;
+	case MAC_AX_HW_GET_DAV_LOG_EFUSE_SIZE:
+		*(u32 *)val = adapter->hw_info->dav_log_efuse_size;
 		break;
 	case MAC_AX_HW_GET_EFUSE_VERSION_SIZE:
 		*(u32 *)val = adapter->hw_info->efuse_version_size;
@@ -2766,14 +2785,34 @@ u32 mac_io_chk_access(struct mac_ax_adapter *adapter, u32 offset)
 	return MACSUCCESS;
 }
 
-u32 mac_watchdog(struct mac_ax_adapter *adapter)
+u32 mac_watchdog(struct mac_ax_adapter *adapter,
+		 struct mac_ax_wdt_param *wdt_param)
 {
 	struct mac_ax_intf_ops *ops = adapter_to_intf_ops(adapter);
+	struct mac_ax_drv_wdt_ctrl *ctrl_def = &wdt_ctrl_def;
 	u32 ret = MACSUCCESS;
 
-	ret = ops->pcie_autok_counter_avg(adapter);
-	if (ret != MACSUCCESS)
-		return ret;
+#if MAC_AX_8852B_SUPPORT
+	if (is_chip_id(adapter, MAC_AX_CHIP_ID_8852B) &&
+	    wdt_param->drv_ctrl.autok_wdt_ctrl != MAC_AX_PCIE_IGNORE &&
+	    (wdt_param->drv_ctrl.autok_wdt_ctrl != MAC_AX_PCIE_DEFAULT ||
+	     (ctrl_def->autok_wdt_ctrl != MAC_AX_PCIE_IGNORE &&
+	      ctrl_def->autok_wdt_ctrl != MAC_AX_PCIE_DEFAULT))) {
+		ret = ops->pcie_autok_counter_avg(adapter);
+		if (ret != MACSUCCESS)
+			return ret;
+	}
+
+	if (is_chip_id(adapter, MAC_AX_CHIP_ID_8852B) &&
+	    wdt_param->drv_ctrl.tp_wdt_ctrl != MAC_AX_PCIE_IGNORE &&
+	    (wdt_param->drv_ctrl.tp_wdt_ctrl != MAC_AX_PCIE_DEFAULT ||
+	     (ctrl_def->tp_wdt_ctrl != MAC_AX_PCIE_IGNORE &&
+	      ctrl_def->tp_wdt_ctrl != MAC_AX_PCIE_DEFAULT))) {
+		ret = ops->tp_adjust(adapter, wdt_param->tp);
+		if (ret != MACSUCCESS)
+			return ret;
+	}
+#endif
 
 	return MACSUCCESS;
 }

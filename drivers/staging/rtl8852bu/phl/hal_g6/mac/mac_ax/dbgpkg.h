@@ -31,6 +31,9 @@
 #define RSVD_PLE_OFST_DBG_START 0x400
 #define SHARE_BUFFER_SIZE_8852A 0x70000
 #define SHARE_BUFFER_SIZE_8852B 0x30000
+#define RSVD_PLE_OFST_8852C 0x6f800
+#define RSVD_PLE_OFST_8192XB 0x6f800
+#define RSVD_PLE_OFST_1115E 0x87800
 #define STA_SCHED_MEM_SIZE 0x1200
 #define RXPLD_FLTR_CAM_MEM_SIZE 0x200
 #define SECURITY_CAM_MEM_SIZE 0x800
@@ -51,20 +54,17 @@
 #define TRX_CNT_REPT_CNT 5
 #define TRX_CNT_REPT_DLY_US 10
 #define TRX_CNT_READ_DLY_US 1
-#define PTCL_ST_NUM 11
 #define PTCL_ST_READ_DLY_US 1
 #define PTCL_SEL_FSM_0 0x0
 #define PTCL_SEL_FSM_1 0x1
 #define PTCL_SEL_PHY_DBG 0x10
 #define SCH_SEL_PREBKF_DBG_1 0x03
-#define SCH_SEL_EDCA_DBG 0x04
-#define PTCL_DBG_DMP_CNT 15
-#define SCH_DBG_DMP_CNT 15
+#define SCH_SEL_TX_NAV_ABORT_DBG 0x07
+#define PTCL_DBG_DMP_CNT 5
+#define SCH_DBG_DMP_CNT 5
+#define TX_FLOW_DMP_NUM 10
+#define TXFLOW_TRX_CNT_REPT_CNT 1
 
-#define PTCL_SEL_PHY_DBG 0x10
-#define SCH_SEL_EDCA_DBG 0x04
-#define PTCL_DBG_DMP_CNT 15
-#define SCH_DBG_DMP_CNT 15
 #define MAC_DBG_DMP_CNT 15
 #define MAC_DBG_DUMP_DLY_US 10
 
@@ -1150,4 +1150,23 @@ void pltfm_dbg_dump(struct mac_ax_adapter *adapter);
  */
 
 u32 mac_get_fw_status(struct mac_ax_adapter *adapter);
+
+/**
+ * @addtogroup Common
+ * @{
+ * @addtogroup DebugPackage
+ * @{
+ */
+/**
+ * @brief mac_get_ple_dbg_addr
+ * print_dbg_port
+ * @param *adapter
+ * @return Please Place Description here.
+ * @retval u32
+ */
+u32 mac_get_ple_dbg_addr(struct mac_ax_adapter *adapter);
+/**
+ * @}
+ * @}
+ */
 #endif

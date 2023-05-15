@@ -15,15 +15,16 @@
 #ifndef _PHL_COUNTRY_H_
 #define _PHL_COUNTRY_H_
 
-#define REGULATION_COUNTRY_VERSION 31
+#define REGULATION_COUNTRY_VERSION 32
 
 #define MAX_COUNTRY_NUM 238
 enum TP_OVERWRITE { 
     TPO_CHILE = 0,
-    TPO_QATAR = 1,
-    TPO_UKRAINE = 2,
-    TPO_CN = 3,
-    TPO_NA = 4
+    TPO_UK = 1,
+    TPO_QATAR = 2,
+    TPO_UKRAINE = 3,
+    TPO_CN = 4,
+    TPO_NA = 5
 }; 
 
 #define COUNTRY_CODE_LEN 2

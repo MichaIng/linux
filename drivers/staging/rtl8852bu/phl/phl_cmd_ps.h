@@ -1,6 +1,6 @@
 /******************************************************************************
  *
- * Copyright(c) 2021 Realtek Corporation.
+ * Copyright(c) 2022 Realtek Corporation.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of version 2 of the GNU General Public License as
@@ -15,12 +15,27 @@
 #ifndef _PHL_CMD_PS_H_
 #define _PHL_CMD_PS_H_
 #ifdef CONFIG_POWER_SAVE
-enum ps_mdl_opcode {
+enum ps_mdl_op {
 	PS_MDL_OP_NONE = 0,
 	PS_MDL_OP_CANCEL_PWR_REQ,
 	PS_MDL_OP_CUR_PWR_LVL,
 	PS_MDL_OP_BASIC_INFO,
 	PS_MDL_OP_BTC_PWR_REQ
+};
+
+enum ps_mdl_dbg_op {
+	FORCE_LPS_ENTER = 0,
+	FORCE_LPS_LEAVE,
+	FORCE_IPS_ENTER,
+	FORCE_IPS_LEAVE,
+	SET_LPS_MODE,
+	SET_IPS_MODE,
+	SET_LPS_CAP
+};
+
+struct ps_mdl_dbg_info {
+	enum ps_mdl_dbg_op op;
+	u8 val;
 };
 
 #define MAX_CMD_PS_RSON_LENGTH 30
@@ -40,8 +55,7 @@ struct phl_cmd_ps_basic_info {
 enum rtw_phl_status phl_register_ps_module(struct phl_info_t *phl_info);
 u8 phl_ps_get_cur_pwr_lvl(struct phl_info_t *phl_info);
 bool phl_ps_is_datapath_allowed(struct phl_info_t *phl_info);
+void phl_ps_tx_pkt_ntfy(struct phl_info_t *phl_info);
 void rtw_phl_ps_set_rt_cap(void *phl, u8 band_idx, bool ps_allow, enum phl_ps_rt_rson rt_rson);
-void phl_ps_dbg_set_ps(struct phl_info_t *phl_info, u8 ps_mode, bool enter);
-
 #endif
 #endif /* _PHL_CMD_PS_H_ */

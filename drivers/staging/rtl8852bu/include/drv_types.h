@@ -215,6 +215,7 @@ struct registry_priv {
 	u8	wow_lps_1t1r;
 	#endif
 #endif /* CONFIG_WOWLAN */
+	u8	lps_mode;
 	u8	smart_ps;
 #ifdef CONFIG_WMMPS_STA
 	u8	wmm_smart_ps;
@@ -276,6 +277,7 @@ struct registry_priv {
 	u8	ampdu_enable;/* for tx */
 	u8	rx_ampdu_amsdu;/* Rx A-MPDU Supports A-MSDU is permitted */
 	u8	tx_ampdu_amsdu;/* Tx A-MPDU Supports A-MSDU is permitted */
+	u8	tx_ampdu_num;
 	u8	tx_quick_addba_req;
 	u8 rx_ampdu_sz_limit_by_nss_bw[4][4]; /* 1~4SS, BW20~BW160 */
 	/* Short GI support Bit Map */
@@ -284,7 +286,11 @@ struct registry_priv {
 	/* BIT2 - 80MHz, 1: support, 0: non-support */
 	/* BIT3 - 160MHz, 1: support, 0: non-support */
 	u8	short_gi;
-	/* BIT0: Enable VHT LDPC Rx, BIT1: Enable VHT LDPC Tx, BIT4: Enable HT LDPC Rx, BIT5: Enable HT LDPC Tx */
+	/*
+	  * BIT0: Enable VHT LDPC Rx, BIT1: Enable VHT LDPC Tx
+	  * BIT2: Enable HE LDPC Rx, BIT3: Enable HE LDPC Tx
+	  * BIT4: Enable HT LDPC Rx, BIT5: Enable HT LDPC Tx
+	  */
 	u8	ldpc_cap;
 	/*
 	 * BIT0: Enable VHT STBC Rx, BIT1: Enable VHT STBC Tx
@@ -423,6 +429,7 @@ struct registry_priv {
 	u8 adaptivity_mode;
 	s8 adaptivity_th_l2h_ini;
 	s8 adaptivity_th_edcca_hl_diff;
+	u8 adaptivity_idle_probability;
 
 	u8 boffefusemask;
 	BOOLEAN bFileMaskEfuse;
@@ -503,6 +510,7 @@ struct registry_priv {
 	 */
 	u32 scan_interval_thr;
 #endif
+	u16 scan_pch_ex_time;
 	u8 deny_legacy;
 #ifdef CONFIG_RTW_MULTI_AP
 	u8 unassoc_sta_mode_of_stype[UNASOC_STA_SRC_NUM];
@@ -616,7 +624,9 @@ struct registry_priv {
 #define SZ_TX_RING 		(SZ_TXREQ+SZ_HEAD_BUF+SZ_TAIL_BUF+(SZ_PKT_LIST*NUM_PKT_LIST_PER_TXREQ))
 #define SZ_MGT_RING		(SZ_TXREQ + SZ_PKT_LIST)/* MGT_TXREQ_QMGT */
 
+#ifndef MAX_TX_RING_NUM
 #define MAX_TX_RING_NUM 	4096
+#endif /* MAX_TX_RING_NUM */
 #endif
 
 
@@ -1156,6 +1166,8 @@ struct dvobj_priv {
 	/* saved channel info when call set_channel_bw */
 	systime on_oper_ch_time;
 
+	u32 fa_cnt_acc[HW_BAND_MAX];
+
 	/****** hal dep info*********/
 
 
@@ -1351,6 +1363,7 @@ _adapter *dvobj_get_unregisterd_adapter(struct dvobj_priv *dvobj);
 _adapter *dvobj_get_adapter_by_addr(struct dvobj_priv *dvobj, u8 *addr);
 #define dvobj_get_primary_adapter(dvobj)	((dvobj)->padapters[IFACE_ID0])
 
+void rtw_efuse_dbg_raw_dump(struct dvobj_priv *pdvobj);
 
 enum _ADAPTER_TYPE {
 	PRIMARY_ADAPTER,
@@ -1764,7 +1777,6 @@ struct _ADAPTER {
 	u8 driver_rx_ampdu_spacing;  /* driver control Rx AMPDU Density */
 	u8 fix_rx_ampdu_accept;
 	u8 fix_rx_ampdu_size; /* 0~127, TODO:consider each sta and each TID */
-	u8 driver_tx_max_agg_num; /*fix tx desc max agg num , 0xff: disable drv ctrl*/
 
 	#ifdef DBG_RX_COUNTER_DUMP
 	u8 dump_rx_cnt_mode;/*BIT0:drv,BIT1:mac,BIT2:phy*/

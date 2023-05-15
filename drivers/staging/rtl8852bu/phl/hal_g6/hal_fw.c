@@ -233,11 +233,40 @@ rtw_hal_redownload_fw(struct rtw_phl_com_t *phl_com, void *hal)
 	return hal_status;
 }
 
-void rtw_hal_fw_dbg_dump(void *hal, u8 is_low_power)
+enum rtw_hal_status
+rtw_hal_pg_redownload_fw(struct rtw_phl_com_t *phl_com, void *hal)
+{
+	struct hal_info_t *hal_info = (struct hal_info_t *)hal;
+	enum rtw_hal_status hal_status = RTW_HAL_STATUS_SUCCESS;
+	struct rtw_fw_info_t *fw_info = &phl_com->fw_info;
+	u8 *fw_buff = NULL;
+	u32 fw_size = 0;
+
+	FUNCIN_WSTS(hal_status);
+
+	if (fw_info->fw_src == RTW_FW_SRC_EXTNAL) {
+		fw_buff = fw_info->ram_buff;
+		fw_size = fw_info->ram_size;
+	} else {
+		hal_status = rtw_hal_mac_query_fw_buff(hal_info,
+						fw_info->fw_type,
+						&fw_buff, &fw_size);
+		if (hal_status != RTW_HAL_STATUS_SUCCESS)
+			return RTW_HAL_STATUS_FAILURE;
+	}
+
+	hal_status = rtw_hal_mac_fwredl(hal_info, fw_buff, fw_size);
+
+	FUNCOUT_WSTS(hal_status);
+
+	return hal_status;
+}
+
+void rtw_hal_fw_dbg_dump(void *hal)
 {
 	struct hal_info_t *hal_info = (struct hal_info_t *)hal;
 
-	rtw_hal_mac_fw_dbg_dump(hal_info, is_low_power);
+	rtw_hal_mac_fw_dbg_dump(hal_info);
 }
 
 enum rtw_fw_status rtw_hal_get_fw_status(void *h)

@@ -403,7 +403,9 @@ bool halrf_fw_iqk(struct rf_info *rf, enum phl_phy_idx phy_idx, bool force) {
 	RF_DBG(rf, DBG_RF_IQK, "[IQK]====  FW IQK START v3 ==== \n");
 	data_to_fw[0] = (u32) phy_idx;
 	data_to_fw[1] = (u32) rf->hal_com->dbcc_en;
+#if 0
 	halrf_btc_rfk_ntfy(rf, ((BIT(phy_idx) << 4) | RF_AB), RF_BTC_IQK, RFK_ONESHOT_START);		
+#endif
 	RF_DBG(rf, DBG_RF_IQK, "[IQK] phy_idx  = 0x%x\n", data_to_fw[0]);		
 	RF_DBG(rf, DBG_RF_IQK, "[IQK] dbcc_en = 0x%x\n", data_to_fw[1]);
 	halrf_iqk_get_ch_info(rf, phy_idx, RF_PATH_A);	
@@ -413,8 +415,9 @@ bool halrf_fw_iqk(struct rf_info *rf, enum phl_phy_idx phy_idx, bool force) {
 	iqk_info->iqk_times = halrf_get_iqk_times(rf);
 	halrf_iqk_set_info(rf, phy_idx, RF_PATH_A);	
 	halrf_iqk_set_info(rf, phy_idx, RF_PATH_B);
+#if 0
 	halrf_btc_rfk_ntfy(rf, ((BIT(phy_idx) << 4) | RF_AB), RF_BTC_IQK, RFK_ONESHOT_STOP);
-	
+#endif	
 	RF_DBG(rf, DBG_RF_IQK, "[IQK]====  FW IQK FINISH ==== \n");
 	return isfail;
 }

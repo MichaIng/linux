@@ -56,6 +56,9 @@ struct phl_scan_channel {
 	enum rtw_phl_scan_type type; /* active scan: 1, passive scan: 0 */
 	u8 scan_mode; /* according to phl_scan_mode */
 	u8 ext_act_scan; /* according to phl_ext_act_scan_state */
+#ifdef CONFIG_RTW_ACS
+	u8 acs_idx; /* idx of phl_acs_chnl_tbl */
+#endif
 };
 
 enum scan_result {
@@ -125,6 +128,10 @@ struct rtw_phl_scan_param {
 	const char *name;
 	enum scan_result result;
 	u32 ext_act_scan_period;
+#ifdef CONFIG_RTW_ACS
+	bool acs;
+	bool nhm_include_cca;
+#endif
 };
 
 enum PRECEDE {

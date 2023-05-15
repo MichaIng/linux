@@ -395,6 +395,8 @@ _phl_wifi_role_free_sw(struct phl_info_t *phl_info, struct rtw_wifi_role_t *wrol
 	mr_ctl->role_map &= ~BIT(wrole->id);
 	_os_spinunlock(phl_to_drvpriv(phl_info), &mr_ctl->lock, _ps, NULL);
 	wrole->active = false;
+	wrole->mstate = MLME_NO_LINK;
+	wrole->type = PHL_RTYPE_NONE;
 	return RTW_PHL_STATUS_SUCCESS;
 }
 
@@ -810,6 +812,11 @@ phl_wifi_role_change(struct phl_info_t *phl_info,
 			pstate = RTW_PHL_STATUS_SUCCESS;
 	}
 	break;
+	case WR_CHG_STBC_CFG:
+	{
+		phl_init_proto_stbc_cap(wrole, phl_info, &wrole->proto_role_cap);
+	}
+	break;
 	case WR_CHG_MAX:
 		PHL_TRACE(COMP_PHL_DBG, _PHL_ERR_,
 				"%s: Unsupported case:%d, please check it\n",
@@ -1037,7 +1044,7 @@ void rtw_phl_wifi_role_free(void *phl, u8 role_idx)
 
 	if (phl_wifi_role_stop(phl_info, wrole) != RTW_PHL_STATUS_SUCCESS) {
 		PHL_ERR("%s role_stop failed :%d", __func__, role_idx);
-		_os_warn_on(1);
+//		_os_warn_on(1);
 	}
 
 	if (phl_wifi_role_free_stainfo_sw(phl_info, wrole) != RTW_PHL_STATUS_SUCCESS) {
@@ -1147,7 +1154,10 @@ phl_role_suspend(struct phl_info_t *phl_info)
 
 	for (role_idx = 0; role_idx < MAX_WIFI_ROLE_NUMBER; role_idx++) {
 		wrole = rtw_phl_get_wrole_by_ridx(phl_info->phl_com, role_idx);
-		if(wrole == NULL)
+		if (wrole == NULL)
+			continue;
+
+		if (wrole->active == false)
 			continue;
 
 		PHL_INFO("%s with role_idx %d\n", __func__, role_idx);
@@ -1179,40 +1189,6 @@ phl_cmd_role_suspend(struct phl_info_t *phl_info)
 	pstatus = phl_role_suspend(phl_info);
 #endif
 	return pstatus;
-}
-
-void phl_role_config_tbtt_agg(struct phl_info_t *phl_info,
-	struct rtw_wifi_role_t *cur_wrole, u32 tbtt_agg_val)
-{
-	u8 role_idx;
-	struct rtw_wifi_role_t * wrole;
-	u32 tbtt_agg = tbtt_agg_val;
-
-	if (cur_wrole == NULL) {
-		PHL_ERR("%s cur role is NULL\n", __func__);
-		return;
-	}
-
-	for (role_idx = 0; role_idx < MAX_WIFI_ROLE_NUMBER; role_idx++) {
-		wrole = rtw_phl_get_wrole_by_ridx(phl_info->phl_com, role_idx);
-		if(wrole == NULL || !wrole->active)
-			continue;
-
-		if (wrole == cur_wrole)
-			continue;
-
-		PHL_INFO("%s role %d config tbtt agg = %d\n", __func__, role_idx, tbtt_agg_val);
-		rtw_hal_role_cfg_ex(phl_info->hal, wrole, PCFG_TBTT_AGG, &tbtt_agg);
-	}
-}
-
-bool rtw_phl_role_is_client_category(struct rtw_wifi_role_t *wrole)
-{
-	bool ret = false;
-
-	if (wrole->type == PHL_RTYPE_STATION || wrole->type == PHL_RTYPE_P2P_GC)
-		ret = true;
-	return ret;
 }
 
 u16 phl_role_get_bcn_intvl(struct phl_info_t *phl, struct rtw_wifi_role_t *wrole)

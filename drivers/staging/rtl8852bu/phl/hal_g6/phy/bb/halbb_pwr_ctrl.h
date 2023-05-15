@@ -36,8 +36,8 @@
 #define TX_HP_LV_UNCHANGE	4
 /*#if (DM_ODM_SUPPORT_TYPE == ODM_AP)*/
 #define TX_PWR_TH_LVL3 87
-#define TX_PWR_TH_LVL2 73
-#define TX_PWR_TH_LVL1 62
+#define TX_PWR_TH_LVL2 78
+#define TX_PWR_TH_LVL1 70
 /*#elif (DM_ODM_SUPPORT_TYPE == ODM_WIN)
 #define TX_PWR_TH_LVL3 90
 #define TX_PWR_TH_LVL2 85

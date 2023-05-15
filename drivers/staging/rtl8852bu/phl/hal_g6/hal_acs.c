@@ -16,14 +16,14 @@
 #include "hal_headers.h"
 
 #ifdef CONFIG_RTW_ACS
-void rtw_hal_acs_mntr_trigger(void *hal, u16 monitor_time)
+void rtw_hal_acs_mntr_trigger(void *hal, struct acs_mntr_parm *parm)
 {
 	struct hal_info_t *hal_info = (struct hal_info_t *)hal;
 
-	rtw_hal_bb_acs_mntr_trigger(hal_info, monitor_time);
+	rtw_hal_bb_acs_mntr_trigger(hal_info, parm);
 }
 
-enum rtw_hal_status rtw_hal_acs_mntr_result(void *hal, void *rpt)
+enum rtw_hal_status rtw_hal_acs_mntr_result(void *hal, struct acs_mntr_rpt *rpt)
 {
 	struct hal_info_t *hal_info = (struct hal_info_t *)hal;
 

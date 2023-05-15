@@ -15,7 +15,7 @@
 #ifndef _HAL_ACS_H_
 #define _HAL_ACS_H_
 
-void rtw_hal_acs_mntr_trigger(void *hal, u16 monitor_time);
-enum rtw_hal_status rtw_hal_acs_mntr_result(void *hal, void *rpt);
+void rtw_hal_acs_mntr_trigger(void *hal, struct acs_mntr_parm *parm);
+enum rtw_hal_status rtw_hal_acs_mntr_result(void *hal, struct acs_mntr_rpt *rpt);
 
 #endif

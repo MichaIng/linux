@@ -60,6 +60,8 @@
 	case RTW_DATA_RATE_##src: return #src
 #define case_polut(src) \
 	case BTC_PLT_##src: return #src
+#define case_band(src) \
+	case BAND_ON_##src: return #src
 
 const char *id_to_str(u8 type, u32 id)
 {
@@ -512,6 +514,13 @@ const char *id_to_str(u8 type, u32 id)
 		case_rate(HE_NSS4_MCS10);
 		case_rate(HE_NSS4_MCS11);
 		case_rate(MAX);
+		}
+		break;
+	case BTC_STR_BAND:
+		switch(id) {
+		case_band(24G);
+		case_band(5G);
+		case_band(6G);
 		}
 		break;
 	}

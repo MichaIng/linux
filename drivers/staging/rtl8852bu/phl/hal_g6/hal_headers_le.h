@@ -48,8 +48,10 @@
 /* Common definition from HAL*/
 #include "hal_general_def.h"
 /* Exported structure/definition from HAL */
-#include "hal_def.h"
 #include "hal_config.h"
+#include "hal_def.h"
+#include "mac/mac_exp_def.h"
+#include "mac/mac_outsrc_def.h"
 
 /*
 Exported hal API  from HAL

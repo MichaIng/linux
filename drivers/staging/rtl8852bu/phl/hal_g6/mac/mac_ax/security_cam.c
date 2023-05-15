@@ -754,6 +754,14 @@ u32 mac_sta_add_key(struct mac_ax_adapter *adapter,
 	sec_cam_info->sec_cam_idx = sec_cam_idx;
 	sec_cam_info->offset = 0x00;
 	sec_cam_info->len = SEC_CAM_ENTRY_SIZE;
+
+	/* For WAPI Support */
+	if (sec_cam_info->type == HW_SUPPORT_ENC_TYPE_WAPI ||
+	    sec_cam_info->type == HW_SUPPORT_ENC_TYPE_GCMSMS4)
+		role->info.a_info.wapi = 1;
+	else
+		role->info.a_info.wapi = 0;
+
 	ret = insert_key_to_addr_cam(adapter, role, key_type, key_id,
 				     sec_cam_info->sec_cam_idx);
 	if (ret != MACSUCCESS)
@@ -1017,15 +1025,20 @@ u32 refresh_security_cam_info(struct mac_ax_adapter *adapter,
 	struct sec_cam_table_t *sec_cam_table = adapter->hw_info->sec_cam_table;
 	struct mac_role_tbl *role = NULL;
 
+	if (!sec_cam_table)
+		return MACNOROLE;
+
 	/*read HW key in address cam */
 	for (addr_idx = 0; addr_idx < 0x80; addr_idx++) {
 		hit_flag = INVALID;
 
 		PLTFM_MSG_WARN("%s ind access macid %d start\n", __func__, mac_id);
 		cam_address = addr_idx * addr_cam_size;
-		for (i = 0; i < 10; i++)
-			dword[i] = mac_sram_dbg_read(adapter, cam_address,
+		for (i = 0; i < 10; i++) {
+			dword[i] = mac_sram_dbg_read(adapter, cam_address + (i * 4),
 						     ADDR_CAM_SEL);
+			PLTFM_MSG_WARN("CAMADDR<%x>=%x\n", cam_address, dword[i]);
+		}
 		PLTFM_MSG_WARN("%s ind access macid %d end\n", __func__, mac_id);
 
 		if ((dword[0] & ADDRCAM_VALID) == VALID) {
@@ -1075,7 +1088,7 @@ u32 refresh_security_cam_info(struct mac_ax_adapter *adapter,
 	}
 
 	if (hit_flag == INVALID) {
-		PLTFM_MSG_TRACE("MACID : %d not exist\n", mac_id);
+		PLTFM_MSG_ALWAYS("MACID : %d not exist\n", mac_id);
 		return MACNOROLE;
 	}
 
@@ -1107,8 +1120,10 @@ u32 refresh_security_cam_info(struct mac_ax_adapter *adapter,
 
 	// write back to address cam sec part
 	role = mac_role_srch(adapter, mac_id);
-	if (!role)
+	if (!role) {
+		PLTFM_MSG_ALWAYS("%s mac_role_srch fail\n", __func__);
 		return MACNOROLE;
+	}
 
 	role->info.a_info.sec_ent_valid = key_valid_byte_ori;
 	for (i = 0; i < 7; i++) {

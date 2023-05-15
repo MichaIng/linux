@@ -15,6 +15,23 @@
 
 #include "sounding.h"
 
+static u32 _patch_snd_ple_modify(struct mac_ax_adapter *adapter, u8 band)
+{
+	struct mac_ax_intf_ops *ops = adapter_to_intf_ops(adapter);
+
+#if (MAC_AX_8852A_SUPPORT || MAC_AX_8852B_SUPPORT)
+
+	u32 val32;
+	u16 cr;
+
+	cr = band ? R_AX_BFMEE_RESP_OPTION_C1 : R_AX_BFMEE_RESP_OPTION;
+	val32 = MAC_REG_R32(cr);
+	val32 = SET_CLR_WORD(val32, PATCH_NDP_RX_STANDBY_TIMER, B_AX_BFMEE_NDP_RX_STANDBY_TIMER);
+	MAC_REG_W32(cr, val32);
+#endif
+	return MACSUCCESS;
+}
+
 u32 mac_get_csi_buffer_index(struct mac_ax_adapter *adapter, u8 band,
 			     u8 csi_buffer_id)
 {
@@ -268,6 +285,7 @@ u32 mac_init_snd_mee(struct mac_ax_adapter *adapter, u8 band)
 		MAC_REG_W32(band ? R_AX_TRXPTCL_ERROR_INDICA_MASK_C1 :
 			    R_AX_TRXPTCL_ERROR_INDICA_MASK, val32);
 	}
+	_patch_snd_ple_modify(adapter, band);
 	return MACSUCCESS;
 }
 
@@ -1670,8 +1688,8 @@ u32 mac_set_csi_para_reg(struct mac_ax_adapter *adapter,
 u32 mac_set_csi_para_cctl(struct mac_ax_adapter *adapter,
 			  struct mac_cctl_csi_para *csi_para)
 {
-	struct mac_ax_cctl_info info;
-	struct mac_ax_cctl_info mask;
+	struct rtw_hal_mac_ax_cctl_info info;
+	struct rtw_hal_mac_ax_cctl_info mask;
 	struct mac_ax_ops *ax_ops = adapter_to_mac_ops(adapter);
 	struct mac_ax_intf_ops *ops = adapter_to_intf_ops(adapter);
 	u32 ret, val32;

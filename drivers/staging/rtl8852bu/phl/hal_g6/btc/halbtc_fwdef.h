@@ -11,13 +11,18 @@
 #define FCXDEF_STEP 50 /* MUST fw_step size*/
 #define BTC_CYCLE_SLOT_MAX 48 /* must be even number, non-zero */
 
-enum btc_bt_rfk_counter {
+enum btc_bt_sta_counter {
 	BTC_BCNT_RFK_REQ = 0,
 	BTC_BCNT_RFK_GO = 1,
 	BTC_BCNT_RFK_REJECT = 2,
 	BTC_BCNT_RFK_FAIL = 3,
 	BTC_BCNT_RFK_TIMEOUT = 4,
-	BTC_BCNT_RFK_MAX
+	BTC_BCNT_HI_TX = 5,
+	BTC_BCNT_HI_RX = 6,
+	BTC_BCNT_LO_TX = 7,
+	BTC_BCNT_LO_RX = 8,
+	BTC_BCNT_POLLUTED = 9,
+	BTC_BCNT_STA_MAX
 };
 
 struct btc_rpt_ctrl_wl_fw_info {
@@ -34,6 +39,9 @@ struct btc_rpt_ctrl_info {
 	u32 cnt_c2h; /* fw send c2h counter  */
 	u32 cnt_h2c; /* fw recv h2c counter */
 	u32 len_c2h; /* The total length of the last C2H  */
+
+	u32 cnt_aoac_rf_on;  /* rf-on counter for aoac switch notify */
+	u32 cnt_aoac_rf_off; /* rf-off counter for aoac switch notify */
 };
 
 struct btc_rpt_ctrl_a2dp_empty {
@@ -51,7 +59,7 @@ struct btc_rpt_ctrl_bt_mailbox {
 	struct btc_rpt_ctrl_a2dp_empty a2dp;
 };
 
-#define FCX_BTCRPT_VER 2
+#define FCX_BTCRPT_VER 4
 struct fbtc_rpt_ctrl {
 	u8 fver;
 	u8 rsvd;
@@ -59,7 +67,8 @@ struct fbtc_rpt_ctrl {
 	struct btc_rpt_ctrl_info rpt_info;
 	struct btc_rpt_ctrl_wl_fw_info wl_fw_info;
 	struct btc_rpt_ctrl_bt_mailbox bt_mbx_info;
-	u32 bt_rfk_cnt[BTC_BCNT_RFK_MAX];
+	u32 bt_cnt[BTC_BCNT_STA_MAX];
+	u8 gnt_val[HW_PHY_MAX][4];
 };
 
 /*
@@ -114,7 +123,7 @@ union fbtc_rxflct {
 	u8 tgln_n: 5;
 };
 
-#define FCX_TDMA_VER 2
+#define FCX_TDMA_VER 3
 struct fbtc_tdma {
 	u8 type; /* refer to fbtc_tdma_type*/
 	u8 rxflctrl; /* refer to fbtc_tdma_rx_flow_ctrl */
@@ -127,7 +136,7 @@ struct fbtc_tdma {
 	 * if multi-role: [7:4] second-role, [3:0] fisrt-role
 	 */
 	u8 rxflctrl_role;
-	u8 rsvd;
+	u8 option_ctrl; /*bit0: execute immediately, no tdma cycle waitting */
 };
 
 struct fbtc_1tdma {

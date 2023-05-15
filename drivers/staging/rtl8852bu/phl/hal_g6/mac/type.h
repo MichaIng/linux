@@ -26,6 +26,8 @@
 #include "mac_ax/mac_ax_dfs.h"
 #include "mac_ax/mac_ax_mac_info.h"
 #include "mac_ax/mac_txccxrpt.h"
+#include "mac_ax/mac_ftmrpt.h"
+#include "mac_ax/mac_ftmackrpt.h"
 
 #if MAC_AX_FEATURE_DBGPKG
 #include "mac_ax/dbgpkg.h"
@@ -303,57 +305,6 @@
 /*--------------------Define Enum---------------------------------------*/
 
 /**
- * @enum mac_ax_dma_ch
- *
- * @brief mac_ax_dma_ch
- *
- * @var mac_ax_dma_ch::MAC_AX_DMA_ACH0
- * Please Place Description here.
- * @var mac_ax_dma_ch::MAC_AX_DMA_ACH1
- * Please Place Description here.
- * @var mac_ax_dma_ch::MAC_AX_DMA_ACH2
- * Please Place Description here.
- * @var mac_ax_dma_ch::MAC_AX_DMA_ACH3
- * Please Place Description here.
- * @var mac_ax_dma_ch::MAC_AX_DMA_ACH4
- * Please Place Description here.
- * @var mac_ax_dma_ch::MAC_AX_DMA_ACH5
- * Please Place Description here.
- * @var mac_ax_dma_ch::MAC_AX_DMA_ACH6
- * Please Place Description here.
- * @var mac_ax_dma_ch::MAC_AX_DMA_ACH7
- * Please Place Description here.
- * @var mac_ax_dma_ch::MAC_AX_DMA_B0MG
- * Please Place Description here.
- * @var mac_ax_dma_ch::MAC_AX_DMA_B0HI
- * Please Place Description here.
- * @var mac_ax_dma_ch::MAC_AX_DMA_B1MG
- * Please Place Description here.
- * @var mac_ax_dma_ch::MAC_AX_DMA_B1HI
- * Please Place Description here.
- * @var mac_ax_dma_ch::MAC_AX_DMA_H2C
- * Please Place Description here.
- * @var mac_ax_dma_ch::MAC_AX_DMA_CH_NUM
- * Please Place Description here.
- */
-enum mac_ax_dma_ch {
-	MAC_AX_DMA_ACH0 = 0,
-	MAC_AX_DMA_ACH1,
-	MAC_AX_DMA_ACH2,
-	MAC_AX_DMA_ACH3,
-	MAC_AX_DMA_ACH4,
-	MAC_AX_DMA_ACH5,
-	MAC_AX_DMA_ACH6,
-	MAC_AX_DMA_ACH7,
-	MAC_AX_DMA_B0MG,
-	MAC_AX_DMA_B0HI,
-	MAC_AX_DMA_B1MG,
-	MAC_AX_DMA_B1HI,
-	MAC_AX_DMA_H2C,
-	MAC_AX_DMA_CH_NUM
-};
-
-/**
  * @enum mac_ax_data_ch
  *
  * @brief mac_ax_data_ch
@@ -413,8 +364,10 @@ enum mac_ax_data_ch {
 	MAC_AX_DATA_CH5 = 5,
 	MAC_AX_DATA_CH6 = 6,
 	MAC_AX_DATA_CH7 = 7,
-	MAC_AX_DATA_MGN = 8,
-	MAC_AX_DATA_HIQ = 9
+	MAC_AX_DATA_CH8 = 8,
+	MAC_AX_DATA_CH9 = 9,
+	MAC_AX_DATA_CH10 = 10,
+	MAC_AX_DATA_CH11 = 11,
 };
 
 /**

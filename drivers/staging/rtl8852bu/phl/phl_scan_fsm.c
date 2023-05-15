@@ -192,21 +192,34 @@ static int off_ch_return_set_ch_bw(struct scan_obj *pscan)
 }
 
 #ifdef CONFIG_RTW_ACS
-static void scan_acs_mntr_trigger(struct scan_obj *pscan,
-	struct phl_scan_channel *scan_ch)
+static void scan_acs_mntr_trigger(struct scan_obj *pscan)
 {
-	u16 monitor_time = scan_ch->duration - MONITOR_TIME_TOLERANCE;
+	struct rtw_phl_scan_param *param = pscan->param;
+	struct phl_scan_channel *scan_ch = param->ch;
+	struct phl_acs_parm parm = {0};
 
-	phl_acs_mntr_trigger(pscan->phl_info,
-		(u8)pscan->param->ch_idx, scan_ch->channel, monitor_time);
+	if (!param->acs)
+		return;
+
+	parm.idx = scan_ch->acs_idx;
+	parm.monitor_time = ACS_ENV_MNTR_TIME(scan_ch->duration);
+	parm.nhm_include_cca = param->nhm_include_cca;
+
+	phl_acs_mntr_trigger(pscan->phl_info, &parm);
 }
 
 static void scan_acs_mntr_result(struct scan_obj *pscan)
 {
-	if (pscan->param->ch_idx < 0)
+	struct rtw_phl_scan_param *param = pscan->param;
+	struct phl_scan_channel *scan_ch = param->ch;
+	struct phl_acs_parm parm = {0};
+
+	if (!param->acs || pscan->param->ch_idx < 0)
 		return;
 
-	phl_acs_mntr_result(pscan->phl_info);
+	parm.idx = scan_ch->acs_idx;
+
+	phl_acs_mntr_result(pscan->phl_info, &parm);
 }
 #endif /* CONFIG_RTW_ACS */
 
@@ -847,7 +860,7 @@ static int scan_off_ch_st_hdl(void *obj, u16 event, void *param)
 		scan_set_channel_bw(pscan, scan_ch->channel, CHANNEL_WIDTH_20,
 					CHAN_OFFSET_NO_EXT, 0);
 		#ifdef CONFIG_RTW_ACS
-		scan_acs_mntr_trigger(pscan, scan_ch);
+		scan_acs_mntr_trigger(pscan);
 		#endif
 
 		if (phl_fsm_is_alarm_off_ext(

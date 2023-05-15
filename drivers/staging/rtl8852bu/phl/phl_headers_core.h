@@ -36,6 +36,7 @@
 #include "phl_country.h"
 #include "phl_scan_instance.h"
 #include "phl_def.h"
+#include "hal_g6/mac/mac_exp_def.h"
 #include "phl_trx_def.h"
 #include "phl_wow_def.h"
 
@@ -44,6 +45,7 @@
 #include "test/trx_test.h"
 #include "test/cmd_disp_test.h"
 #include "phl_led_def.h"
+#include "phl_acs_def.h"
 #include "custom/phl_custom_def.h"
 #include "phl_ext_tx_pwr_lmt_def.h"
 #include "phl_chnlplan.h"

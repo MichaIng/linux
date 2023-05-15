@@ -54,6 +54,8 @@
 #define eMallocMAX	23
 #define eMallocTypeMAX	3
 
+#define OPCODE_HDR_LEN 2
+#define MAX_FWSTATSUS_PKT_LEN 12
 //STR_BUF_SIZE , -128 for driver stack size warning
 #define STR_BUF_SIZE (1024 - 128)
 

@@ -51,19 +51,21 @@ static void _hdl_role_notify(void *phl, struct phl_msg *msg)
 static void _hdl_pkt_evt_notify(void *phl, struct phl_msg *msg)
 {
 	struct phl_info_t *phl_info = (struct phl_info_t *)phl;
-	struct rtw_pkt_evt_ntfy *pkt_evt = NULL;
-	struct rtw_wifi_role_t *wrole = NULL;
+	enum phl_pkt_evt_type *pkt_evt_type = NULL;
+	u8 *cmd = NULL;
+	u32 cmd_len = 0;
+	enum rtw_phl_status pstatus = RTW_PHL_STATUS_SUCCESS;
 
-	if (msg->inbuf && (msg->inlen == sizeof(struct rtw_pkt_evt_ntfy))) {
-		pkt_evt = (struct rtw_pkt_evt_ntfy *)msg->inbuf;
-		wrole = pkt_evt->wrole; /* not used currently */
-
-		rtw_hal_btc_packet_event_ntfy(phl_info->hal,
-					(u8)pkt_evt->type);
-	} else {
-		PHL_ERR("%s: invalid msg, buf = %p, len = %d\n",
-			__func__, msg->inbuf, msg->inlen);
+	pstatus = phl_cmd_get_cur_cmdinfo(phl_info, msg->band_idx,
+					msg, &cmd, &cmd_len);
+	if (pstatus != RTW_PHL_STATUS_SUCCESS) {
+		PHL_ERR("%s: get cmd info fail, status = %d\n",
+			__func__, pstatus);
+		return;
 	}
+
+	pkt_evt_type = (enum phl_pkt_evt_type *)cmd;
+	rtw_hal_btc_packet_event_ntfy(phl_info->hal, *pkt_evt_type);
 }
 
 static enum phl_mdl_ret_code _btc_cmd_init(void *phl, void *dispr,
@@ -112,12 +114,6 @@ _btc_internal_pre_msg_hdlr(struct phl_info_t *phl_info,
 	switch(evt_id) {
 	case MSG_EVT_BTC_REQ_BT_SLOT:
 		PHL_INFO("[BTCCMD], MSG_EVT_BTC_REQ_BT_SLOT \n");
-		ret = MDL_RET_SUCCESS;
-		break;
-
-	case MSG_EVT_BTC_PKT_EVT_NTFY:
-		PHL_INFO("[BTCCMD], MSG_EVT_BTC_PKT_EVT_NTFY \n");
-		_hdl_pkt_evt_notify(phl_info, msg);
 		ret = MDL_RET_SUCCESS;
 		break;
 
@@ -204,6 +200,12 @@ _btc_external_pre_msg_hdlr(struct phl_info_t *phl_info,
 				break;
 
 			PHL_INFO("[BTCCMD], MSG_EVT_CONNECT_START \n");
+			ret = MDL_RET_SUCCESS;
+			break;
+
+		case MSG_EVT_PKT_EVT_NTFY:
+			PHL_INFO("[BTCCMD], MSG_EVT_PKT_EVT_NTFY \n");
+			_hdl_pkt_evt_notify(phl_info, msg);
 			ret = MDL_RET_SUCCESS;
 			break;
 
@@ -341,6 +343,15 @@ _btc_query_info(void *dispr, void *priv,
 	return MDL_RET_SUCCESS;
 }
 
+static void _btc_set_stbc(struct phl_info_t *phl_info, u8 *buf)
+{
+	struct rtw_hal_com_t *hal_com = rtw_hal_get_halcom(phl_info->hal);
+
+	hal_com->btc_ctrl.disable_rx_stbc = buf[0];
+	PHL_INFO("[BTCCMD], %s(): disable_rx_stbc(%d) \n",
+			__func__, hal_com->btc_ctrl.disable_rx_stbc);
+}
+
 enum rtw_phl_status phl_register_btc_module(struct phl_info_t *phl_info)
 {
 	enum rtw_phl_status phl_status = RTW_PHL_STATUS_FAILURE;
@@ -363,6 +374,71 @@ enum rtw_phl_status phl_register_btc_module(struct phl_info_t *phl_info)
 	}
 
 	return phl_status;
+}
+
+static void
+_phl_btc_req_evt_done(void* priv, struct phl_msg* msg)
+{
+	struct phl_info_t *phl_info = (struct phl_info_t *)priv;
+
+	if (msg->inbuf && msg->inlen) {
+		_os_kmem_free(phl_to_drvpriv(phl_info),
+			msg->inbuf, msg->inlen);
+	}
+}
+
+static bool
+_btc_send_hub_msg(struct phl_info_t *phl_info, u8 *buf, u16 evt_id, u32 len)
+{
+	struct phl_msg msg = {0};
+	struct phl_msg_attribute attr = {0};
+	struct rtw_btc_req_msg *btc_req_msg = NULL;
+
+	if (len > BTC_MAX_DATA_SIZE) {
+		PHL_ERR("%s: Buf len exeeds Max.\n", __func__);
+		return false;
+	}
+
+	btc_req_msg = (struct rtw_btc_req_msg *)_os_kmem_alloc(
+			phl_to_drvpriv(phl_info), sizeof(struct rtw_btc_req_msg));
+	if (btc_req_msg == NULL) {
+		PHL_ERR("%s: alloc btc msg fail.\n", __func__);
+		return false;
+	}
+
+	SET_MSG_MDL_ID_FIELD(msg.msg_id, PHL_MDL_BTC);
+	SET_MSG_EVT_ID_FIELD(msg.msg_id,
+		MSG_EVT_BTC_REQ);
+
+	if ((len != 0) && (len <= BTC_MAX_DATA_SIZE))
+		_os_mem_cpy(phl_to_drvpriv(phl_info), btc_req_msg->buf, buf, len);
+	btc_req_msg->len = len;
+	msg.inbuf = (u8 *)btc_req_msg;
+	msg.inlen = sizeof(struct rtw_btc_req_msg);
+	attr.completion.completion = _phl_btc_req_evt_done;
+	attr.completion.priv = phl_info;
+
+	switch (evt_id) {
+	case BTC_HMSG_BT_LINK_CHG:
+		btc_req_msg->type = EVT_BTC_LINK_CHG;
+		break;
+	default:
+		PHL_ERR("%s: Unknown msg !\n", __func__);
+		_os_kmem_free(phl_to_drvpriv(phl_info), btc_req_msg,
+				sizeof(struct rtw_btc_req_msg));
+		return false;
+	}
+
+	if (phl_msg_hub_send(phl_info, &attr, &msg) !=
+				RTW_PHL_STATUS_SUCCESS) {
+		PHL_ERR("%s: [BTC] msg_hub_send failed !\n", __func__);
+		_os_kmem_free(phl_to_drvpriv(phl_info), btc_req_msg,
+				sizeof(struct rtw_btc_req_msg));
+		return false;
+	} else {
+		return true;
+	}
+
 }
 
 bool rtw_phl_btc_send_cmd(struct rtw_phl_com_t *phl_com,
@@ -390,6 +466,11 @@ bool rtw_phl_btc_send_cmd(struct rtw_phl_com_t *phl_com,
 		SET_MSG_EVT_ID_FIELD(msg.msg_id,
 			MSG_EVT_BTC_FWEVNT);
 		break;
+	case BTC_HMSG_BT_LINK_CHG:
+		return _btc_send_hub_msg(phl_info, buf, ev_id, len);
+	case BTC_HMSG_SET_BT_REQ_STBC:
+		_btc_set_stbc(phl_info, buf);
+		return true;
 	default:
 		PHL_ERR("%s: Unknown msg !\n", __func__);
 		return false;
@@ -402,84 +483,6 @@ bool rtw_phl_btc_send_cmd(struct rtw_phl_com_t *phl_com,
 	}
 
 	return true;
-}
-
-static void
-_phl_pkt_evt_ntfy_done(void* priv, struct phl_msg* msg)
-{
-	struct phl_info_t *phl_info = (struct phl_info_t *)priv;
-
-	if(msg->inbuf && msg->inlen){
-		_os_mem_free(phl_to_drvpriv(phl_info),
-			msg->inbuf, msg->inlen);
-	}
-}
-
-void rtw_phl_btc_packet_event_notify(void *phl, u8 role_id, u8 pkt_evt_type)
-{
-	struct phl_info_t *phl_info = (struct phl_info_t *)phl;
-	struct phl_msg msg = {0};
-	struct phl_msg_attribute attr = {0};
-	struct rtw_pkt_evt_ntfy *pkt_evt = NULL;
-
-	pkt_evt = (struct rtw_pkt_evt_ntfy *)_os_mem_alloc(
-		phl_to_drvpriv(phl_info), sizeof(struct rtw_pkt_evt_ntfy));
-	if (pkt_evt == NULL) {
-		PHL_ERR("%s: alloc packet cmd fail.\n", __func__);
-		return;
-	}
-
-	pkt_evt->type = pkt_evt_type;
-
-	msg.inbuf = (u8 *)pkt_evt;
-	msg.inlen = sizeof(struct rtw_pkt_evt_ntfy);
-
-	SET_MSG_MDL_ID_FIELD(msg.msg_id, PHL_MDL_BTC);
-	SET_MSG_EVT_ID_FIELD(msg.msg_id, MSG_EVT_BTC_PKT_EVT_NTFY);
-	msg.band_idx = HW_BAND_0;
-	attr.completion.completion = _phl_pkt_evt_ntfy_done;
-	attr.completion.priv = phl_info;
-
-	if (phl_disp_eng_send_msg(phl_info, &msg, &attr, NULL) !=
-				RTW_PHL_STATUS_SUCCESS) {
-		PHL_ERR("%s: dispr_send_msg failed !\n", __func__);
-		goto cmd_fail;
-	}
-
-	return;
-
-cmd_fail:
-	_os_mem_free(phl_to_drvpriv(phl_info), pkt_evt,
-			sizeof(struct rtw_pkt_evt_ntfy));
-}
-
-u8 rtw_phl_btc_pkt_2_evt_type(u8 packet_type)
-{
-	u8 pkt_evt_type = BTC_PKT_EVT_MAX;
-
-	switch (packet_type) {
-	case PACKET_NORMAL:
-		pkt_evt_type = BTC_PKT_EVT_NORMAL;
-		break;
-	case PACKET_DHCP:
-		pkt_evt_type = BTC_PKT_EVT_DHCP;
-		break;
-	case PACKET_ARP:
-		pkt_evt_type = BTC_PKT_EVT_ARP;
-		break;
-	case PACKET_EAPOL:
-		pkt_evt_type = BTC_PKT_EVT_EAPOL;
-		break;
-	case PACKET_EAPOL_START:
-		pkt_evt_type = BTC_PKT_EVT_EAPOL_START;
-		break;
-	default:
-		PHL_ERR("%s packet type(%d) not support\n",
-			__func__, packet_type);
-		break;
-	}
-
-	return pkt_evt_type;
 }
 #endif /*CONFIG_PHL_CMD_BTC*/
 

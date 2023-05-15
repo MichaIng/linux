@@ -120,8 +120,8 @@ void halbb_edcca_event_nofity(struct bb_info *bb, u8 pause_type)
 	u8 pause_result = 0;
 	u32 val[5] = {0};
 
-	if (bb_edcca->edcca_mode != EDCCA_NORMAL_MODE)
-		return;
+	BB_DBG(bb, DBG_EDCCA, "[%s], pause_type=%d, edcca_mode=%d\n",
+	       __func__, pause_type, bb_edcca->edcca_mode);
 
 	val[0] = EDCCA_MAX;
 	pause_result = halbb_pause_func(bb, F_EDCCA, pause_type, HALBB_PAUSE_LV_2, 1, val);
@@ -283,10 +283,11 @@ void halbb_edcca(struct bb_info *bb)
 {
 	struct bb_edcca_info *bb_edcca = &bb->bb_edcca_i;
 
+	bb_edcca->edcca_mode = bb->phl_com->edcca_mode;
+
 	if (halbb_edcca_abort(bb))
 		return;
 
-	bb_edcca->edcca_mode = bb->phl_com->edcca_mode;
 	halbb_edcca_thre_calc(bb);
 	BB_DBG(bb, DBG_EDCCA, "th_h=%d(dBm), th_l=%d(dBm)\n",
 	       bb_edcca->th_h - 128, bb_edcca->th_l - 128);
@@ -308,6 +309,9 @@ void halbb_fw_edcca(struct bb_info *bb)
 
 	bb_edcca->edcca_mode = phl->edcca_mode;
 	//bb_edcca->edcca_mode = EDCCA_ADAPT_MODE;
+
+	BB_DBG(bb, DBG_EDCCA, "notify_switch_band/fw_edcca, edcca_mode=%d\n",
+	       bb_edcca->edcca_mode);
 
 	if (halbb_edcca_abort(bb))
 		return;

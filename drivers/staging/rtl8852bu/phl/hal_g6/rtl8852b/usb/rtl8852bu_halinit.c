@@ -28,10 +28,14 @@ static void _hal_pre_init_8852bu(struct rtw_phl_com_t *phl_com,
 	else
 		trx_info->trx_mode = MAC_AX_TRX_HW_MODE;
 
-	if (hal_info->hal_com->dbcc_en == false)
-		trx_info->qta_mode = MAC_AX_QTA_SCC;
-	else
+	if (hal_info->hal_com->dbcc_en == false) {
+		if (phl_com->dev_cap.quota_turbo == true)
+			trx_info->qta_mode = MAC_AX_QTA_SCC_TURBO;
+		else
+			trx_info->qta_mode = MAC_AX_QTA_SCC;
+	} else {
 		trx_info->qta_mode = MAC_AX_QTA_DBCC;
+	}
 
 	#ifdef RTW_WKARD_LAMODE
 	PHL_INFO("%s : la_mode %d\n", __func__, phl_com->dev_cap.la_mode);
@@ -47,7 +51,7 @@ static void _hal_pre_init_8852bu(struct rtw_phl_com_t *phl_com,
 	}
 
 	rpr_cfg->tmr_def = 1;
-	#ifdef CONFIG_PHL_USB_RELEASE_RPT_ENABLE
+	#ifdef CONFIG_PHL_RELEASE_RPT_ENABLE
 	rpr_cfg->txok_en = MAC_AX_FUNC_EN;
 	rpr_cfg->rty_lmt_en = MAC_AX_FUNC_EN;
 	rpr_cfg->lft_drop_en = MAC_AX_FUNC_EN;
@@ -57,7 +61,7 @@ static void _hal_pre_init_8852bu(struct rtw_phl_com_t *phl_com,
 	rpr_cfg->rty_lmt_en = MAC_AX_FUNC_DEF;
 	rpr_cfg->lft_drop_en = MAC_AX_FUNC_DEF;
 	rpr_cfg->macid_drop_en = MAC_AX_FUNC_DEF;
-	#endif /* CONFIG_PHL_USB_RELEASE_RPT_ENABLE */
+	#endif /* CONFIG_PHL_RELEASE_RPT_ENABLE */
 	trx_info->rpr_cfg = rpr_cfg;
 
 	init_52bu->ic_name = "rtl8852bu";

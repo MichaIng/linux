@@ -107,6 +107,7 @@ enum WIFI_FRAME_SUBTYPE {
 	WIFI_ACTION_NOACK = (BIT(7) | BIT(6) | BIT(5) | WIFI_MGT_TYPE),
 
 	/* below is for control frame */
+	WIFI_TRIGGER = (BIT(5) | WIFI_CTRL_TYPE),
 	WIFI_BF_REPORT_POLL = (BIT(6) | WIFI_CTRL_TYPE),
 	WIFI_NDPA         = (BIT(6) | BIT(4) | WIFI_CTRL_TYPE),
 	WIFI_BAR            = (BIT(7) | WIFI_CTRL_TYPE),

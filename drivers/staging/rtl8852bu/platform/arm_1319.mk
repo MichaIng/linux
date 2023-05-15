@@ -20,12 +20,14 @@ CROSS_COMPILE :=/sweethome/zhenrc/Workshop/1619/atv-9.0/phoenix/toolchain/asdk-6
 KSRC := /sweethome/zhenrc/Workshop/1319/q_tv_kernel_ax
 
 ifeq ($(CONFIG_PCI_HCI), y)
+EXTRA_CFLAGS += -DRTK_1319_PCIE_PORT=2
 EXTRA_CFLAGS += -DCONFIG_PLATFORM_OPS
 _PLATFORM_FILES := platform/platform_linux_pc_pci.o
 OBJS += $(_PLATFORM_FILES)
 # Core Config
 EXTRA_CFLAGS += -DCONFIG_RXBUF_NUM_1024
 EXTRA_CFLAGS += -DCONFIG_TX_SKB_ORPHAN
+EXTRA_CFLAGS += -DCONFIG_DIS_DYN_RXBUF
 # PHL Config
 EXTRA_CFLAGS += -DRTW_WKARD_98D_RXTAG
 endif
