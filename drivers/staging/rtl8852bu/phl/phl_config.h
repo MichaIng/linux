@@ -80,6 +80,7 @@
 	#define RTW_WKARD_BFEE_SET_AID
 	#define CONFIG_PHL_THERMAL_PROTECT
 	#define CONFIG_PHL_TX_DBG
+	#define CONFIG_PHL_RELEASE_RPT_ENABLE
 #endif /* PHL_FEATURE_NONE */
 
 #ifdef PHL_PLATFORM_WINDOWS
@@ -89,6 +90,7 @@
 	#ifndef CONFIG_CMD_DISP
 		#define CONFIG_CMD_DISP
 	#endif
+	#define DRV_BB_CNSL_CMN_INFO
 #endif
 
 #ifdef PHL_PLATFORM_LINUX
@@ -103,7 +105,6 @@
 #endif
 
 /******************* Feature flags **************************/
-
 #ifdef CONFIG_PHL_TEST_SUITE
 #define CONFIG_PHL_TEST_MP
 #define CONFIG_PHL_TEST_VERIFY
@@ -186,6 +187,10 @@
 #endif
 
 #define CONFIG_PHL_CMD_BTC
+
+#ifdef CONFIG_MSG_NUM
+	#define CONFIG_PHL_MSG_NUM CONFIG_MSG_NUM
+#endif
 #endif /**** CONFIG_CMD_DISP ***/
 
 #define CONFIG_GEN_GIT_INFO 1
@@ -205,7 +210,7 @@
 #define CONFIG_PHL_USB_RX_AGGREGATION
 #endif
 
-#if CONFIG_DFS
+#ifdef CONFIG_DFS_MASTER
 #define CONFIG_PHL_DFS
 #endif
 
@@ -251,8 +256,12 @@
 #define CONFIG_PHL_RA_TXSTS_DBG
 #endif
 
-#ifdef CONFIG_USB_RELEASE_RPT
-#define CONFIG_PHL_USB_RELEASE_RPT_ENABLE
+#ifdef CONFIG_RELEASE_RPT
+#define CONFIG_PHL_RELEASE_RPT_ENABLE
+#endif
+
+#ifdef CONFIG_PS_FW_DBG
+#define CONFIG_PHL_PS_FW_DBG
 #endif
 
 #ifdef CONFIG_P2PPS
@@ -284,12 +293,36 @@
 #ifdef CONFIG_SDIO_TX_AGG_NUM_MAX
 #define PHL_SDIO_TX_AGG_MAX	CONFIG_SDIO_TX_AGG_NUM_MAX
 #endif /* CONFIG_SDIO_TX_AGG_NUM_MAX */
+#define CONFIG_PHL_SDIO_TX_CB_THREAD
+/*
+ * RTW_WKARD_SDIO_TX_USE_YIELD
+ * Define this would use yield() instead of event wait mechanism to improve
+ * throughput on Linux platform.
+ * But yield() doesn't been encouraged to use in Linux,
+ * so if we figure out what happened and find another way to improve
+ * throughput, this workaround would be removed later.
+ *
+ * RTW_WKARD_SDIO_TX_USE_YIELD is depended on CONFIG_PHL_SDIO_TX_CB_THREAD,
+ * because the mechanism only been used with CONFIG_PHL_SDIO_TX_CB_THREAD.
+ *
+ * Usually this flag would be defined from core layer.
+ */
+/*#define RTW_WKARD_SDIO_TX_USE_YIELD*/
 #define SDIO_TX_THREAD			/* Use dedicate thread for SDIO TX */
 /* For SDIO TX TP TST - ENDT */
+
+/* For SDIO RX TP TST - START */
+#define CONFIG_PHL_SDIO_RX_CB_THREAD
+/* For SDIO RX TP TST - END */
+
 #endif /* CONFIG_SDIO_HCI */
 
 #ifdef CONFIG_MAC_REG_RW_CHK
 #define DBG_PHL_MAC_REG_RW
+#endif
+
+#ifdef CONFIG_ACS
+#define CONFIG_RTW_ACS
 #endif
 
 /******************* WKARD flags **************************/
@@ -307,9 +340,12 @@
 #define RTW_WKARD_MP_MODE_CHANGE
 #define RTW_WKARD_WIN_TRX_BALANCE
 #define RTW_WKARD_DYNAMIC_LTR
+#define RTW_WKARD_GET_PROCESSOR_ID
 #endif
 
 #define RTW_WKARD_PHY_CAP
+
+#define RTW_WKARD_BTC_STBC_CAP
 
 #define RTW_WKARD_LAMODE
 
@@ -427,5 +463,7 @@
 #ifdef RTW_WKARD_DISABLE_2G40M_ULOFDMA
 #define RTW_WKARD_BB_DISABLE_STA_2G40M_ULOFDMA
 #endif
+
+#define RTW_WKARD_CHECK_STAINFO_DOUBLE_DEL
 
 #endif /*_PHL_CONFIG_H_*/

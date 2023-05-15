@@ -88,6 +88,13 @@ enum rtw_dev_state {
 	RTW_DEV_MAX
 };
 
+#define RTW_RATE_MODE_MASK (BIT(7) | BIT(8))
+#define RTW_RATE_MODE_SHIFT 7
+#define RTW_RATE_INDEX_MASK 0x007f
+
+#define RTW_GET_RATE_MODE(_rtw_data_rate) (u16)((_rtw_data_rate & RTW_RATE_MODE_MASK) >> RTW_RATE_MODE_SHIFT)
+#define RTW_GET_RATE_INDEX(_rtw_data_rate) (u16)(_rtw_data_rate & RTW_RATE_INDEX_MASK)
+
 enum rtw_rate_mode {
 	RTW_LEGACY_MODE = 0,
 	RTW_HT_MODE = 1,

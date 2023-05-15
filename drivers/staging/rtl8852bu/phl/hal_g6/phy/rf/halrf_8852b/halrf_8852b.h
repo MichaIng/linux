@@ -50,6 +50,6 @@ void halrf_quick_checkrf_8852b(struct rf_info *rf);
 
 void halrf_before_one_shot_enable_8852b(struct rf_info *rf);
 bool halrf_one_shot_nctl_done_check_8852b(struct rf_info *rf, enum rf_path path);
-void halrf_lck_check_8852b(struct rf_info *rf);
+
 #endif
 #endif /*  __HALRF_8852b_H__ */

@@ -26,18 +26,18 @@
 #define __PHL_GIT_INFO_H__
  /*@--------------------------[Define] ---------------------------------------*/
 
-#define RTK_CORE_SHA1   "1d36f2f79826cf6426ea1d7b181520cb02ba6d20"
-#define RTK_PHL_SHA1    "6378a5d8a6208f8e242f08f30420b8227e6ac902"
-#define RTK_HALMAC_SHA1 "c97462ae73ce451dd4f8a21d9d0870c4eb2aca44"
-#define RTK_HALBB_SHA1  "35aa8b54c009662fc7b86dd9babbba53bb887a1c"
-#define RTK_HALRF_SHA1  "d58b8ae175d40b3724ef40153c21b6edd8a3d07c"
-#define RTK_BTC_SHA1    "a949f42134885ecd1da6c005239b750dd989cb7e"
+#define RTK_CORE_SHA1   "66c2445723d84b806939e5d6ea723df9ce22edd6"
+#define RTK_PHL_SHA1    "6bc7d3118a5eb6766d629747fb2fbc742f8b33ea"
+#define RTK_HALMAC_SHA1 "db380650741b582ab829653431d155fecbff6a1e"
+#define RTK_HALBB_SHA1  "43ceb3c34c6668b74f3737a335a9b8096ae0b34e"
+#define RTK_HALRF_SHA1  "ee0c0758272ef0a26f2fd63df25b8ec7389bbefd"
+#define RTK_BTC_SHA1    "fd139fff0d6f2838930470278bf35dfb6df800b7"
 
-#define RTK_CORE_TAGINFO     "v1.15.7-112-g1d36f2f7"
-#define RTK_PHL_TAGINFO      "PHL_1_15_34_0100-5-g6378a5d8a"
-#define RTK_HALMAC_TAGINFO   "HALMAC_0_25_40_0-0-gc97462ae7"
-#define RTK_HALBB_TAGINFO    "HALBB_025_020_04-0-g35aa8b5"
-#define RTK_HALRF_TAGINFO    "HALRF_025_00_025-7-gd58b8ae"
-#define RTK_BTC_TAGINFO      "HALBTC_025_019-0-ga949f42"
+#define RTK_CORE_TAGINFO     "v1.15.11-36-g66c244572"
+#define RTK_PHL_TAGINFO      "PHL_1_15_62_0100-15-g6bc7d3118"
+#define RTK_HALMAC_TAGINFO   "HALMAC_0_25_61_0-12-gdb3806507"
+#define RTK_HALBB_TAGINFO    "HALBB_025_033_07-11-g43ceb3c3"
+#define RTK_HALRF_TAGINFO    "HALRF_025_00_039-1-gee0c0758"
+#define RTK_BTC_TAGINFO      "HALBTC_025_030-0-gfd139ff"
 
 #endif /* __PHL_GIT_INFO_H__ */

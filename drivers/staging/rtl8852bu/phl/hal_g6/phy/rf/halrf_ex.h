@@ -120,7 +120,6 @@ void halrf_deinit(struct rtw_phl_com_t *phl_com,
 /**************halrf_hw_cfg.c**************/
 bool halrf_init_reg_by_hdr(void *rf_void);
 bool halrf_nctl_init_reg_by_hdr(void *rf_void);
-bool halrf_config_radio(void *rf_void, enum phl_phy_idx phy);
 bool halrf_config_radio_a_reg(void *rf_void, bool is_form_folder,
 				u32 folder_len, u32 *folder_array);
 bool halrf_config_radio_b_reg(void *rf_void, bool is_form_folder,
@@ -201,13 +200,13 @@ void halrf_set_fix_power_to_struct(void *rf_void,
 					enum phl_phy_idx phy, s8 dbm);
 
 void halrf_pwr_by_rate_info(struct rf_info *rf,
-		char input[][16], u32 *_used, char *output, u32 *_out_len);
+		char input[][16], u32 *_used, char *output, u32 *_out_len, enum phl_phy_idx phy);
 
 void halrf_pwr_limit_info(struct rf_info *rf,
-		char input[][16], u32 *_used, char *output, u32 *_out_len);
+		char input[][16], u32 *_used, char *output, u32 *_out_len, enum phl_phy_idx phy);
 
 void halrf_pwr_limit_ru_info(struct rf_info *rf,
-		char input[][16], u32 *_used, char *output, u32 *_out_len);
+		char input[][16], u32 *_used, char *output, u32 *_out_len, enum phl_phy_idx phy);
 
 void halrf_get_tssi_info(struct rf_info *rf, char input[][16], u32 *_used,
 			 char *output, u32 *_out_len);
@@ -226,6 +225,7 @@ void halrf_ctrl_bw_ch(void *rf_void, enum phl_phy_idx phy, u8 central_ch,
 void  halrf_fw_ntfy(void *rf_void, enum phl_phy_idx phy_idx);
 u32 halrf_get_nctl_reg_ver(struct rf_info *rf);
 u32 halrf_get_radio_reg_ver(struct rf_info *rf);
+u32 halrf_get_radio_ver_from_reg(struct rf_info *rf);
 void halrf_config_nctl_reg(struct rf_info *rf);
 void halrf_set_gpio(void *rf_void, enum phl_phy_idx phy, u8 band);
 bool halrf_check_efem(void *rf_void, enum phl_phy_idx phy_idx);
@@ -256,6 +256,9 @@ s8 halrf_xtal_tracking_offset(void *rf_void, enum phl_phy_idx phy_idx);
 
 void halrf_hw_tx(void *rf_void, u8 path, u16 cnt, s16 dbm, u32 rate, u8 bw,
 				bool enable);
+
+void halrf_kfree_get_info(void *rf_void, char input[][16], u32 *_used,
+			 char *output, u32 *_out_len);
 
 void halrf_set_mp_regulation(void *rf_void, enum phl_phy_idx phy, u8 regulation);
 u32 halrf_tssi_get_final(void *rf_void, enum phl_phy_idx phy_idx, u8 path);

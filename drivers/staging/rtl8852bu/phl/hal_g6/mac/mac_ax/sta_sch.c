@@ -194,6 +194,9 @@ static u32 wmm_vld_chk(struct mac_ax_adapter *adapter, u8 *vld, u8 wmm)
 	case MAC_AX_CHIP_ID_8852C:
 		wmm_num = STA_SCH_WMM_NUM_8852C;
 		break;
+	case MAC_AX_CHIP_ID_8192XB:
+		wmm_num = STA_SCH_WMM_NUM_8192XB;
+		break;
 	default:
 		return MACCHIPID;
 	}
@@ -219,6 +222,9 @@ static u32 ul_vld_chk(struct mac_ax_adapter *adapter, u8 *vld)
 		break;
 	case MAC_AX_CHIP_ID_8852C:
 		ul_support = STA_SCH_UL_SUPPORT_8852C;
+		break;
+	case MAC_AX_CHIP_ID_8192XB:
+		ul_support = STA_SCH_UL_SUPPORT_8192XB;
 		break;
 	default:
 		return MACCHIPID;
@@ -393,47 +399,60 @@ u32 switch_wmm_macid(struct mac_ax_adapter *adapter,
 	return MACSUCCESS;
 }
 
+static u32 chk_role_wmm(struct mac_ax_adapter *adapter, u8 *pmacid, u8 src_wmm)
+{
+	struct mac_role_tbl *role;
+	u8 wmm;
+
+	role = mac_role_srch(adapter, *pmacid);
+	if (!role)
+		return MACNOITEM;
+
+	wmm = role->info.dbcc_role ?
+	      *(adapter->dbcc_info->dbcc_wmm_list + *pmacid) : role->wmm;
+
+	if (wmm != src_wmm)
+		*pmacid = 0xFF;
+
+	return MACSUCCESS;
+}
+
 static u32 switch_wmm_link(struct mac_ax_adapter *adapter,
 			   enum mac_ax_ss_wmm_tbl src_link,
 			   enum mac_ax_ss_wmm_tbl dst_link,
 			   enum mac_ax_ss_wmm src_wmm)
 {
+	struct mac_ax_ss_link_info link;
 	u32 ret;
 	u32 i;
-	struct mac_ax_ss_link_info link;
-	struct mac_role_tbl *role;
 
 	link.ul = 0;
 	for (link.ac = 0; link.ac < 4; link.ac++) {
 		PLTFM_MEMSET(link.link_list, 0xFF, SS_LINK_SIZE);
 		link.wmm = src_link;
 		ret = sta_link_cfg(adapter, &link, MAC_AX_SS_LINK_CFG_GET);
-		if (ret != MACSUCCESS)
+		if (ret != MACSUCCESS) {
+			PLTFM_MSG_ERR("sta_link_cfg %d\n", ret);
 			return ret;
+		}
 		for (i = 0; i < link.link_len; i += 3) {
 			link.macid0 = link.link_list[i];
 			link.macid1 = link.link_list[i + 1];
 			link.macid2 = link.link_list[i + 2];
 			if (link.macid0 != 0xFF) {
-				role = mac_role_srch(adapter, link.macid0);
-				if (!role)
-					return MACNOITEM;
-				if ((enum mac_ax_ss_wmm)role->wmm != src_wmm)
-					link.macid0 = 0xFF;
+				ret = chk_role_wmm(adapter, &link.macid0, src_wmm);
+				if (ret != MACSUCCESS)
+					return ret;
 			}
 			if (link.macid1 != 0xFF) {
-				role = mac_role_srch(adapter, link.macid1);
-				if (!role)
-					return MACNOITEM;
-				if ((enum mac_ax_ss_wmm)role->wmm != src_wmm)
-					link.macid1 = 0xFF;
+				ret = chk_role_wmm(adapter, &link.macid1, src_wmm);
+				if (ret != MACSUCCESS)
+					return ret;
 			}
 			if (link.macid2 != 0xFF) {
-				role = mac_role_srch(adapter, link.macid2);
-				if (!role)
-					return MACNOITEM;
-				if ((enum mac_ax_ss_wmm)role->wmm != src_wmm)
-					link.macid2 = 0xFF;
+				ret = chk_role_wmm(adapter, &link.macid2, src_wmm);
+				if (ret != MACSUCCESS)
+					return ret;
 			}
 			if (link.macid0 != 0xFF || link.macid1 != 0xFF ||
 			    link.macid2 != 0xFF) {
@@ -468,15 +487,81 @@ u32 mac_ss_wmm_sta_move(struct mac_ax_adapter *adapter,
 		ctrl.wmm = 3;
 		break;
 	default:
-		return MACNOITEM;
+		return MACFUNCINPUT;
 	}
 	ret = get_ss_wmm_tbl(adapter, &ctrl);
-	if (ret != MACSUCCESS)
+	if (ret != MACSUCCESS) {
+		PLTFM_MSG_ERR("get_ss_wmm_tbl %d\n", ret);
 		return ret;
+	}
+
+	if (ctrl.wmm_mapping == dst_link)
+		return MACARDYDONE;
 
 	ret = switch_wmm_link(adapter, ctrl.wmm_mapping, dst_link, src_wmm);
-	if (ret != MACSUCCESS)
+	if (ret != MACSUCCESS) {
+		PLTFM_MSG_ERR("switch_wmm_link %d\n", ret);
 		return ret;
+	}
+
+	ctrl.wmm_mapping = dst_link;
+	ss_wmm_tbl_cfg(adapter, &ctrl, MAC_AX_SS_WMM_TBL_SET);
+
+	return MACSUCCESS;
+}
+
+u32 mac_ss_wmm_map_upd(struct mac_ax_adapter *adapter,
+		       enum mac_ax_ss_wmm src_wmm,
+		       enum mac_ax_ss_wmm_tbl dst_link,
+		       u8 chk_emp)
+{
+	struct mac_ax_ss_wmm_tbl_ctrl ctrl;
+	struct mac_ax_ss_link_info link;
+	u32 ret;
+
+	switch (src_wmm) {
+	case MAC_AX_SS_WMM0:
+		ctrl.wmm = 0;
+		break;
+	case MAC_AX_SS_WMM1:
+		ctrl.wmm = 1;
+		break;
+	case MAC_AX_SS_WMM2:
+		ctrl.wmm = 2;
+		break;
+	case MAC_AX_SS_WMM3:
+		ctrl.wmm = 3;
+		break;
+	default:
+		return MACFUNCINPUT;
+	}
+	ret = get_ss_wmm_tbl(adapter, &ctrl);
+	if (ret != MACSUCCESS) {
+		PLTFM_MSG_ERR("get_ss_wmm_tbl %d\n", ret);
+		return ret;
+	}
+
+	if (ctrl.wmm_mapping == dst_link)
+		return MACSUCCESS;
+
+	link.ul = 0;
+	for (link.ac = 0; link.ac < 4; link.ac++) {
+		if (!chk_emp)
+			break;
+		PLTFM_MEMSET(link.link_list, 0xFF, SS_LINK_SIZE);
+		link.wmm = ctrl.wmm_mapping;
+		ret = sta_link_cfg(adapter, &link, MAC_AX_SS_LINK_CFG_GET);
+		if (ret != MACSUCCESS) {
+			PLTFM_MSG_ERR("sta_link_cfg %d\n", ret);
+			return ret;
+		}
+		if (link.link_len) {
+			PLTFM_MSG_ERR("wmm%d link%d non empty %d\n",
+				      link.wmm, link.ac, link.link_len);
+			return MACCMP;
+		}
+	}
+
 	ctrl.wmm_mapping = dst_link;
 	ss_wmm_tbl_cfg(adapter, &ctrl, MAC_AX_SS_WMM_TBL_SET);
 

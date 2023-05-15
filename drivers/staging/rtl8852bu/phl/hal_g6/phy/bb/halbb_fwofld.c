@@ -92,6 +92,7 @@ bool halbb_fw_set_reg_cmn(struct bb_info *bb, u32 addr,
 	return ret;
 }
 
+#ifdef BB_8852A_2_SUPPORT
 bool halbb_fwcfg_bb_phy_8852a_2(struct bb_info *bb, u32 addr, u32 data,
 			    enum phl_phy_idx phy_idx)
 {
@@ -923,4 +924,5 @@ bool halbb_fwofld_bw_ch_8852a_2(struct bb_info *bb, u8 pri_ch, u8 central_ch,
 
 	return rpt;
 }
+#endif
 #endif

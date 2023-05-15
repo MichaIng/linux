@@ -1,6 +1,6 @@
 /******************************************************************************
  *
- * Copyright(c) 2007 - 2019 Realtek Corporation.
+ * Copyright(c) 2007 - 2022 Realtek Corporation.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of version 2 of the GNU General Public License as
@@ -224,6 +224,10 @@ void dump_drv_cfg(void *sel)
 #ifdef DBG_SDIO
 	RTW_PRINT_SEL(sel, "DBG_SDIO = %d\n", DBG_SDIO);
 #endif
+
+#ifdef RTW_WKARD_SDIO_TX_USE_YIELD
+	RTW_PRINT_SEL(sel, "RTW_WKARD_SDIO_TX_USE_YIELD\n");
+#endif
 #endif /*CONFIG_SDIO_HCI*/
 
 #ifdef CONFIG_PCI_HCI
@@ -236,10 +240,24 @@ void dump_drv_cfg(void *sel)
 	RTW_PRINT_SEL(sel, "CONFIG_PCI_TX_POLLING\n");
 #endif
 	RTW_PRINT_SEL(sel, "CONFIG_RTW_UP_MAPPING_RULE = %s\n", (CONFIG_RTW_UP_MAPPING_RULE == 1) ? "dscp" : "tos");
+#ifdef CONFIG_DIS_DYN_RXBUF
+	RTW_PRINT_SEL(sel, "CONFIG_DIS_DYN_RXBUF\n");
+#endif
+#ifdef CONFIG_DYNAMIC_RX_BUF
+	RTW_PRINT_SEL(sel, "CONFIG_DYNAMIC_RX_BUF\n");
+#endif
+#ifdef CONFIG_MSG_NUM
+	RTW_PRINT_SEL(sel, "CONFIG_MSG_NUM = %d\n", CONFIG_MSG_NUM);
+#endif
 
 	/*GEORGIA_TODO_TRX - need get trx buff accroding to IC spec*/
 	RTW_PRINT_SEL(sel, "\n=== XMIT-INFO ===\n");
 	RTW_PRINT_SEL(sel, "NR_XMITFRAME = %d\n", NR_XMITFRAME);
+
+#ifdef CONFIG_QUOTA_TURBO_ENABLE
+	RTW_PRINT_SEL(sel, "CONFIG_QUOTA_TURBO_ENABLE\n");
+#endif
+
 	/*
 	RTW_PRINT_SEL(sel, "NR_XMITBUFF = %d\n", NR_XMITBUFF);
 	RTW_PRINT_SEL(sel, "MAX_XMITBUF_SZ = %d\n", MAX_XMITBUF_SZ);
@@ -1378,10 +1396,12 @@ int proc_get_survey_info(struct seq_file *m, void *v)
 	s16 notify_noise = 0;
 	u16  index = 0, ie_cap = 0;
 	unsigned char *ie_wpa = NULL, *ie_wpa2 = NULL, *ie_wps = NULL;
+	unsigned char *ie_wpa3 = NULL;
 	unsigned char *ie_p2p = NULL, *ssid = NULL;
 	char flag_str[64];
 	int ielen = 0;
 	u32 wpsielen = 0;
+	u32 akm;
 #ifdef CONFIG_RTW_MESH
 	const char *ssid_title_str = "ssid/mesh_id";
 #else
@@ -1419,13 +1439,24 @@ int proc_get_survey_info(struct seq_file *m, void *v)
 
 		ie_wpa = rtw_get_wpa_ie(&pnetwork->network.IEs[12], &ielen, pnetwork->network.IELength - 12);
 		ie_wpa2 = rtw_get_wpa2_ie(&pnetwork->network.IEs[12], &ielen, pnetwork->network.IELength - 12);
+		ie_wpa3 = NULL;
+		if (ie_wpa2 &&
+		    rtw_parse_wpa2_ie(ie_wpa2, ielen+2, NULL, NULL, NULL, &akm,
+				      NULL, NULL) == _SUCCESS) {
+			if (akm & WLAN_AKM_TYPE_SAE) {
+				ie_wpa3 = ie_wpa2;
+				if (akm == WLAN_AKM_TYPE_SAE)
+					ie_wpa2 = NULL;
+			}
+		}
 		ie_cap = rtw_get_capability(&pnetwork->network);
 		ie_wps = rtw_get_wps_ie(&pnetwork->network.IEs[12], pnetwork->network.IELength - 12, NULL, &wpsielen);
 		ie_p2p = rtw_get_p2p_ie(&pnetwork->network.IEs[12], pnetwork->network.IELength - 12, NULL, &ielen);
 		ssid = pnetwork->network.Ssid.Ssid;
-		sprintf(flag_str, "%s%s%s%s%s%s%s%s",
+		sprintf(flag_str, "%s%s%s%s%s%s%s%s%s",
 			(ie_wpa) ? "[WPA]" : "",
 			(ie_wpa2) ? "[WPA2]" : "",
+			(ie_wpa3) ? "[WPA3]" : "",
 			(!ie_wpa && !ie_wpa && ie_cap & BIT(4)) ? "[WEP]" : "",
 			(ie_wps) ? "[WPS]" : "",
 			(pnetwork->network.InfrastructureMode == Ndis802_11IBSS) ? "[IBSS]" :
@@ -1676,8 +1707,10 @@ int proc_get_ap_info(struct seq_file *m, void *v)
 		RTW_PRINT_SEL(m, "agg_enable_bitmap=%x, candidate_tid_bitmap=%x\n", psta->htpriv.agg_enable_bitmap, psta->htpriv.candidate_tid_bitmap);
 		RTW_PRINT_SEL(m, "ldpc_cap=0x%x, stbc_cap=0x%x, beamform_cap=0x%x\n", psta->htpriv.ldpc_cap, psta->htpriv.stbc_cap, psta->htpriv.beamform_cap);
 #endif /* CONFIG_80211N_HT */
+		if (MLME_IS_AP(padapter))
+			RTW_PRINT_SEL(m, " VHT or HE IE is configured by upper layer : %s\n", pmlmepriv->upper_layer_setting ? "True" : "False");
 #ifdef CONFIG_80211AC_VHT
-		RTW_PRINT_SEL(m, "vht_en=%u, upper_layer_setting=%u, vht_sgi_80m=%u\n", psta->vhtpriv.vht_option, psta->vhtpriv.upper_layer_setting, psta->vhtpriv.sgi_80m);
+		RTW_PRINT_SEL(m, "vht_en=%u, vht_sgi_80m=%u\n", psta->vhtpriv.vht_option, psta->vhtpriv.sgi_80m);
 		RTW_PRINT_SEL(m, "vht_ldpc_cap=0x%x, vht_stbc_cap=0x%x, vht_beamform_cap=0x%x\n", psta->vhtpriv.ldpc_cap, psta->vhtpriv.stbc_cap, psta->vhtpriv.beamform_cap);
 		RTW_PRINT_SEL(m, "vht_mcs_map=0x%x, vht_highest_rate=0x%x, vht_ampdu_len=%d\n", *(u16 *)psta->vhtpriv.vht_mcs_map, psta->vhtpriv.vht_highest_rate, psta->vhtpriv.ampdu_len);
 		if (psta->vhtpriv.vht_option) {
@@ -3047,25 +3080,54 @@ ssize_t proc_set_rx_ampdu_factor(struct file *file, const char __user *buffer
 	return count;
 }
 
-int proc_get_tx_max_agg_num(struct seq_file *m, void *v)
+int proc_get_tx_ampdu_num(struct seq_file *m, void *v)
 {
 	struct net_device *dev = m->private;
 	_adapter *padapter = (_adapter *)rtw_netdev_priv(dev);
+	struct dvobj_priv *dvobj = adapter_to_dvobj(padapter);
+	struct rtw_phl_com_t *phl_com = GET_PHL_COM(dvobj);
+	int i;
 
+	if (padapter) {
+		for (i = HW_BAND_0 ; i < HW_BAND_MAX ; i++) {
+			RTW_PRINT_SEL(m, "===== HW band index %d =====\n", i);
+			RTW_PRINT_SEL(m, "[phy_cap] tx ampdu num = %s",
+						  phl_com->phy_cap[i].txagg_num ? "":"not yet set");
+			if (phl_com->phy_cap[i].txagg_num)
+				RTW_PRINT_SEL(m, "%d\n", phl_com->phy_cap[i].txagg_num);
+			else
+				RTW_PRINT_SEL(m, "\n");
 
-	if (padapter)
-		RTW_PRINT_SEL(m, "tx max AMPDU num = 0x%02x\n", padapter->driver_tx_max_agg_num);
+			RTW_PRINT_SEL(m, "[phy_sw_cap] tx ampdu num = %s",
+						  phl_com->phy_sw_cap[i].txagg_num ? "":"default by HW");
+			if (phl_com->phy_sw_cap[i].txagg_num)
+				RTW_PRINT_SEL(m, "%d\n", phl_com->phy_sw_cap[i].txagg_num);
+			else
+				RTW_PRINT_SEL(m, "\n");
+
+			if (i >= HW_BAND_0) {
+#ifdef CONFIG_DBCC_SUPPORT
+				if (phl_com->dev_cap.dbcc_sup == true)
+					continue;
+#endif
+				break;
+			}
+		}
+	}
 
 	return 0;
 }
 
-ssize_t proc_set_tx_max_agg_num(struct file *file, const char __user *buffer
+ssize_t proc_set_tx_ampdu_num(struct file *file, const char __user *buffer
 				 , size_t count, loff_t *pos, void *data)
 {
 	struct net_device *dev = data;
 	_adapter *padapter = (_adapter *)rtw_netdev_priv(dev);
+	struct dvobj_priv *dvobj = adapter_to_dvobj(padapter);
+	struct rtw_phl_com_t *phl_com = GET_PHL_COM(dvobj);
 	char tmp[32];
-	u8 agg_num;
+	u8 hw_band_idx;
+	u32 tx_ampdu_num;
 
 	if (count < 1)
 		return -EFAULT;
@@ -3077,12 +3139,17 @@ ssize_t proc_set_tx_max_agg_num(struct file *file, const char __user *buffer
 
 	if (buffer && !copy_from_user(tmp, buffer, count)) {
 
-		int num = sscanf(tmp, "%hhx ", &agg_num);
+		int num = sscanf(tmp, "%hhu %u", &hw_band_idx, &tx_ampdu_num);
 
-		if (padapter && (num == 1)) {
-			RTW_INFO("padapter->driver_tx_max_agg_num = 0x%02x\n", agg_num);
-
-			padapter->driver_tx_max_agg_num = agg_num;
+		if (padapter && (num == 2)) {
+			if (hw_band_idx < HW_BAND_MAX && hw_band_idx >= HW_BAND_0) {
+				phl_com->phy_cap[hw_band_idx].txagg_num = tx_ampdu_num;
+				RTW_INFO("[HW Band %d] set phy_cap tx ampdu num = %u\n",
+					 hw_band_idx, tx_ampdu_num);
+                        } else {
+				RTW_INFO("The input of HW Band index (%u) is invalid !\n",
+                                         hw_band_idx);
+			}
 		}
 	}
 
@@ -4348,17 +4415,17 @@ int proc_get_pci_aspm(struct seq_file *m, void *v)
 
 	RTW_PRINT_SEL(m, "***** ASPM Backdoor *****\n");
 
-	tmp8 = rtw_hal_pci_dbi_read(padapter, 0x719);
+	pci_read_config_byte(pci_data->ppcidev, 0x719, &tmp8);
 	RTW_PRINT_SEL(m, "CLK REQ:	%s\n", (tmp8 & BIT4) ? "Enable" : "Disable");
 
-	tmp8 = rtw_hal_pci_dbi_read(padapter, 0x70f);
+	pci_read_config_byte(pci_data->ppcidev, 0x70f, &tmp8);
 	l1_idle = tmp8 & 0x38;
-	RTW_PRINT_SEL(m, "ASPM L0s:	%s\n", (tmp8&BIT7) ? "Enable" : "Disable");
+	RTW_PRINT_SEL(m, "ASPM L0s:	%s\n", (tmp8 & BIT7) ? "Enable" : "Disable");
 
-	tmp8 = rtw_hal_pci_dbi_read(padapter, 0x719);
+	pci_read_config_byte(pci_data->ppcidev, 0x719, &tmp8);
 	RTW_PRINT_SEL(m, "ASPM L1:	%s\n", (tmp8 & BIT3) ? "Enable" : "Disable");
 
-	tmp8 = rtw_hal_pci_dbi_read(padapter, 0x718);
+	pci_read_config_byte(pci_data->ppcidev, 0x718, &tmp8);
 	RTW_PRINT_SEL(m, "ASPM L1OFF:	%s\n", (tmp8 & BIT5) ? "Enable" : "Disable");
 
 	RTW_PRINT_SEL(m, "********* MISC **********\n");
@@ -4809,9 +4876,10 @@ int proc_get_wowlan_gpio_info(struct seq_file *m, void *v)
 	_adapter *padapter = (_adapter *)rtw_netdev_priv(dev);
 	struct wow_priv *wowpriv = adapter_to_wowlan(padapter);
 	struct rtw_wow_gpio_info *wow_gpio = &wowpriv->wow_gpio;
+	struct rtw_dev2hst_gpio_info *d2h_gpio_info = &wow_gpio->d2h_gpio_info;
 
 	RTW_PRINT_SEL(m, "wakeup_gpio_idx: %d\n", WAKEUP_GPIO_IDX);
-	RTW_PRINT_SEL(m, "high_active: %d\n", wow_gpio->gpio_active);
+	RTW_PRINT_SEL(m, "high_active: %d\n", d2h_gpio_info->gpio_active);
 
 	return 0;
 }
@@ -4826,6 +4894,7 @@ ssize_t proc_set_wowlan_gpio_info(struct file *file, const char __user *buffer,
 	enum rtw_phl_status status = RTW_PHL_STATUS_FAILURE;
 	struct wow_priv *wowpriv = adapter_to_wowlan(padapter);
 	struct rtw_wow_gpio_info *wow_gpio = &wowpriv->wow_gpio;
+	struct rtw_dev2hst_gpio_info *d2h_gpio_info = &wow_gpio->d2h_gpio_info;
 	char tmp[32] = {0};
 	int num = 0;
 	u32 is_high_active = 0;
@@ -4848,7 +4917,7 @@ ssize_t proc_set_wowlan_gpio_info(struct file *file, const char __user *buffer,
 		}
 
 		wow_gpio->dev2hst_high = is_high_active == 0 ? 1 : 0;
-		wow_gpio->gpio_active = is_high_active;
+		d2h_gpio_info->gpio_active = is_high_active;
 
 		rtw_ps_deny(padapter, PS_DENY_IOCTL);
 		LeaveAllPowerSaveModeDirect(padapter);
@@ -4857,7 +4926,7 @@ ssize_t proc_set_wowlan_gpio_info(struct file *file, const char __user *buffer,
 		rtw_ps_deny_cancel(padapter, PS_DENY_IOCTL);
 
 		RTW_INFO("set %s %d\n", "gpio_high_active",
-			 wow_gpio->gpio_active);
+			 d2h_gpio_info->gpio_active);
 		RTW_INFO("%s: set GPIO_%d %d as default. status=%d\n",
 			 __func__, WAKEUP_GPIO_IDX, wow_gpio->dev2hst_high, status);
 	}
@@ -5149,6 +5218,88 @@ ssize_t proc_set_wmmps_info(struct file *file, const char __user *buffer, size_t
 }
 #endif /* CONFIG_WMMPS_STA */
 #endif /* CONFIG_POWER_SAVING */
+
+#ifdef CONFIG_POWER_SAVE
+enum ps_mode {
+	PS_MODE_NONE,
+	PS_MODE_LPS,
+	PS_MODE_IPS
+};
+
+ssize_t proc_set_ps_info(struct file *file, const char __user *buffer, size_t count, loff_t *pos, void *data)
+{
+	struct net_device *dev = data;
+	struct _ADAPTER *adapter = (_adapter *)rtw_netdev_priv(dev);
+	struct dvobj_priv *dvobj = adapter_to_dvobj(adapter);
+	struct rtw_phl_com_t *phl_com = dvobj->phl_com;
+	struct rtw_ps_cap_t *ps_cap_p = &phl_com->dev_cap.ps_cap;
+	struct registry_priv  *registry_par = &adapter->registrypriv;
+	char tmp[32];
+	int num = 0, ps_mode = 0, ps_cap = 0;
+	u8 lps_cap = 0;
+
+	if (count > sizeof(tmp)) {
+		rtw_warn_on(1);
+		return -EFAULT;
+	}
+
+	if (!buffer || copy_from_user(tmp, buffer, count))
+		goto exit;
+
+	num = sscanf(tmp, "%d %d", &ps_mode, &ps_cap);
+
+	if (num > 2) {
+		RTW_ERR("%s: invalid parameter!\n", __FUNCTION__);
+		goto exit;
+	}
+
+	if (ps_mode == 1) {
+#ifdef CONFIG_RTW_LPS
+		switch (ps_cap) {
+			case 0:
+				if (ps_cap_p->lps_en == PS_OP_MODE_DISABLED)
+					goto exit;
+				break;
+			case 1:
+				lps_cap = PS_CAP_PWRON | PS_CAP_RF_OFF;
+				break;
+			case 2:
+				lps_cap = PS_CAP_PWRON | PS_CAP_RF_OFF | PS_CAP_CLK_GATED;
+				break;
+			case 3:
+				lps_cap = PS_CAP_PWRON | PS_CAP_RF_OFF | PS_CAP_CLK_GATED | PS_CAP_PWR_GATED;
+				break;
+			default:
+				goto exit;
+		}
+
+		if (ps_cap == 0) {
+			rtw_phl_dbg_ps_op_mode(GET_PHL_INFO(dvobj), HW_BAND_0, PS_MODE_LPS, PS_OP_MODE_DISABLED);
+		} else {
+			if (ps_cap_p->lps_cap != lps_cap) {
+				if (ps_cap_p->lps_en != registry_par->lps_mode)
+					rtw_phl_dbg_ps_op_mode(GET_PHL_INFO(dvobj), HW_BAND_0, PS_MODE_LPS, registry_par->lps_mode);
+				rtw_phl_dbg_ps_cap(GET_PHL_INFO(dvobj), HW_BAND_0, PS_MODE_LPS, lps_cap);
+			}
+		}
+#endif /* CONFIG_RTW_LPS */
+	} else if (ps_mode == 2) {
+#ifdef CONFIG_RTW_IPS
+		if (ps_cap_p->ips_en != ps_cap) {
+			if (ps_cap != 0)
+				ps_cap = registry_par->ips_mode;
+
+			rtw_phl_dbg_ps_op_mode(GET_PHL_INFO(dvobj), HW_BAND_0, PS_MODE_IPS, ps_cap);
+		}
+#endif /* #ifdef CONFIG_RTW_IPS */
+	}
+	else {
+		RTW_ERR("%s: invalid parameter, mode = %d!\n", __FUNCTION__, ps_mode);
+	}
+exit:
+	return count;
+}
+#endif /* CONFIG_POWER_SAVE */
 
 #ifdef CONFIG_TDLS
 int proc_get_tdls_enable(struct seq_file *m, void *v)
@@ -6594,6 +6745,157 @@ exit:
 	return 0;
 }
 #endif /* RTW_DETECT_HANG */
+
+int proc_get_disconnect_info(struct seq_file *m, void *v)
+{
+	struct net_device *dev = m->private;
+	_adapter *padapter = (_adapter *)rtw_netdev_priv(dev);
+	struct mlme_ext_priv *pmlmeext = &padapter->mlmeextpriv;
+	struct mlme_ext_info *pmlmeinfo = &pmlmeext->mlmext_info;
+	char *disconnect_reason;
+	char *illegal_beacon_reason;
+
+	if (pmlmeinfo) {
+		switch (pmlmeinfo->disconnect_code) {
+		case DISCONNECTION_NOT_YET_OCCUR:
+			disconnect_reason = "Disconnection has not yet occurred.";
+			break;
+		case DISCONNECTION_BY_SYSTEM_DUE_TO_HIGH_LAYER_COMMAND:
+			disconnect_reason = "System requests to disconnect by command.";
+			break;
+		case DISCONNECTION_BY_SYSTEM_DUE_TO_NET_DEVICE_DOWN:
+			disconnect_reason = "System makes net_device down to cause disconnection.";
+			break;
+		case DISCONNECTION_BY_SYSTEM_DUE_TO_SYSTEM_IN_SUSPEND:
+			disconnect_reason = "System enters suspend state to cause disconnection.";
+			break;
+		case DISCONNECTION_BY_DRIVER_DUE_TO_CONNECTION_EXIST:
+			disconnect_reason = "The connection is exist so it triggers disconnection when joinbss.";
+			break;
+		case DISCONNECTION_BY_DRIVER_DUE_TO_EACH_IFACE_CHBW_NOT_SYNC:
+			disconnect_reason = "Multiple interfaces do not synchronize channel and bandwidth when joinbss.";
+			break;
+		case DISCONNECTION_BY_DRIVER_DUE_TO_DFS_DETECTION:
+			disconnect_reason = "DFS Slave mechanism detects radar to cause disconnection.";
+			break;
+		case DISCONNECTION_BY_DRIVER_DUE_TO_IOCTL_DBG_PORT:
+			disconnect_reason = "Using ioctl dbg port command to accomplish disconnection.";
+			break;
+		case DISCONNECTION_BY_DRIVER_DUE_TO_AP_BEACON_CHANGED:
+			disconnect_reason = "AP's beacon content was changed to cause disconnection.";
+			break;
+		case DISCONNECTION_BY_DRIVER_DUE_TO_KEEPALIVE_TIMEOUT:
+			disconnect_reason = "Maybe AP disappears to trigger station keepalive timeout and connection break.";
+			break;
+		case DISCONNECTION_BY_DRIVER_DUE_TO_LAYER2_ROAMING_TERMINATE:
+			disconnect_reason = "Layer2 roaming terminated to trigger disconnection.";
+			break;
+		case DISCONNECTION_BY_DRIVER_DUE_TO_JOINBSS_TIMEOUT:
+			disconnect_reason = "Station joinbss process is timeout to trigger disconnection.";
+			break;
+		case DISCONNECTION_BY_FW_DUE_TO_FW_DECISION_IN_WOW_RESUME:
+			disconnect_reason = "FW decides to disconnect in WOW resume flow.";
+			break;
+		case DISCONNECTION_BY_AP_DUE_TO_RECEIVE_DISASSOC_IN_WOW_RESUME:
+			disconnect_reason = "Receiving Disassociation frame from AP to cause disconnection in WOW resume flow.";
+			break;
+		case DISCONNECTION_BY_AP_DUE_TO_RECEIVE_DEAUTH_IN_WOW_RESUME:
+			disconnect_reason = "Receiving Deauth frame from AP to cause disconnection in WOW resume flow.";
+			break;
+		case DISCONNECTION_BY_AP_DUE_TO_RECEIVE_DEAUTH:
+			disconnect_reason = "Receiving Deauth frame from AP to cause disconnection.";
+			break;
+		case DISCONNECTION_BY_AP_DUE_TO_RECEIVE_DISASSOC:
+			disconnect_reason = "Receiving Disassociation frame from AP to cause disconnection.";
+			break;
+		case DISCONNECTION_BY_DRIVER_DUE_TO_RECEIVE_CSA_NON_DFS:
+			disconnect_reason = "Disconnection due to AP switched to unsupported channel.";
+			break;
+		case DISCONNECTION_BY_DRIVER_DUE_TO_RECEIVE_CSA_DFS:
+			disconnect_reason = "Disconnection due to AP switched to unsupported DFS channel.";
+			break;
+		case DISCONNECTION_BY_DRIVER_DUE_TO_RECEIVE_INVALID_CSA:
+			disconnect_reason = "Disconnection due to received invalid CSA IE";
+			break;
+		case DISCONNECTION_BY_DRIVER_DUE_TO_JOIN_WRONG_CHANNEL:
+			disconnect_reason = "Disconnection due to joined wrong channel";
+			break;
+		case DISCONNECTION_BY_DRIVER_DUE_TO_FT:
+			disconnect_reason = "Disconnection due to FT";
+			break;
+		case DISCONNECTION_BY_DRIVER_DUE_TO_ROAMING:
+			disconnect_reason = "Disconnection due to roaming";
+			break;
+		case DISCONNECTION_BY_DRIVER_DUE_TO_SA_QUERY_TIMEOUT:
+			disconnect_reason = "Disconnection due to SA Query timeout";
+			break;
+		default:
+			disconnect_reason = "Unspecified";
+			break;
+		}
+
+		RTW_PRINT_SEL(m, "occurred disconnection time = %d\n", pmlmeinfo->disconnect_occurred_time);
+		RTW_PRINT_SEL(m, "disconnect code = %d\n", pmlmeinfo->disconnect_code);
+		RTW_PRINT_SEL(m, "last disconnect reason: %s\n", disconnect_reason);
+		RTW_PRINT_SEL(m, "beacon code: %d\n", pmlmeinfo->illegal_beacon_code);
+		if (pmlmeinfo->disconnect_code == DISCONNECTION_BY_DRIVER_DUE_TO_AP_BEACON_CHANGED) {
+			if(pmlmeinfo->illegal_beacon_code & SSID_CHANGED)
+				RTW_PRINT_SEL(m, "illegal beacon reason: The SSID of beacon is changed.\n");
+			if(pmlmeinfo->illegal_beacon_code & SSID_LENGTH_CHANGED)
+				RTW_PRINT_SEL(m, "illegal beacon reason: The SSID length of beacon is changed.\n");
+			if(pmlmeinfo->illegal_beacon_code & BEACON_CHANNEL_CHANGED)
+				RTW_PRINT_SEL(m, "illegal beacon reason: The Beacon channel of beacon is changed.\n");
+			if(pmlmeinfo->illegal_beacon_code & ENCRYPT_PROTOCOL_CHANGED)
+				RTW_PRINT_SEL(m, "illegal beacon reason: The Encrypt protocol of beacon is changed.\n");
+			if(pmlmeinfo->illegal_beacon_code & PAIRWISE_CIPHER_CHANGED)
+				RTW_PRINT_SEL(m, "illegal beacon reason: The Pairwise cipheris of beacon changed.\n");
+			if(pmlmeinfo->illegal_beacon_code & GROUP_CIPHER_CHANGED)
+				RTW_PRINT_SEL(m, "illegal beacon reason: The Group cipher of beacon is changed.\n");
+			if(pmlmeinfo->illegal_beacon_code & IS_8021X_CHANGED)
+				RTW_PRINT_SEL(m, "illegal beacon reason: The 802.1x of beacon is changed.\n");
+		} else {
+			RTW_PRINT_SEL(m, "illegal beacon reason: NA.\n");
+		}
+
+		RTW_PRINT_SEL(m, "Wi-Fi reason code: %d\n",
+			      pmlmeinfo->disconnect_code ? pmlmeinfo->wifi_reason_code : 0);
+	}
+
+	return 0;
+}
+
+ssize_t proc_set_disconnect_info(struct file *file, const char __user *buffer,
+				 size_t count, loff_t *pos, void *data)
+{
+	struct net_device *dev = data;
+	_adapter *padapter = (_adapter *)rtw_netdev_priv(dev);
+	struct mlme_ext_priv *pmlmeext = &padapter->mlmeextpriv;
+	struct mlme_ext_info *pmlmeinfo = &(pmlmeext->mlmext_info);
+	char tmp[32];
+	u8 clear;
+
+	if (!pmlmeinfo)
+		return -EPERM;
+
+	if (count < 1)
+		return -EFAULT;
+
+	if (count > sizeof(tmp)) {
+		rtw_warn_on(1);
+		return -EFAULT;
+	}
+
+	if (buffer && !copy_from_user(tmp, buffer, count)) {
+		int num = sscanf(tmp, "%hhd", &clear);
+		if (num == 1 && clear == 0) {
+			pmlmeinfo->disconnect_occurred_time = 0;
+			pmlmeinfo->disconnect_code = DISCONNECTION_NOT_YET_OCCUR;
+			pmlmeinfo->illegal_beacon_code = 0;
+		}
+	}
+
+	return count;
+}
 
 int proc_get_chan(struct seq_file *m, void *v)
 {

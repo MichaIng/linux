@@ -1067,6 +1067,8 @@ static u8 sta_disassoc_cmd(struct _ADAPTER *a, u32 deauth_timeout_ms, int flags)
 		/* param & cmd would be freed in rtw_enqueue_cmd() */
 		RTW_ERR(FUNC_ADPT_FMT ": send disconnect cmd FAIL!(0x%x)\n",
 			FUNC_ADPT_ARG(a), status);
+		rtw_mfree((u8 *)param, sizeof(*param));
+		rtw_mfree((u8 *)cmd, sizeof(*cmd));
 		goto exit;
 	}
 	res = _SUCCESS;
@@ -2256,7 +2258,7 @@ u8 _ssmps_chk_by_tp(_adapter *adapter, u8 from_timer)
 	u32 tx_tp_mbits, rx_tp_mbits;
 
 	if (!MLME_IS_STA(adapter) ||
-		!rtw_hw_is_mimo_support(adapter_to_dvobj(adapter)) ||
+		!rtw_hw_is_mimo_support(adapter) ||
 		!pmlmeext->ssmps_en ||
 		(pmlmeext->chandef.chan > 14)
 	)
@@ -2460,7 +2462,7 @@ void rtw_ctrl_tx_ss_by_tp(_adapter *adapter, u8 from_timer)
 	u32 tx_tp_mbits;
 
 	if (!MLME_IS_STA(adapter) ||
-		!rtw_hw_is_mimo_support(adapter_to_dvobj(adapter)) ||
+		!rtw_hw_is_mimo_support(adapter) ||
 		!pmlmeext->txss_ctrl_en
 	)
 		return;
@@ -2506,7 +2508,7 @@ void dbg_ctrl_txss(_adapter *adapter, bool tx_1ss)
 	struct sta_info *psta;
 
 	if (!MLME_IS_STA(adapter) ||
-		!rtw_hw_is_mimo_support(adapter_to_dvobj(adapter))
+		!rtw_hw_is_mimo_support(adapter)
 	)
 		return;
 
@@ -2862,7 +2864,9 @@ u8 traffic_status_watchdog(_adapter *padapter, u8 from_timer)
 #endif
 	}
 
+#if 0
 	session_tracker_chk_cmd(padapter, NULL);
+#endif
 
 #ifdef CONFIG_BEAMFORMING
 #ifdef RTW_WKARD_TX_DISABLE_BFEE
@@ -2887,7 +2891,7 @@ u8 traffic_status_watchdog(_adapter *padapter, u8 from_timer)
 
 
 /* for 11n Logo 4.2.31/4.2.32 */
-static void dynamic_update_bcn_check(_adapter *padapter)
+void dynamic_update_bcn_check(_adapter *padapter)
 {
 	struct mlme_priv *pmlmepriv = &(padapter->mlmepriv);
 	struct mlme_ext_priv *pmlmeext = &padapter->mlmeextpriv;
@@ -3048,31 +3052,10 @@ u32 rtw_get_turbo_edca(_adapter *padapter, u8 aifs, u8 ecwmin, u8 ecwmax, u8 txo
 
 void rtw_iface_dynamic_chk_wk_hdl(_adapter *padapter)
 {
-	#ifdef CONFIG_ACTIVE_KEEP_ALIVE_CHECK
-	#ifdef CONFIG_AP_MODE
-	if (MLME_IS_AP(padapter) || MLME_IS_MESH(padapter)) {
-		expire_timeout_chk(padapter);
-		#ifdef CONFIG_RTW_MESH
-		if (MLME_IS_MESH(padapter) && MLME_IS_ASOC(padapter))
-			rtw_mesh_peer_status_chk(padapter);
-		#endif
-	}
-	#endif
-	#endif /* CONFIG_ACTIVE_KEEP_ALIVE_CHECK */
-	dynamic_update_bcn_check(padapter);
-
-	linked_status_chk(padapter, 0);
-	traffic_status_watchdog(padapter, 0);
 	rtw_turbo_edca(padapter);
 
 	/* for debug purpose */
 	_linked_info_dump(padapter);
-
-#ifdef CONFIG_RTW_CFGVENDOR_RSSIMONITOR
-        rtw_cfgvendor_rssi_monitor_evt(padapter);
-#endif
-
-
 }
 
 void rtw_dynamic_chk_wk_hdl(_adapter *padapter)
@@ -3779,6 +3762,8 @@ void rtw_dfs_ch_switch_hdl(_adapter *adapter)
 	/* make asoc STA ifaces disconnect */
 	if (ifbmp_s && need_discon) {
 		_adapter *iface;
+		struct mlme_ext_priv *pmlmeext;
+		struct mlme_ext_info *pmlmeinfo;
 		int i;
 
 		for (i = 0; i < dvobj->iface_nums; i++) {
@@ -3791,6 +3776,20 @@ void rtw_dfs_ch_switch_hdl(_adapter *adapter)
 			rtw_free_assoc_resources(iface, _TRUE);
 			#endif
 			rtw_free_network_queue(iface, _TRUE);
+
+			pmlmeext = &iface->mlmeextpriv;
+			pmlmeinfo = &pmlmeext->mlmext_info;
+			pmlmeinfo->disconnect_occurred_time = rtw_systime_to_ms(rtw_get_current_time());
+
+			if (rtw_chset_is_dfs_chbw(rfctl->channel_set, req_ch, req_bw, req_offset)) {
+				RTW_INFO("Switched to DFS band (ch %d, bw %d, offset %d) again!!\n",
+					 req_ch, req_bw, req_offset);
+				pmlmeinfo->disconnect_code = DISCONNECTION_BY_DRIVER_DUE_TO_RECEIVE_CSA_DFS;
+			} else {
+				pmlmeinfo->disconnect_code = DISCONNECTION_BY_DRIVER_DUE_TO_RECEIVE_CSA_NON_DFS;
+			}
+
+			pmlmeinfo->wifi_reason_code = WLAN_REASON_DEAUTH_LEAVING;
 		}
 	}
 

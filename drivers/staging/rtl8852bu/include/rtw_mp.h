@@ -309,6 +309,8 @@ enum {
 	MP_PHL_RFK,
 	MP_PHL_BTC_PATH,
 	MP_GET_HE,
+	MP_UUID,
+	MP_GPIO,
 	MP_NULL,
 #ifdef CONFIG_APPEND_VENDOR_IE_ENABLE
 	VENDOR_IE_SET ,
@@ -430,10 +432,13 @@ struct mp_priv {
 	BOOLEAN mplink_btx;
 
 	bool tssitrk_on;
+	u8 tssi_mode;
 	u8 rtw_mp_cur_phy;
 	u8 rtw_mp_dbcc;
 	s16 path_pwr_offset[4];	/* rf-A, rf-B*/
 	u8 rtw_mp_tx_method;
+	u16 rtw_mp_tx_time;
+	u8 rtw_mp_tx_state;
 	u8 rtw_mp_pmact_patt_idx;
 	u8 rtw_mp_pmact_ppdu_type;
 	u8 rtw_mp_data_bandwidth;
@@ -459,6 +464,9 @@ struct mp_priv {
 
 	u8 keep_ips_status;
 	u8 keep_lps_status;
+	u8 tx_shape_idx;
+	u8 gpio_id;
+	u8 gpio_enable;
 };
 
 #define PPDU_TYPE_STR(idx)\
@@ -752,7 +760,6 @@ enum rtw_mp_tx_cmd {
 	RTW_MP_TX_CONFIG_PLCP_PATTERN,
 	RTW_MP_TX_CONFIG_PLCP_USER_INFO,
 	RTW_MP_TX_MODE_SWITCH,
-	RTW_MP_TX_F2P,
 	RTW_MP_TX_TB_TEST,
 	RTW_MP_TX_DPD_BYPASS,
 	RTW_MP_TX_CHECK_TX_IDLE,
@@ -840,6 +847,8 @@ enum rtw_mp_config_cmdid {
 	RTW_MP_CONFIG_CMD_GET_RFE_TYPE,
 	RTW_MP_CONFIG_CMD_GET_DEV_IDX,
 	RTW_MP_CONFIG_CMD_TRIGGER_FW_CONFLICT,
+	RTW_MP_CONFIG_CMD_GET_UUID,
+	RTW_MP_CONFIG_CMD_SET_GPIO,
 	RTW_MP_CONFIG_CMD_MAX,
 };
 
@@ -902,6 +911,9 @@ struct rtw_mp_config_arg {
 	u8 dev_id;
 	u32 offset;
 	u8 voltag;
+	u32 uuid;
+	u8 gpio_id;
+	u8 gpio_enable;
 };
 
 struct rtw_mp_tx_arg {
@@ -995,220 +1007,6 @@ struct rtw_mp_tx_arg {
 	u8 bSS_id_addr5;
 	u8 is_link_mode;
 
-	/* f2p cmd */
-	u32 pref_AC_0;
-	u32 aid12_0;
-	u32 ul_mcs_0;
-	u32 macid_0;
-	u32 ru_pos_0;
-	u32 ul_fec_code_0;
-	u32 ul_dcm_0;
-	u32 ss_alloc_0;
-	u32 ul_tgt_rssi_0;
-	u32 pref_AC_1;
-	u32 aid12_1;
-	u32 ul_mcs_1;
-	u32 macid_1;
-	u32 ru_pos_1;
-	u32 ul_fec_code_1;
-	u32 ul_dcm_1;
-	u32 ss_alloc_1;
-	u32 ul_tgt_rssi_1;
-	u32 pref_AC_2;
-	u32 aid12_2;
-	u32 ul_mcs_2;
-	u32 macid_2;
-	u32 ru_pos_2;
-	u32 ul_fec_code_2;
-	u32 ul_dcm_2;
-	u32 ss_alloc_2;
-	u32 ul_tgt_rssi_2;
-	u32 pref_AC_3;
-	u32 aid12_3;
-	u32 ul_mcs_3;
-	u32 macid_3;
-	u32 ru_pos_3;
-	u32 ul_fec_code_3;
-	u32 ul_dcm_3;
-	u32 ss_alloc_3;
-	u32 ul_tgt_rssi_3;
-	u32 ul_bw;
-	u32 gi_ltf;
-	u32 num_he_ltf;
-	u32 ul_stbc;
-	u32 pkt_doppler;
-	u32 ap_tx_power;
-	u32 user_num;
-	u32 pktnum;
-	u32 pri20_bitmap;
-	u32 datarate;
-	u32 mulport_id;
-	u32 pwr_ofset;
-	u32 f2p_mode;
-	u32 frexch_type;
-	u32 sigb_len;
-	/* dword 0 */
-	u32 cmd_qsel;
-	u32 ls;
-	u32 fs;
-	u32 total_number;
-	u32 seq;
-	u32 length;
-	/* dword 1 */
-	/* dword 0 */
-	u32 cmd_type;
-	u32 cmd_sub_type;
-	u32 dl_user_num;
-	u32 bw;
-	u32 tx_power;
-	/* dword 1 */
-	u32 fw_define;
-	u32 ss_sel_mode;
-	u32 next_qsel;
-	u32 twt_group;
-	u32 dis_chk_slp;
-	u32 ru_mu_2_su;
-	u32 dl_t_pe;
-	/* dword 2 */
-	u32 sigb_ch1_len;
-	u32 sigb_ch2_len;
-	u32 sigb_sym_num;
-	u32 sigb_ch2_ofs;
-	u32 dis_htp_ack;
-	u32 tx_time_ref;
-	u32 pri_user_idx;
-	/* dword 3 */
-	u32 ampdu_max_txtime;
-	u32 d3_group_id;
-	u32 twt_chk_en;
-	u32 twt_port_id;
-	/* dword 4 */
-	u32 twt_start_time;
-	/* dword 5 */
-	u32 twt_end_time;
-	/* dword 6 */
-	u32 apep_len;
-	u32 tri_pad;
-	u32 ul_t_pe;
-	u32 rf_gain_idx;
-	u32 fixed_gain_en;
-	u32 ul_gi_ltf;
-	u32 ul_doppler;
-	u32 d6_ul_stbc;
-	/* dword 7 */
-	u32 ul_mid_per;
-	u32 ul_cqi_rrp_tri;
-	u32 sigb_dcm;
-	u32 sigb_comp;
-	u32 d7_doppler;
-	u32 d7_stbc;
-	u32 mid_per;
-	u32 gi_ltf_size;
-	u32 sigb_mcs;
-	/* dword 8 */
-	u32 macid_u0;
-	u32 ac_type_u0;
-	u32 mu_sta_pos_u0;
-	u32 dl_rate_idx_u0;
-	u32 dl_dcm_en_u0;
-	u32 ru_alo_idx_u0;
-	/* dword 9 */
-	u32 pwr_boost_u0;
-	u32 agg_bmp_alo_u0;
-	u32 ampdu_max_txnum_u0;
-	u32 user_define_u0;
-	u32 user_define_ext_u0;
-	/* dword 10 */
-	u32 ul_addr_idx_u0;
-	u32 ul_dcm_u0;
-	u32 ul_fec_cod_u0;
-	u32 ul_ru_rate_u0;
-	u32 ul_ru_alo_idx_u0;
-	/* dword 11 */
-	/* dword 12 */
-	u32 macid_u1;
-	u32 ac_type_u1;
-	u32 mu_sta_pos_u1;
-	u32 dl_rate_idx_u1;
-	u32 dl_dcm_en_u1;
-	u32 ru_alo_idx_u1;
-	/* dword 13 */
-	u32 pwr_boost_u1;
-	u32 agg_bmp_alo_u1;
-	u32 ampdu_max_txnum_u1;
-	u32 user_define_u1;
-	u32 user_define_ext_u1;
-	/* dword 14 */
-	u32 ul_addr_idx_u1;
-	u32 ul_dcm_u1;
-	u32 ul_fec_cod_u1;
-	u32 ul_ru_rate_u1;
-	u32 ul_ru_alo_idx_u1;
-	/* dword 15 */
-	/* dword 16 */
-	u32 macid_u2;
-	u32 ac_type_u2;
-	u32 mu_sta_pos_u2;
-	u32 dl_rate_idx_u2;
-	u32 dl_dcm_en_u2;
-	u32 ru_alo_idx_u2;
-	/* dword 17 */
-	u32 pwr_boost_u2;
-	u32 agg_bmp_alo_u2;
-	u32 ampdu_max_txnum_u2;
-	u32 user_define_u2;
-	u32 user_define_ext_u2;
-	/* dword 18 */
-	u32 ul_addr_idx_u2;
-	u32 ul_dcm_u2;
-	u32 ul_fec_cod_u2;
-	u32 ul_ru_rate_u2;
-	u32 ul_ru_alo_idx_u2;
-	/* dword 19 */
-	/* dword 20 */
-	u32 macid_u3;
-	u32 ac_type_u3;
-	u32 mu_sta_pos_u3;
-	u32 dl_rate_idx_u3;
-	u32 dl_dcm_en_u3;
-	u32 ru_alo_idx_u3;
-	/* dword 21 */
-	u32 pwr_boost_u3;
-	u32 agg_bmp_alo_u3;
-	u32 ampdu_max_txnum_u3;
-	u32 user_define_u3;
-	u32 user_define_ext_u3;
-	/* dword 22 */
-	u32 ul_addr_idx_u3;
-	u32 ul_dcm_u3;
-	u32 ul_fec_cod_u3;
-	u32 ul_ru_rate_u3;
-	u32 ul_ru_alo_idx_u3;
-	/* dword 23 */
-	/* dword 24 */
-	u32 pkt_id_0;
-	u32 valid_0;
-	u32 ul_user_num_0;
-	/* dword 25 */
-	u32 pkt_id_1;
-	u32 valid_1;
-	u32 ul_user_num_1;
-	/* dword 26 */
-	u32 pkt_id_2;
-	u32 valid_2;
-	u32 ul_user_num_2;
-	/* dword 27 */
-	u32 pkt_id_3;
-	u32 valid_3;
-	u32 ul_user_num_3;
-	/* dword 28 */
-	u32 pkt_id_4;
-	u32 valid_4;
-	u32 ul_user_num_4;
-	/* dword 29 */
-	u32 pkt_id_5;
-	u32 valid_5;
-	u32 ul_user_num_5;
 	/* tx state*/
 	u8 tx_state;
 };
@@ -1262,6 +1060,8 @@ enum rtw_mp_txpwr_cmd {
 	RTW_MP_TXPWR_CMD_GET_ONLINE_TSSI_DE = 15,
 	RTW_MP_TXPWR_CMD_SET_PWR_LMT_EN = 16,
 	RTW_MP_TXPWR_CMD_GET_PWR_LMT_EN = 17,
+	RTW_MP_TXPWR_CMD_SET_TX_POW_PATTERN_SHARP = 18,
+	RTW_MP_TXPWR_CMD_SET_TX_POW_TABLE_SWITCH = 19,
 	RTW_MP_TXPWR_CMD_MAX,
 };
 
@@ -1482,6 +1282,7 @@ void rtw_mp_phl_query_rx(_adapter *padapter, struct rtw_mp_rx_arg *rx_arg ,u8 rx
 u8 rtw_mp_phl_txpower(_adapter *padapter, struct rtw_mp_txpwr_arg	*ptxpwr_arg, u8 cmdid);
 void rtw_mp_set_crystal_cap(_adapter *padapter, u32 xcapvalue);
 u8 rtw_mp_phl_calibration(_adapter *padapter, struct rtw_mp_cal_arg	*pcal_arg, u8 cmdid);
+u8 rtw_mp_phl_reg(_adapter *padapter, struct rtw_mp_reg_arg	*reg_arg, u8 cmdid);
 
 
 u8 rtw_update_giltf(_adapter *padapter);
@@ -1515,6 +1316,8 @@ void	SetAntenna(_adapter *adapter);
 void	SetDataRate(_adapter *adapter);
 s32	SetThermalMeter(_adapter *adapter, u8 target_ther);
 void	GetThermalMeter(_adapter *adapter, u8 rfpath ,u8 *value);
+void	GetUuid(_adapter *adapter, u32 *uuid);
+void SetGpio(_adapter *padapter);
 void	rtw_mp_continuous_tx(_adapter *adapter, u8 bstart);
 void	rtw_mp_singlecarrier_tx(_adapter *adapter, u8 bstart);
 void	rtw_mp_singletone_tx(_adapter *adapter, u8 bstart);
@@ -1557,6 +1360,7 @@ u8 rtw_mp_set_tsside2verify(_adapter *padapter, u32 tssi_de, u8 rf_path);
 u8 rtw_mp_set_tssi_offset(_adapter *padapter, u32 tssi_offset, u8 rf_path);
 u8 rtw_mp_set_tssi_pwrtrk(_adapter *padapter, u8 tssi_state);
 u8 rtw_mp_get_tssi_pwrtrk(_adapter *padapter);
+u8 rtw_mp_set_tx_shape_idx(_adapter *padapter);
 
 void rtw_mp_cal_trigger(_adapter *padapter, u8 cal_tye);
 void rtw_mp_cal_capab(_adapter *padapter, u8 cal_tye, u8 benable);
@@ -1665,6 +1469,9 @@ int rtw_mp_psd(struct net_device *dev,
 		struct iw_request_info *info,
 		struct iw_point *wrqu, char *extra);
 int rtw_mp_thermal(struct net_device *dev,
+		struct iw_request_info *info,
+		struct iw_point *wrqu, char *extra);
+int rtw_mp_UUID(struct net_device *dev,
 		struct iw_request_info *info,
 		struct iw_point *wrqu, char *extra);
 int rtw_mp_reset_stats(struct net_device *dev,

@@ -17,9 +17,21 @@
 
 /* core / phl common structrue */
 
-#define MAX_PHL_RING_ENTRY_NUM 4096
+#ifndef MAX_PHL_TX_RING_ENTRY_NUM
+#define MAX_PHL_TX_RING_ENTRY_NUM 4096
+#endif /*MAX_PHL_TX_RING_ENTRY_NUM*/
+
+#ifndef MAX_PHL_RX_RING_ENTRY_NUM
+#define MAX_PHL_RX_RING_ENTRY_NUM 4096
+#endif /*MAX_PHL_RX_RING_ENTRY_NUM*/
 #define MAX_PHL_RING_CAT_NUM 10 /* 8 tid + 1 mgnt + 1 hiq*/
+
+
+#ifdef CONFIG_RTW_REDUCE_MEM
+#define MAX_PHL_RING_RX_PKT_NUM MAX_PHL_RX_RING_ENTRY_NUM
+#else
 #define MAX_PHL_RING_RX_PKT_NUM 8192
+#endif
 #define MAX_RX_BUF_SEG_NUM 4
 
 #define _H2CB_CMD_QLEN 32
@@ -469,7 +481,7 @@ struct rtw_phl_tx_ring {
 	u16 core_idx;
 	_os_atomic phl_idx;
 	_os_atomic phl_next_idx;
-	u8 *entry[MAX_PHL_RING_ENTRY_NUM];/* change to dynamic allocation */
+	u8 *entry[MAX_PHL_TX_RING_ENTRY_NUM];/* change to dynamic allocation */
 };
 
 /**
@@ -521,7 +533,7 @@ struct rtw_phl_tring_list {
 struct rtw_phl_rx_ring {
 	_os_atomic core_idx;
 	_os_atomic phl_idx;
-	struct rtw_recv_pkt *entry[MAX_PHL_RING_ENTRY_NUM];/* change to dynamic allocation */
+	struct rtw_recv_pkt *entry[MAX_PHL_RX_RING_ENTRY_NUM];/* change to dynamic allocation */
 };
 
 

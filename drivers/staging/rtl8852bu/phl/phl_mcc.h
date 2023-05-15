@@ -80,6 +80,7 @@ struct phl_mcc_info {
 	enum rtw_phl_mcc_coex_mode coex_mode;
 	struct rtw_phl_mcc_bt_info bt_info;
 	struct phl_mcc_fw_log_info fw_log_i;
+	struct rtw_phl_mcc_dbg_info mcc_dbg_i;
 };
 
 

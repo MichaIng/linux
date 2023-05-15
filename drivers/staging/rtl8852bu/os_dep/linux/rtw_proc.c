@@ -1,6 +1,6 @@
 /******************************************************************************
  *
- * Copyright(c) 2007 - 2019 Realtek Corporation.
+ * Copyright(c) 2007 - 2022 Realtek Corporation.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of version 2 of the GNU General Public License as
@@ -37,6 +37,8 @@ inline struct proc_dir_entry *get_rtw_drv_proc(void)
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(3, 10, 0))
 #define PDE_DATA(inode) PDE((inode))->data
 #define proc_get_parent_data(inode) PDE((inode))->parent->data
+#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 17, 0))
+#define PDE_DATA pde_data
 #endif
 
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 24))
@@ -1248,6 +1250,52 @@ static int proc_get_tx_info_msg(struct seq_file *m, void *v)
 
 	return 0;
 
+}
+
+static int proc_get_false_alarm_accumulated(struct seq_file *m, void *v)
+{
+	struct net_device *dev = m->private;
+	_adapter *padapter = (_adapter *)rtw_netdev_priv(dev);
+	struct dvobj_priv *dvobj = adapter_to_dvobj(padapter);
+	struct rtw_wifi_role_t *wrole = padapter->phl_role;
+	enum phl_band_idx hw_band = wrole->hw_band;
+
+	_RTW_PRINT_SEL(m , "Accumulated False Alarm:%u\n",
+		       ATOMIC_READ((ATOMIC_T *)&dvobj->fa_cnt_acc[hw_band]));
+
+	return 0;
+}
+
+static ssize_t proc_set_false_alarm_accumulated(struct file *file,
+						const char __user *buffer,
+						size_t count, loff_t *pos,
+						void *data)
+{
+	struct net_device *dev = data;
+	_adapter *padapter = (_adapter *)rtw_netdev_priv(dev);
+	struct dvobj_priv *dvobj = adapter_to_dvobj(padapter);
+	struct rtw_wifi_role_t *wrole = padapter->phl_role;
+	enum phl_band_idx hw_band = wrole->hw_band;
+	char tmp[32];
+	u32 false_clr;
+
+	if (count < 1)
+		return -EINVAL;
+
+	if (count > sizeof(tmp)) {
+		rtw_warn_on(1);
+		return -EFAULT;
+	}
+
+	if (buffer && !copy_from_user(tmp, buffer, count)) {
+		u32 num = sscanf(tmp, "%u ", &false_clr);
+		ATOMIC_SET((ATOMIC_T *)&dvobj->fa_cnt_acc[hw_band],
+			   (int)false_clr);
+	} else {
+		return -EFAULT;
+	}
+
+	return count;
 }
 
 #ifdef ROKU_PRIVATE
@@ -4999,6 +5047,10 @@ const struct rtw_proc_hdl adapter_proc_hdls[] = {
 	RTW_PROC_HDL_SSEQ("led_config", proc_get_led_config, proc_set_led_config),
 #endif
 
+#ifdef CONFIG_POWER_SAVE
+	RTW_PROC_HDL_SSEQ("ps_info", NULL, proc_set_ps_info),
+#endif /* CONFIG_POWER_SAVE */
+
 #ifdef CONFIG_AP_MODE
 	RTW_PROC_HDL_SSEQ("aid_status", proc_get_aid_status, proc_set_aid_status),
 	RTW_PROC_HDL_SSEQ("all_sta_info", proc_get_all_sta_info, NULL),
@@ -5029,7 +5081,7 @@ const struct rtw_proc_hdl adapter_proc_hdls[] = {
 	RTW_PROC_HDL_SSEQ("rx_ampdu_factor", proc_get_rx_ampdu_factor, proc_set_rx_ampdu_factor),
 	RTW_PROC_HDL_SSEQ("rx_ampdu_density", proc_get_rx_ampdu_density, proc_set_rx_ampdu_density),
 	RTW_PROC_HDL_SSEQ("tx_ampdu_density", proc_get_tx_ampdu_density, proc_set_tx_ampdu_density),
-	RTW_PROC_HDL_SSEQ("tx_max_agg_num", proc_get_tx_max_agg_num, proc_set_tx_max_agg_num),
+	RTW_PROC_HDL_SSEQ("tx_ampdu_num", proc_get_tx_ampdu_num, proc_set_tx_ampdu_num),
 	RTW_PROC_HDL_SSEQ("tx_quick_addba_req", proc_get_tx_quick_addba_req, proc_set_tx_quick_addba_req),
 #ifdef CONFIG_TX_AMSDU
 	RTW_PROC_HDL_SSEQ("tx_amsdu", proc_get_tx_amsdu, proc_set_tx_amsdu),
@@ -5068,6 +5120,9 @@ const struct rtw_proc_hdl adapter_proc_hdls[] = {
 	RTW_PROC_HDL_SSEQ("dis_turboedca", proc_get_turboedca_ctrl, proc_set_turboedca_ctrl),
 	RTW_PROC_HDL_SSEQ("tx_info_msg", proc_get_tx_info_msg, NULL),
 	RTW_PROC_HDL_SSEQ("rx_info_msg", proc_get_rx_info_msg, proc_set_rx_info_msg),
+	RTW_PROC_HDL_SSEQ("false_alarm_accumulated",
+			  proc_get_false_alarm_accumulated,
+			  proc_set_false_alarm_accumulated),
 #ifdef ROKU_PRIVATE
 	RTW_PROC_HDL_SSEQ("roku_trx_info_msg", proc_get_roku_trx_info_msg, NULL),
 #endif
@@ -5327,6 +5382,8 @@ const struct rtw_proc_hdl adapter_proc_hdls[] = {
 #ifdef RTW_DETECT_HANG
 	RTW_PROC_HDL_SSEQ("hang_info", proc_get_hang_info, NULL),
 #endif
+	RTW_PROC_HDL_SSEQ("disconnect_info", proc_get_disconnect_info,
+			  proc_set_disconnect_info),
 };
 
 const int adapter_proc_hdls_num = sizeof(adapter_proc_hdls) / sizeof(struct rtw_proc_hdl);
@@ -5416,35 +5473,6 @@ int proc_get_phy_adaptivity(struct seq_file *m, void *v)
 	rtw_hal_phy_adaptivity_parm_msg(m, padapter);
 
 	return 0;
-}
-
-ssize_t proc_set_phy_adaptivity(struct file *file, const char __user *buffer, size_t count, loff_t *pos, void *data)
-{
-	struct net_device *dev = data;
-	_adapter *padapter = (_adapter *)rtw_netdev_priv(dev);
-	char tmp[32];
-	u32 th_l2h_ini;
-	s8 th_edcca_hl_diff;
-
-	if (count < 1)
-		return -EFAULT;
-
-	if (count > sizeof(tmp)) {
-		rtw_warn_on(1);
-		return -EFAULT;
-	}
-
-	if (buffer && !copy_from_user(tmp, buffer, count)) {
-
-		int num = sscanf(tmp, "%x %hhd", &th_l2h_ini, &th_edcca_hl_diff);
-
-		if (num != 2)
-			return count;
-
-		rtw_hal_phy_adaptivity_parm_set(padapter, (s8)th_l2h_ini, th_edcca_hl_diff);
-	}
-
-	return count;
 }
 
 static char *phydm_msg = NULL;
@@ -5587,7 +5615,7 @@ err:
 * init/deinit when register/unregister net_device, along with rtw_adapter_proc
 */
 const struct rtw_proc_hdl odm_proc_hdls[] = {
-	RTW_PROC_HDL_SSEQ("adaptivity", proc_get_phy_adaptivity, proc_set_phy_adaptivity),
+	RTW_PROC_HDL_SSEQ("adaptivity", proc_get_phy_adaptivity, NULL),
 	RTW_PROC_HDL_SZSEQ("phl_cmd", proc_get_phl_cmd, proc_set_phl_cmd, PHYDM_MSG_LEN),
 };
 

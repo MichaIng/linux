@@ -86,7 +86,7 @@ u32 halbb_mp_get_rx_crc_err(struct bb_info *bb, enum phl_phy_idx phy_idx)
 	crc_err = cck_err + ofdm_err + ht_err + vht_err + he_err;
 
 	// === [Reset cnt] === //
-	if (crc_err == 65535) {
+	if (crc_err >= 65535) {
 		halbb_mp_reset_cnt(bb);
 		crc_err = 0;
 	}

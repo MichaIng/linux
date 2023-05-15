@@ -54,34 +54,25 @@ void halbb_set_crc32_cnt2_rate(struct bb_info *bb, u16 rate_idx)
 		rate_digi = halbb_legacy_rate_2_spec_rate(bb, rate_idx);
 		halbb_set_reg(bb, reg_addr, ofdm_rate_bitmask, rate_digi);
 		usr_set->ofdm2_rate_idx = rate_idx;
-		usr_set->ht2_rate_idx = 0;
-		usr_set->vht2_rate_idx = 0;
-		usr_set->he2_rate_idx = 0;
-	} else if (is_ht_rate) {
+	}
+	if (is_ht_rate) {
 		rate_digi = halbb_rate_2_rate_digit(bb, rate_idx);
 		halbb_set_reg(bb, reg_addr, ht_mcs_bitmask, rate_digi);
 		usr_set->ht2_rate_idx = rate_idx;
-		usr_set->ofdm2_rate_idx = 0;
-		usr_set->vht2_rate_idx = 0;
-		usr_set->he2_rate_idx = 0;
-	} else if (is_vht_rate) {
+	}
+	if (is_vht_rate) {
 		rate_digi = halbb_rate_2_rate_digit(bb, rate_idx);
 		ss = halbb_rate_to_num_ss(bb, rate_idx);
 		halbb_set_reg(bb, reg_addr, vht_mcs_bitmask, rate_digi);
 		halbb_set_reg(bb, reg_addr, vht_ss_bitmask, ss - 1);
 		usr_set->vht2_rate_idx = rate_idx;
-		usr_set->ofdm2_rate_idx = 0;
-		usr_set->ht2_rate_idx = 0;
-		usr_set->he2_rate_idx = 0;
-	} else if (is_he_rate) {
+	}
+	if (is_he_rate) {
 		rate_digi = halbb_rate_2_rate_digit(bb, rate_idx);
 		ss = halbb_rate_to_num_ss(bb, rate_idx);
 		halbb_set_reg(bb, reg_addr, he_mcs_bitmask, rate_digi);
 		halbb_set_reg(bb, reg_addr, he_ss_bitmask, ss - 1);
 		usr_set->he2_rate_idx = rate_idx;
-		usr_set->ofdm2_rate_idx = 0;
-		usr_set->ht2_rate_idx = 0;
-		usr_set->vht2_rate_idx = 0;
 	}
 }
 
@@ -225,7 +216,7 @@ void halbb_crc32_cnt_dbg(struct bb_info *bb, char input[][16], u32 *_used,
 		BB_DBG_CNSL(out_len, used, output + used, out_len - used,
 			 "------------ Rate_idx ------------\n");
 		BB_DBG_CNSL(out_len, used, output + used, out_len - used,
-			 "CCK_idx: 0~3\n");
+			 "CCK_idx: 0~3(Do not set!)\n");
 		BB_DBG_CNSL(out_len, used, output + used, out_len - used,
 			 "OFDM_idx: 4~11\n");
 		BB_DBG_CNSL(out_len, used, output + used, out_len - used,
@@ -282,94 +273,83 @@ void halbb_print_cnt3(struct bb_info *bb, enum phl_phy_idx phy_idx)
 	u32 tmp = 0;
 	u8 pcr = 0;
 	tmp = crc2->cnt_ofdm3_crc32_ok + crc2->cnt_ofdm3_crc32_error;
-	
+	pcr = (u8)HALBB_DIV(crc2->cnt_ofdm3_crc32_ok * 100, tmp);
+
 	if (bb->hal_com->dbcc_en) {
 		BB_DBG(bb, DBG_FA_CNT, "[DBCC!!!!]===>\n");
 		BB_DBG(bb, DBG_FA_CNT, "[The following statistics is at %s]===>\n", phy_idx == HW_PHY_0 ? "PHY-0" : "PHY-1");
 	}
-	
+
 	switch(usr_set->stat_type_sel_i) {
 	case STATE_PROBE_RESP:
-		pcr = (u8)HALBB_DIV(crc2->cnt_ofdm3_crc32_ok * 100, tmp);
 		BB_DBG(bb, DBG_FA_CNT,
-		  "[Probe Response Data CRC32 Cnt] {error, ok}= {%d, %d} (PCR=%d percent)\n",
+		  "[Probe Response Data CRC32 Cnt(OFDM only)] {error, ok}= {%d, %d} (PCR=%d percent)\n",
 		  crc2->cnt_ofdm3_crc32_error,
 		  crc2->cnt_ofdm3_crc32_ok, pcr);
 		break;
 	case STATE_BEACON:
-		pcr = (u8)HALBB_DIV(crc2->cnt_ofdm3_crc32_ok * 100, tmp);
 		BB_DBG(bb, DBG_FA_CNT,
-		  "[Beacon CRC32 Cnt] {error, ok}= {%d, %d} (PCR=%d percent)\n",
+		  "[Beacon CRC32 Cnt(OFDM only)] {error, ok}= {%d, %d} (PCR=%d percent)\n",
 		  crc2->cnt_ofdm3_crc32_error,
 		  crc2->cnt_ofdm3_crc32_ok, pcr);
 		break;
 	case STATE_ACTION:
-		pcr = (u8)HALBB_DIV(crc2->cnt_ofdm3_crc32_ok * 100, tmp);
 		BB_DBG(bb, DBG_FA_CNT,
-		  "[Action CRC32 Cnt] {error, ok}= {%d, %d} (PCR=%d percent)\n",
+		  "[Action CRC32 Cnt(OFDM only)] {error, ok}= {%d, %d} (PCR=%d percent)\n",
 		  crc2->cnt_ofdm3_crc32_error,
 		  crc2->cnt_ofdm3_crc32_ok, pcr);
 		break;
 	case STATE_BFRP:
-		pcr = (u8)HALBB_DIV(crc2->cnt_ofdm3_crc32_ok * 100, tmp);
 		BB_DBG(bb, DBG_FA_CNT,
-		  "[BFRP CRC32 Cnt] {error, ok}= {%d, %d} (PCR=%d percent)\n",
+		  "[BFRP CRC32 Cnt(OFDM only)] {error, ok}= {%d, %d} (PCR=%d percent)\n",
 		  crc2->cnt_ofdm3_crc32_error,
 		  crc2->cnt_ofdm3_crc32_ok, pcr);
 		break;
 	case STATE_NDPA:
-		pcr = (u8)HALBB_DIV(crc2->cnt_ofdm3_crc32_ok * 100, tmp);
 		BB_DBG(bb, DBG_FA_CNT,
-		  "[NDPA CRC32 Cnt] {error, ok}= {%d, %d} (PCR=%d percent)\n",
+		  "[NDPA CRC32 Cnt(OFDM only)] {error, ok}= {%d, %d} (PCR=%d percent)\n",
 		  crc2->cnt_ofdm3_crc32_error,
 		  crc2->cnt_ofdm3_crc32_ok, pcr);
 		break;
 	case STATE_BA:
-		pcr = (u8)HALBB_DIV(crc2->cnt_ofdm3_crc32_ok * 100, tmp);
 		BB_DBG(bb, DBG_FA_CNT,
-		  "[BA CRC32 Cnt] {error, ok}= {%d, %d} (PCR=%d percent)\n",
+		  "[BA CRC32 Cnt(OFDM only)] {error, ok}= {%d, %d} (PCR=%d percent)\n",
 		  crc2->cnt_ofdm3_crc32_error,
 		  crc2->cnt_ofdm3_crc32_ok, pcr);
 		break;
 	case STATE_RTS:
-		pcr = (u8)HALBB_DIV(crc2->cnt_ofdm3_crc32_ok * 100, tmp);
 		BB_DBG(bb, DBG_FA_CNT,
-		  "[RTS CRC32 Cnt] {error, ok}= {%d, %d} (PCR=%d percent)\n",
+		  "[RTS CRC32 Cnt(OFDM only)] {error, ok}= {%d, %d} (PCR=%d percent)\n",
 		  crc2->cnt_ofdm3_crc32_error,
 		  crc2->cnt_ofdm3_crc32_ok, pcr);
 		break;
 	case STATE_CTS:
-		pcr = (u8)HALBB_DIV(crc2->cnt_ofdm3_crc32_ok * 100, tmp);
 		BB_DBG(bb, DBG_FA_CNT,
-		  "[CTS CRC32 Cnt] {error, ok}= {%d, %d} (PCR=%d percent)\n",
+		  "[CTS CRC32 Cnt(OFDM only)] {error, ok}= {%d, %d} (PCR=%d percent)\n",
 		  crc2->cnt_ofdm3_crc32_error,
 		  crc2->cnt_ofdm3_crc32_ok, pcr);
 		break;
 	case STATE_ACK:
-		pcr = (u8)HALBB_DIV(crc2->cnt_ofdm3_crc32_ok * 100, tmp);
 		BB_DBG(bb, DBG_FA_CNT,
-		  "[ACK CRC32 Cnt] {error, ok}= {%d, %d} (PCR=%d percent)\n",
+		  "[ACK CRC32 Cnt(OFDM only)] {error, ok}= {%d, %d} (PCR=%d percent)\n",
 		  crc2->cnt_ofdm3_crc32_error,
 		  crc2->cnt_ofdm3_crc32_ok, pcr);
 		break;
 	case STATE_DATA:
-		pcr = (u8)HALBB_DIV(crc2->cnt_ofdm3_crc32_ok * 100, tmp);
 		BB_DBG(bb, DBG_FA_CNT,
-		  "[DATA CRC32 Cnt] {error, ok}= {%d, %d} (PCR=%d percent)\n",
+		  "[DATA CRC32 Cnt(OFDM only)] {error, ok}= {%d, %d} (PCR=%d percent)\n",
 		  crc2->cnt_ofdm3_crc32_error,
 		  crc2->cnt_ofdm3_crc32_ok, pcr);
 		break;
 	case STATE_NULL:
-		pcr = (u8)HALBB_DIV(crc2->cnt_ofdm3_crc32_ok * 100, tmp);
 		BB_DBG(bb, DBG_FA_CNT,
-		  "[Null CRC32 Cnt] {error, ok}= {%d, %d} (PCR=%d percent)\n",
+		  "[Null CRC32 Cnt(OFDM only)] {error, ok}= {%d, %d} (PCR=%d percent)\n",
 		  crc2->cnt_ofdm3_crc32_error,
 		  crc2->cnt_ofdm3_crc32_ok, pcr);
 		break;
 	case STATE_QOS:
-		pcr = (u8)HALBB_DIV(crc2->cnt_ofdm3_crc32_ok * 100, tmp);
 		BB_DBG(bb, DBG_FA_CNT,
-		  "[QoS CRC32 Cnt] {error, ok}= {%d, %d} (PCR=%d percent)\n",
+		  "[QoS CRC32 Cnt(OFDM only)] {error, ok}= {%d, %d} (PCR=%d percent)\n",
 		  crc2->cnt_ofdm3_crc32_error,
 		  crc2->cnt_ofdm3_crc32_ok, pcr);
 		break;
@@ -402,7 +382,8 @@ void halbb_print_cnt2(struct bb_info *bb, enum phl_phy_idx phy_idx)
 			  "[OFDM:%s CRC32 Cnt] {error, ok}= {%d, %d} (PCR=%d percent)\n",
 			  bb->dbg_buf, crc2->cnt_ofdm2_crc32_error,
 			  crc2->cnt_ofdm2_crc32_ok, crc2->ofdm2_pcr);
-	} else if (usr_set->ht2_rate_idx) {
+	}
+	if (usr_set->ht2_rate_idx) {
 		tmp = crc2->cnt_ht2_crc32_error + crc2->cnt_ht2_crc32_ok;
 		crc2->ht2_pcr = (u8)HALBB_DIV(crc2->cnt_ht2_crc32_ok * 100,
 					      tmp);
@@ -412,7 +393,8 @@ void halbb_print_cnt2(struct bb_info *bb, enum phl_phy_idx phy_idx)
 			  "[HT:%s CRC32 Cnt] {error, ok}= {%d, %d} (PCR=%d percent)\n",
 			  bb->dbg_buf, crc2->cnt_ht2_crc32_error,
 			  crc2->cnt_ht2_crc32_ok, crc2->ht2_pcr);
-	} else if(usr_set->vht2_rate_idx) {
+	}
+	if(usr_set->vht2_rate_idx) {
 		tmp = crc2->cnt_vht2_crc32_error +
 		      crc2->cnt_vht2_crc32_ok;
 		crc2->vht2_pcr = (u8)HALBB_DIV(crc2->cnt_vht2_crc32_ok *
@@ -423,7 +405,8 @@ void halbb_print_cnt2(struct bb_info *bb, enum phl_phy_idx phy_idx)
 			  "[VHT:%s CRC32 Cnt] {error, ok}= {%d, %d} (PCR=%d percent)\n",
 			  bb->dbg_buf, crc2->cnt_vht2_crc32_error,
 			  crc2->cnt_vht2_crc32_ok, crc2->vht2_pcr);
-	} else if (usr_set->he2_rate_idx) {
+	}
+	if (usr_set->he2_rate_idx) {
 		tmp = crc2->cnt_he2_crc32_error +
 		      crc2->cnt_he2_crc32_ok;
 		crc2->he2_pcr = (u8)HALBB_DIV(crc2->cnt_he2_crc32_ok *
@@ -971,6 +954,9 @@ void halbb_statistics_init(struct bb_info *bb)
 	stat_t->chk_hang_limit = HANG_LIMIT;
 	halbb_statistics_reset(bb);
 	halbb_set_crc32_cnt2_rate(bb, BB_06M);
+	halbb_set_crc32_cnt2_rate(bb, BB_HT_MCS0);
+	halbb_set_crc32_cnt2_rate(bb, BB_VHT_1SS_MCS0);
+	halbb_set_crc32_cnt2_rate(bb, BB_HE_1SS_MCS0);
 	halbb_set_crc32_cnt3_format(bb, STATE_BEACON);
 }
 

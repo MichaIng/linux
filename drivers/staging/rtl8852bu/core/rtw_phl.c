@@ -64,9 +64,6 @@ void rtw_hw_dump_hal_spec(void *sel, struct dvobj_priv *dvobj)
 	RTW_PRINT_SEL(sel, "%s rf_reg_path_num:%u\n", hw_cap_str, hal_spec->rf_reg_path_num);
 	RTW_PRINT_SEL(sel, "%s max_tx_cnt:%u\n", hw_cap_str, hal_spec->max_tx_cnt);
 
-	RTW_PRINT_SEL(sel, "%s tx_nss_num:%u\n", hw_cap_str, hal_spec->tx_nss_num);
-	RTW_PRINT_SEL(sel, "%s rx_nss_num:%u\n", hw_cap_str, hal_spec->rx_nss_num);
-
 	RTW_PRINT_SEL(sel, "%s band_cap:", hw_cap_str);
 	for (i = 0; i < BAND_CAP_BIT_NUM; i++) {
 		if (((hal_spec->band_cap) >> i) & BIT0 && _band_cap_str[i])
@@ -244,10 +241,10 @@ inline u8 rtw_hw_get_band_type(struct dvobj_priv *dvobj)
 	return band_type;
 }
 
-inline bool rtw_hw_is_mimo_support(struct dvobj_priv *dvobj)
+inline bool rtw_hw_is_mimo_support(_adapter *adapter)
 {
-	if ((GET_HAL_TX_NSS(dvobj) == 1) &&
-		(GET_HAL_RX_NSS(dvobj) == 1))
+	if ((get_phy_tx_nss(adapter) == 1) &&
+		(get_phy_rx_nss(adapter) == 1))
 		return 0;
 	return 1;
 }
@@ -840,6 +837,7 @@ u8 rtw_hw_init(struct dvobj_priv *dvobj)
 	#endif
 	#endif
 
+	rtw_dump_rfe_type(dvobj);
 	rtw_hw_dump_hal_spec(RTW_DBGDUMP, dvobj);
 
 	#ifdef CONFIG_CMD_GENERAL
@@ -854,6 +852,8 @@ u8 rtw_hw_init(struct dvobj_priv *dvobj)
 	#endif
 
 	rtw_set_phl_regulation_ctx(dvobj);
+
+	rtw_efuse_dbg_raw_dump(dvobj);
 
 	rst = _SUCCESS;
 	return rst;
@@ -915,20 +915,12 @@ bool rtw_hw_is_init_completed(struct dvobj_priv *dvobj)
 void rtw_hw_cap_init(struct dvobj_priv *dvobj)
 {
 	struct hal_spec_t *hal_spec = GET_HAL_SPEC(dvobj);
+	struct rtw_phl_com_t *phl_com = GET_PHL_COM(dvobj);
+	struct phy_cap_t *phy_cap = phl_com->phy_cap;
 	struct registry_priv  *regpriv =
 		&(dvobj_get_primary_adapter(dvobj)->registrypriv);
 
 #ifdef DIRTY_FOR_WORK
-	dvobj->phl_com->tx_nss = hal_spec->tx_nss_num; /*GET_HAL_TX_NSS*/
-	if (NSS_VALID(regpriv->tx_nss))
-		dvobj->phl_com->tx_nss =
-			rtw_min(dvobj->phl_com->tx_nss, regpriv->tx_nss);
-
-	dvobj->phl_com->rx_nss = hal_spec->rx_nss_num; /*GET_HAL_RX_NSS*/
-	if (NSS_VALID(regpriv->rx_nss))
-		dvobj->phl_com->rx_nss =
-			rtw_min(dvobj->phl_com->rx_nss, regpriv->rx_nss);
-
 	dvobj->phl_com->rf_path_num = hal_spec->rf_reg_path_num; /*GET_HAL_RFPATH_NUM*/
 	dvobj->phl_com->rf_type = RF_2T2R; /*GET_HAL_RFPATH*/
 
@@ -1107,7 +1099,7 @@ u8 rtw_hw_iface_init(_adapter *adapter)
 	/* init self staion info after wifi role alloc */
 	rst = rtw_init_self_stainfo(adapter);
 
-	#if defined (CONFIG_PCI_HCI) && defined (CONFIG_PCIE_TRX_MIT)
+	#if defined (CONFIG_PCI_HCI) && defined (CONFIG_PCIE_TRX_MIT_FIX)
 	rtw_pcie_trx_mit_cmd(adapter, 0, 0,
 			     PCIE_RX_INT_MIT_TIMER, 0, 1);
 	#endif
@@ -1636,7 +1628,8 @@ void rtw_update_phl_cap_by_rgstry(struct _ADAPTER *a)
 	cap->tx_ht_ldpc &= (TEST_FLAG(rgstry->ldpc_cap, BIT5) ? 1 : 0);
 	prtcl->vht_ldpc &= (TEST_FLAG(rgstry->ldpc_cap, BIT0) ? 1 : 0);
 	cap->tx_vht_ldpc &= (TEST_FLAG(rgstry->ldpc_cap, BIT1) ? 1 : 0);
-	/* no HE LDPC control setting in registry, follow PHL default */
+	prtcl->he_ldpc &= (TEST_FLAG(rgstry->ldpc_cap, BIT2) ? 1 : 0);
+	cap->tx_he_ldpc &= (TEST_FLAG(rgstry->ldpc_cap, BIT3) ? 1 : 0);
 }
 #endif /* RTW_WKARD_UPDATE_PHL_ROLE_CAP */
 
@@ -1968,7 +1961,11 @@ int rtw_hw_connected(struct _ADAPTER *a, struct sta_info *sta)
 #endif
 
 	rtw_join_done_chk_ch(a, 1);
-	rtw_phl_connected(phl, a->phl_role, sta->phl_sta);
+	status = rtw_phl_connected(phl, a->phl_role, sta->phl_sta);
+
+	if (status != RTW_PHL_STATUS_SUCCESS)
+			return -1;
+
 #ifdef CONFIG_80211AX_HE
 	rtw_he_init_om_info(a);
 #endif
@@ -2209,6 +2206,13 @@ void rtw_dump_env_rpt(struct _ADAPTER *a, void *sel)
 	RTW_PRINT_SEL(sel, "nhm_ratio:%d (%%)\n", rpt.nhm_ratio);
 }
 
+void rtw_dump_rfe_type(struct dvobj_priv *d)
+{
+	struct rtw_phl_com_t *phl_com = GET_PHL_COM(d);
+
+	RTW_INFO("RFE Type: %d\n", phl_com->dev_cap.rfe_type);
+}
+
 #ifdef CONFIG_WOWLAN
 static u8 _cfg_keep_alive_info(struct _ADAPTER *a, u8 enable)
 {
@@ -2266,26 +2270,6 @@ static u8 _cfg_disc_det_info(struct _ADAPTER *a, u8 enable)
 	wow_disc->cnt_bcn_lost_limit = 0;
 
 	status = rtw_phl_cfg_disc_det_info(phl, wow_disc);
-	if (status != RTW_PHL_STATUS_SUCCESS) {
-		RTW_INFO("%s fail(%d)\n", __func__, status);
-		return _FAIL;
-	}
-
-	return _SUCCESS;
-}
-
-static u8 _cfg_nlo_info(struct _ADAPTER *a)
-{
-	struct rtw_nlo_info info;
-	struct dvobj_priv *d;
-	void *phl;
-	enum rtw_phl_status status;
-
-	d = adapter_to_dvobj(a);
-	phl = GET_PHL_INFO(d);
-
-	_rtw_memset(&info, 0, sizeof(struct rtw_nlo_info));
-	status = rtw_phl_cfg_nlo_info(phl, &info);
 	if (status != RTW_PHL_STATUS_SUCCESS) {
 		RTW_INFO("%s fail(%d)\n", __func__, status);
 		return _FAIL;
@@ -2463,8 +2447,7 @@ static u8 _cfg_wow_wake(struct _ADAPTER *a, u8 wow_en)
 	struct dvobj_priv *d;
 	void *phl;
 	enum rtw_phl_status status;
-	struct wow_priv *wowpriv = adapter_to_wowlan(a);
-	struct rtw_wow_wake_info *wow_wake_event = &wowpriv->wow_wake_event;
+	struct rtw_wow_wake_info wow_wake_event;
 	struct security_priv *securitypriv;
 	struct registry_priv  *registry_par = &a->registrypriv;
 
@@ -2472,20 +2455,20 @@ static u8 _cfg_wow_wake(struct _ADAPTER *a, u8 wow_en)
 	phl = GET_PHL_INFO(d);
 	securitypriv = &a->securitypriv;
 
-	wow_wake_event->wow_en = _TRUE;
+	wow_wake_event.wow_en = _TRUE;
 	/* wake up by magic packet */
 	if (registry_par->wakeup_event & BIT(0))
-		wow_wake_event->magic_pkt_en = _TRUE;
+		wow_wake_event.magic_pkt_en = _TRUE;
 	else
-		wow_wake_event->magic_pkt_en = _FALSE;
+		wow_wake_event.magic_pkt_en = _FALSE;
 	/* wake up by deauth packet */
 	if (registry_par->wakeup_event & BIT(2))
-		wow_wake_event->deauth_wakeup = _TRUE;
+		wow_wake_event.deauth_wakeup = _TRUE;
 	else
-		wow_wake_event->deauth_wakeup = _FALSE;
+		wow_wake_event.deauth_wakeup = _FALSE;
 	/* wake up by pattern match packet */
 	if (registry_par->wakeup_event & (BIT(1) | BIT(3))) {
-		wow_wake_event->pattern_match_en = _TRUE;
+		wow_wake_event.pattern_match_en = _TRUE;
 
 		rtw_wow_pattern_clean(a, RTW_DEFAULT_PATTERN);
 
@@ -2495,24 +2478,24 @@ static u8 _cfg_wow_wake(struct _ADAPTER *a, u8 wow_en)
 		if (!(registry_par->wakeup_event & BIT(3)))
 			rtw_wow_pattern_clean(a, RTW_CUSTOMIZED_PATTERN);
 	} else {
-		wow_wake_event->pattern_match_en = _FALSE;
+		wow_wake_event.pattern_match_en = _FALSE;
 	}
 	/* wake up by ptk rekey */
 	if (registry_par->wakeup_event & BIT(4))
-		wow_wake_event->rekey_wakeup = _TRUE;
+		wow_wake_event.rekey_wakeup = _TRUE;
 	else
-		wow_wake_event->rekey_wakeup = _FALSE;
+		wow_wake_event.rekey_wakeup = _FALSE;
 
-	wow_wake_event->pairwise_sec_algo = rtw_sec_algo_drv2phl(securitypriv->dot11PrivacyAlgrthm);
-	wow_wake_event->group_sec_algo = rtw_sec_algo_drv2phl(securitypriv->dot118021XGrpPrivacy);
+	wow_wake_event.pairwise_sec_algo = rtw_sec_algo_drv2phl(securitypriv->dot11PrivacyAlgrthm);
+	wow_wake_event.group_sec_algo = rtw_sec_algo_drv2phl(securitypriv->dot118021XGrpPrivacy);
 #ifdef CONFIG_IEEE80211W
 	if (SEC_IS_BIP_KEY_INSTALLED(securitypriv))
-		wow_wake_event->bip_sec_algo = rtw_sec_algo_drv2phl(securitypriv->dot11wCipher);
+		wow_wake_event.bip_sec_algo = rtw_sec_algo_drv2phl(securitypriv->dot11wCipher);
 #endif
 
-	rtw_construct_remote_control_info(a, &wow_wake_event->remote_wake_ctrl_info);
+	rtw_construct_remote_control_info(a, &wow_wake_event.remote_wake_ctrl_info);
 
-	status = rtw_phl_cfg_wow_wake(phl, wow_wake_event);
+	status = rtw_phl_cfg_wow_wake(phl, &wow_wake_event);
 	if (status != RTW_PHL_STATUS_SUCCESS) {
 		RTW_INFO("%s fail(%d)\n", __func__, status);
 		return _FAIL;
@@ -2530,11 +2513,12 @@ static u8 _cfg_wow_gpio(struct _ADAPTER *a)
 	struct wow_priv *wowpriv = adapter_to_wowlan(a);
 	struct rtw_wow_gpio_info *wow_gpio = &wowpriv->wow_gpio;
 	struct registry_priv  *registry_par = &a->registrypriv;
+	struct rtw_dev2hst_gpio_info *d2h_gpio_info = &wow_gpio->d2h_gpio_info;
 
 	d = adapter_to_dvobj(a);
 	phl = GET_PHL_INFO(d);
 #ifdef CONFIG_GPIO_WAKEUP
-	wow_gpio->dev2hst_gpio_en = _TRUE;
+	d2h_gpio_info->dev2hst_gpio_en = _TRUE;
 
 	/* ToDo: fw/halmac do not support so far
 	pwrctrlpriv->hst2dev_high_active = HIGH_ACTIVE_HST2DEV;
@@ -2545,10 +2529,10 @@ static u8 _cfg_wow_gpio(struct _ADAPTER *a)
 #else
 	#ifdef CONFIG_WAKEUP_GPIO_INPUT_MODE
 	wow_gpio->dev2hst_gpio_mode = RTW_AX_SW_IO_MODE_OUTPUT_OD;
-	wow_gpio->gpio_output_input = _TRUE;
+	d2h_gpio_info->gpio_output_input = _TRUE;
 	#else
 	wow_gpio->dev2hst_gpio_mode = RTW_AX_SW_IO_MODE_OUTPUT_PP;
-	wow_gpio->gpio_output_input = _FALSE;
+	d2h_gpio_info->gpio_output_input = _FALSE;
 	#endif /*CONFIG_WAKEUP_GPIO_INPUT_MODE*/
 	/* switch GPIO to open-drain or push-pull */
 	status = rtw_phl_cfg_wow_set_sw_gpio_mode(phl, wow_gpio);
@@ -2560,11 +2544,11 @@ static u8 _cfg_wow_gpio(struct _ADAPTER *a)
 #endif /* CONFIG_RTW_ONE_PIN_GPIO */
 
 	/* SDIO inband wake sdio_wakeup_enable
-	wow_gpio->data_pin_wakeup = info->data_pin_wakeup;
+	d2h_gpio_info->data_pin_wakeup = info->data_pin_wakeup;
 	*/
 	/* two halmac implementation. FW and halmac need to refine */
 	wow_gpio->dev2hst_gpio = WAKEUP_GPIO_IDX;
-	wow_gpio->gpio_num = WAKEUP_GPIO_IDX;
+	d2h_gpio_info->gpio_num = WAKEUP_GPIO_IDX;
 
 	status = rtw_phl_cfg_gpio_wake_pulse(phl, wow_gpio);
 	if (status != RTW_PHL_STATUS_SUCCESS) {
@@ -2591,9 +2575,6 @@ static u8 _wow_cfg(struct _ADAPTER *a, u8 wow_en)
 	if(!_cfg_disc_det_info(a, wow_en))
 		return _FAIL;
 
-	if (!_cfg_nlo_info(a))
-		return _FAIL;
-
 	if (!_cfg_arp_ofld_info(a))
 		return _FAIL;
 
@@ -2617,24 +2598,100 @@ static u8 _wow_cfg(struct _ADAPTER *a, u8 wow_en)
 	return _SUCCESS;
 }
 
+#ifdef CONFIG_PNO_SUPPORT
+static u8 _cfg_nlo_info(struct _ADAPTER *a)
+{
+	struct dvobj_priv *d;
+	struct wow_priv *wowpriv;
+	struct rtw_nlo_info *wow_nlo;
+	void *phl;
+	enum rtw_phl_status status;
+	int i;
+
+	d = adapter_to_dvobj(a);
+	phl = GET_PHL_INFO(d);
+	wowpriv = adapter_to_wowlan(a);
+
+	rtw_phl_cfg_nlo_info(phl, &wowpriv->wow_nlo);
+
+	return _SUCCESS;
+}
+
+static u8 _cfg_wow_nlo_wake(struct _ADAPTER *a)
+{
+	struct dvobj_priv *d;
+	void *phl;
+	enum rtw_phl_status status;
+	struct rtw_wow_wake_info wow_wake_event = {0};
+	struct registry_priv  *registry_par = &a->registrypriv;
+
+	d = adapter_to_dvobj(a);
+	phl = GET_PHL_INFO(d);
+
+	wow_wake_event.wow_en = _TRUE;
+	/* wake up by magic packet */
+	if (registry_par->wakeup_event & BIT(0))
+		wow_wake_event.magic_pkt_en = _TRUE;
+	else
+		wow_wake_event.magic_pkt_en = _FALSE;
+
+	status = rtw_phl_cfg_wow_wake(phl, &wow_wake_event);
+	if (status != RTW_PHL_STATUS_SUCCESS) {
+		RTW_INFO("%s fail(%d)\n", __func__, status);
+		return _FAIL;
+	}
+
+	return _SUCCESS;
+}
+
+static u8 _wow_nlo_cfg(struct _ADAPTER *a)
+{
+	struct dvobj_priv *d;
+	void *phl;
+
+	d = adapter_to_dvobj(a);
+	phl = GET_PHL_INFO(d);
+
+	if (!_cfg_nlo_info(a))
+		return _FAIL;
+
+	if (!_cfg_wow_nlo_wake(a))
+		return _FAIL;
+
+	if(!_cfg_wow_gpio(a))
+		return _FAIL;
+
+	return _SUCCESS;
+}
+#endif
+
 u8 rtw_hw_wow(struct _ADAPTER *a, u8 wow_en)
 {
 	struct dvobj_priv *d;
 	void *phl;
+	struct pwrctrl_priv *pwrpriv;
 	struct rtw_phl_stainfo_t *phl_sta;
 	enum rtw_phl_status status;
 
-
+	pwrpriv = adapter_to_pwrctl(a);
 	d = adapter_to_dvobj(a);
 	phl = GET_PHL_INFO(d);
 
 	rtw_wow_lps_level_decide(a, _TRUE);
 
+#ifdef CONFIG_PNO_SUPPORT
+	if (pwrpriv->wowlan_pno_enable) {
+		if (!_wow_nlo_cfg(a))
+			return _FAIL;
+	} else
+#endif
+	{
+		if (!_wow_cfg(a, wow_en))
+			return _FAIL;
+	}
 
-	if (!_wow_cfg(a, wow_en))
-		return _FAIL;
 
-	phl_sta = rtw_phl_get_stainfo_by_addr(phl, a->phl_role, get_bssid(&a->mlmepriv));
+	phl_sta = rtw_phl_get_stainfo_self(phl, a->phl_role);
 
 	if (wow_en)
 		status = rtw_phl_suspend(phl, phl_sta, wow_en);
@@ -2752,4 +2809,28 @@ void rtw_update_phl_txpwr_level(_adapter *adapter)
 
 	rtw_phl_set_tx_power(GET_PHL_INFO(dvobj), adapter->phl_role->hw_band);
 	rtw_rfctl_update_op_mode(adapter_to_rfctl(adapter), 0, 0);
+}
+
+inline u8 get_phy_tx_nss(_adapter *adapter)
+{
+	u8 txss = 0;
+
+	if (adapter->phl_role)
+		txss = GET_PHY_TX_NSS_BY_BAND(adapter, adapter->phl_role->hw_band);
+	else
+		rtw_warn_on(1);
+
+	return txss;
+}
+
+inline u8 get_phy_rx_nss(_adapter *adapter)
+{
+	u8 rxss = 0;
+
+	if (adapter->phl_role)
+		rxss = GET_PHY_RX_NSS_BY_BAND(adapter, adapter->phl_role->hw_band);
+	else
+		rtw_warn_on(1);
+
+	return rxss;
 }

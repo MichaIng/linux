@@ -47,9 +47,6 @@ phl_role_suspend(struct phl_info_t *phl_info);
 enum rtw_phl_status
 phl_cmd_role_suspend(struct phl_info_t *phl_info);
 
-void phl_role_config_tbtt_agg(struct phl_info_t *phl_info,
-	struct rtw_wifi_role_t *cur_wrole, u32 tbtt_agg_val);
-
 #ifdef RTW_PHL_BCN
 enum rtw_phl_status
 rtw_phl_free_bcn_entry(void *phl, struct rtw_wifi_role_t *wrole);
@@ -60,8 +57,6 @@ enum rtw_phl_status
 phl_cmd_stop_bcn_hdl(struct phl_info_t *phl_info, u8 *param);
 #endif
 #endif
-
-bool rtw_phl_role_is_client_category(struct rtw_wifi_role_t *wrole);
 
 u16 phl_role_get_bcn_intvl(struct phl_info_t *phl, struct rtw_wifi_role_t *wrole);
 

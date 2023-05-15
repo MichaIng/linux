@@ -97,7 +97,7 @@ const struct btc_chip chip_8852b = {
 	CHIP_WIFI6_8852B, /* chip id */
 	0x0, /* chip para ver */
 	0x6, /* desired bt_ver */
-	0x06010000, /* desired halbtc ver */
+	0x06030000, /* desired halbtc ver */
 	0x1, /* scoreboard version */
 	0x1, /* mailbox version*/
 	BTC_COEX_RTK_MODE, /* pta_mode */
@@ -208,27 +208,35 @@ void _8852b_set_wl_lna2(struct btc_t *btc, u8 level)
          * level=1 Fix LNA2=5: TIA 1/0= (LNA2,TIAN6) = (5,0)/(5,1) = 18dB/12dB
          * To improve BT ACI in co-rx
          */
-#if 0   /* RDC: disable this function for A-cut RxA TIA gain bug,
+   /* RDC: disable this function for A-cut RxA TIA gain bug,
 	 * it should be enabled for B-cut if nug fixed */
 	switch (level) {
 	case 0: /* default */
 		_write_wl_rf_reg(btc, RF_PATH_B, 0xef, bMASKRF, 0x1000);
-		_write_wl_rf_reg(btc, RF_PATH_B, 0x33, bMASKRF, 0x3);
+		_write_wl_rf_reg(btc, RF_PATH_B, 0x33, bMASKRF, 0x0);
+		_write_wl_rf_reg(btc, RF_PATH_B, 0x3f, bMASKRF, 0x15);
+		_write_wl_rf_reg(btc, RF_PATH_B, 0x33, bMASKRF, 0x1);
 		_write_wl_rf_reg(btc, RF_PATH_B, 0x3f, bMASKRF, 0x17);
 		_write_wl_rf_reg(btc, RF_PATH_B, 0x33, bMASKRF, 0x2);
 		_write_wl_rf_reg(btc, RF_PATH_B, 0x3f, bMASKRF, 0x15);
+		_write_wl_rf_reg(btc, RF_PATH_B, 0x33, bMASKRF, 0x3);
+		_write_wl_rf_reg(btc, RF_PATH_B, 0x3f, bMASKRF, 0x17);
 		_write_wl_rf_reg(btc, RF_PATH_B, 0xef, bMASKRF, 0x0);
 		break;
 	case 1: /* Fix LNA2=5  */
 		_write_wl_rf_reg(btc, RF_PATH_B, 0xef, bMASKRF, 0x1000);
-		_write_wl_rf_reg(btc, RF_PATH_B, 0x33, bMASKRF, 0x3);
+		_write_wl_rf_reg(btc, RF_PATH_B, 0x33, bMASKRF, 0x0);
+		_write_wl_rf_reg(btc, RF_PATH_B, 0x3f, bMASKRF, 0x15);
+		_write_wl_rf_reg(btc, RF_PATH_B, 0x33, bMASKRF, 0x1);
 		_write_wl_rf_reg(btc, RF_PATH_B, 0x3f, bMASKRF, 0x5);
 		_write_wl_rf_reg(btc, RF_PATH_B, 0x33, bMASKRF, 0x2);
 		_write_wl_rf_reg(btc, RF_PATH_B, 0x3f, bMASKRF, 0x15);
+		_write_wl_rf_reg(btc, RF_PATH_B, 0x33, bMASKRF, 0x3);
+		_write_wl_rf_reg(btc, RF_PATH_B, 0x3f, bMASKRF, 0x5);
 		_write_wl_rf_reg(btc, RF_PATH_B, 0xef, bMASKRF, 0x0);
 		break;
 	}
-#endif
+
 }
 
 void _8852b_wl_rx_gain(struct btc_t *btc, u32 level)
@@ -241,15 +249,15 @@ void _8852b_wl_rx_gain(struct btc_t *btc, u32 level)
 	switch (level) {
 	case 0: /* original */
 		rtw_hal_bb_ctrl_btc_preagc(btc->hal, false);
-		/* _8852b_set_wl_lna2(btc, 0); */
+		_8852b_set_wl_lna2(btc, 0);
 		break;
 	case 1: /* for FDD free-run */
 		rtw_hal_bb_ctrl_btc_preagc(btc->hal, true);
-		/* _8852b_set_wl_lna2(btc, 0); */
+		_8852b_set_wl_lna2(btc, 0);
 		break;
 	case 2: /* for BTG Co-Rx*/
 		rtw_hal_bb_ctrl_btc_preagc(btc->hal, false);
-		/* _8852b_set_wl_lna2(btc, 1); */
+		_8852b_set_wl_lna2(btc, 1);
 		break;
 	}
 }
