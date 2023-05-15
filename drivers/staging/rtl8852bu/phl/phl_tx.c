@@ -274,7 +274,7 @@ static void _phl_free_phl_tring_list(void *phl,
 
 		while (rptr != ring->core_idx) {
 			rptr += 1;
-			if (rptr >= MAX_PHL_RING_ENTRY_NUM)
+			if (rptr >= MAX_PHL_TX_RING_ENTRY_NUM)
 				rptr = 0;
 			tx_req = (struct rtw_xmit_req *)ring->entry[rptr];
 			if (NULL == tx_req)
@@ -521,7 +521,7 @@ _phl_check_ring_status(struct phl_info_t *phl_info,
 		rptr = (u16)_os_atomic_read(drv_priv, &ring->phl_idx);
 
 		avail = phl_calc_avail_rptr(rptr, ring->core_idx,
-					MAX_PHL_RING_ENTRY_NUM);
+					MAX_PHL_TX_RING_ENTRY_NUM);
 		if (0 == avail) {
 			ring_sts = NULL;
 			pstatus = RTW_PHL_STATUS_SUCCESS;
@@ -543,7 +543,7 @@ _phl_check_ring_status(struct phl_info_t *phl_info,
 
 			rptr += 1;
 
-			if (rptr >= MAX_PHL_RING_ENTRY_NUM)
+			if (rptr >= MAX_PHL_TX_RING_ENTRY_NUM)
 				_os_atomic_set(drv_priv, &ring->phl_next_idx, 0);
 			else
 				_os_atomic_set(drv_priv, &ring->phl_next_idx, rptr);
@@ -739,6 +739,10 @@ enum rtw_phl_status phl_register_handler(struct rtw_phl_com_t *phl_com,
 		workitem = &handler->os_handler.u.workitem;
 		phl_status = _os_workitem_init(drv_priv, workitem,
 										handler->callback, workitem);
+	} else if (handler->type == RTW_PHL_HANDLER_PRIO_NORMAL) {
+		_os_sema_init(drv_priv, &(handler->os_handler.hdlr_sema), 0);
+		handler->os_handler.hdlr_created = false;
+		phl_status = RTW_PHL_STATUS_SUCCESS;
 	} else {
 		PHL_TRACE(COMP_PHL_DBG, _PHL_INFO_, "[WARNING] unknown handle type(%d)\n",
 				handler->type);
@@ -757,6 +761,7 @@ enum rtw_phl_status phl_deregister_handler(
 	enum rtw_phl_status phl_status = RTW_PHL_STATUS_FAILURE;
 	_os_tasklet *tasklet = NULL;
 	_os_workitem *workitem = NULL;
+	_os_thread *thread = NULL;
 	void *drv_priv = phlcom_to_drvpriv(phl_com);
 
 	FUNCIN_WSTS(phl_status);
@@ -767,6 +772,17 @@ enum rtw_phl_status phl_deregister_handler(
 	} else if (handler->type == RTW_PHL_HANDLER_PRIO_LOW) {
 		workitem = &handler->os_handler.u.workitem;
 		phl_status = _os_workitem_deinit(drv_priv, workitem);
+	} else if (handler->type == RTW_PHL_HANDLER_PRIO_NORMAL) {
+		thread = &handler->os_handler.u.thread;
+		if (handler->os_handler.hdlr_created == true) {
+			_os_thread_stop(drv_priv, thread);
+			_os_sema_up(drv_priv, &(handler->os_handler.hdlr_sema));
+			phl_status = _os_thread_deinit(drv_priv, thread);
+		} else {
+			phl_status = RTW_PHL_STATUS_SUCCESS;
+		}
+
+		_os_sema_free(drv_priv, &(handler->os_handler.hdlr_sema));
 	} else {
 		PHL_TRACE(COMP_PHL_DBG, _PHL_INFO_, "[WARNING] unknown handle type(%d)\n",
 				handler->type);
@@ -788,6 +804,7 @@ enum rtw_phl_status phl_schedule_handler(
 	enum rtw_phl_status phl_status = RTW_PHL_STATUS_FAILURE;
 	_os_tasklet *tasklet = NULL;
 	_os_workitem *workitem = NULL;
+	_os_thread *thread = NULL;
 	void *drv_priv = phlcom_to_drvpriv(phl_com);
 
 	FUNCIN_WSTS(phl_status);
@@ -798,6 +815,20 @@ enum rtw_phl_status phl_schedule_handler(
 	} else if (handler->type == RTW_PHL_HANDLER_PRIO_LOW) {
 		workitem = &handler->os_handler.u.workitem;
 		phl_status = _os_workitem_schedule(drv_priv, workitem);
+	} else if (handler->type == RTW_PHL_HANDLER_PRIO_NORMAL) {
+		thread = &handler->os_handler.u.thread;
+		if (handler->os_handler.hdlr_created == false) {
+			phl_status = _os_thread_init(drv_priv, thread, (int(*)(void*))handler->callback,
+						     thread, handler->cb_name);
+			if (phl_status == RTW_PHL_STATUS_SUCCESS) {
+				handler->os_handler.hdlr_created = true;
+				_os_thread_schedule(drv_priv, thread);
+				_os_sema_up(drv_priv, &(handler->os_handler.hdlr_sema));
+			}
+		} else {
+			_os_sema_up(drv_priv, &(handler->os_handler.hdlr_sema));
+			phl_status = RTW_PHL_STATUS_SUCCESS;
+		}
 	} else {
 		PHL_TRACE(COMP_PHL_DBG, _PHL_INFO_, "[WARNING] unknown handle type(%d)\n",
 				handler->type);
@@ -1524,10 +1555,10 @@ enum rtw_phl_status rtw_phl_add_tx_req(void *phl,
 		rptr = (u16)_os_atomic_read(drv_priv, &ring->phl_idx);
 
 		ring_res = phl_calc_avail_wptr(rptr, ring->core_idx,
-						MAX_PHL_RING_ENTRY_NUM);
+						MAX_PHL_TX_RING_ENTRY_NUM);
 		if (ring_res > 0) {
 			ring->core_idx =
-				(ring->core_idx + 1) % MAX_PHL_RING_ENTRY_NUM;
+				(ring->core_idx + 1) % MAX_PHL_TX_RING_ENTRY_NUM;
 			ring->entry[ring->core_idx] = (u8 *)tx_req;
 			phl_tx_statistics(phl_info, tx_req);
 #ifdef CONFIG_PHL_TX_DBG
@@ -1575,7 +1606,7 @@ u16 rtw_phl_tring_rsc(void *phl, u16 macid, u8 tid)
 		rptr = (u16)_os_atomic_read(drv_priv, &ring->phl_idx);
 
 		ring_res = phl_calc_avail_rptr(rptr, ring->core_idx,
-						MAX_PHL_RING_ENTRY_NUM);
+						MAX_PHL_TX_RING_ENTRY_NUM);
 
 	}
 
@@ -2210,3 +2241,55 @@ phl_data_ctrler(struct phl_info_t *phl_info, struct phl_data_ctl_t *ctl,
 	}
 	return sts;
 }
+
+#ifdef CONFIG_CMD_DISP
+static void
+_phl_tx_packet_notify_done(void *drv_priv, u8 *cmd, u32 cmd_len,
+			enum rtw_phl_status status)
+{
+	if (cmd && cmd_len){
+		_os_kmem_free(drv_priv, cmd, cmd_len);
+		cmd = NULL;
+		PHL_INFO("%s.....\n", __func__);
+	}
+}
+
+void rtw_phl_tx_packet_event_notify(void *phl,
+	struct rtw_wifi_role_t *wifi_role,
+	enum phl_pkt_evt_type pkt_evt)
+{
+	struct phl_info_t *phl_info = (struct phl_info_t *)phl;
+	enum phl_pkt_evt_type *pkt_evt_type = NULL;
+	enum rtw_phl_status phl_status = RTW_PHL_STATUS_FAILURE;
+
+	pkt_evt_type = (enum phl_pkt_evt_type *)_os_kmem_alloc(
+		phl_to_drvpriv(phl_info), sizeof(enum phl_pkt_evt_type));
+	if (pkt_evt_type == NULL) {
+		PHL_ERR("%s: alloc packet cmd fail.\n", __func__);
+		return;
+	}
+
+	*pkt_evt_type = pkt_evt;
+
+	phl_status = phl_cmd_enqueue(phl_info,
+                                     wifi_role->hw_band,
+                                     MSG_EVT_PKT_EVT_NTFY,
+                                     (u8 *)pkt_evt_type,
+                                     sizeof(enum phl_pkt_evt_type),
+                                     _phl_tx_packet_notify_done,
+                                     PHL_CMD_NO_WAIT,
+                                     0);
+
+	if (is_cmd_failure(phl_status)) {
+		/* Send cmd success, but wait cmd fail*/
+		PHL_ERR("%s event: %d status: %d\n",
+			__func__, pkt_evt, phl_status);
+	} else if (phl_status != RTW_PHL_STATUS_SUCCESS) {
+		/* Send cmd fail */
+		PHL_ERR("%s event: %d status: %d\n",
+			__func__, pkt_evt, phl_status);
+		_os_kmem_free(phl_to_drvpriv(phl_info), pkt_evt_type,
+			sizeof(enum phl_pkt_evt_type));
+	}
+}
+#endif /* #ifdef CONFIG_CMD_DISP */

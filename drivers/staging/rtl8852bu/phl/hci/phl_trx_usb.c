@@ -813,7 +813,7 @@ static void _usb_tx_agg_preprocess(struct phl_info_t *phl_info, u8 max_bulkout_w
 
 	rptr = (u16)_os_atomic_read(drv_priv, &tring->phl_next_idx);
 	while(cnt < total) {
-		idx = (rptr + cnt) % MAX_PHL_RING_ENTRY_NUM;
+		idx = (rptr + cnt) % MAX_PHL_TX_RING_ENTRY_NUM;
 		tx_req = (struct rtw_xmit_req *)tring->entry[idx];
 		if (NULL == tx_req) {
 			*last_idx = (cnt) ? (cnt - 1) : (IDX_NONE);
@@ -1008,7 +1008,7 @@ static enum rtw_phl_status _phl_handle_xmit_ring_usb(struct phl_info_t *phl_info
 			if (0 != ring_sts->req_busy) {
 				next_idx = rptr + 1;
 
-				if (next_idx >= MAX_PHL_RING_ENTRY_NUM) {
+				if (next_idx >= MAX_PHL_TX_RING_ENTRY_NUM) {
 					_os_atomic_set(drv_priv,
 								&tring->phl_next_idx, 0);
 
@@ -1154,6 +1154,10 @@ static void _phl_rx_callback_usb(void *context)
 			PHL_TRACE(COMP_PHL_RECV, _PHL_WARNING_, "[WARNING] hci_trx_ops->rx fail!\n");
 		}
 	} while (false);
+
+	if (PHL_RX_STATUS_STOP_INPROGRESS ==
+	    _os_atomic_read(phl_to_drvpriv(phl_info), &phl_info->phl_sw_rx_sts))
+		phl_rx_stop_usb(phl_info);
 
 end:
 	return;
@@ -1502,51 +1506,6 @@ void rtw_phl_post_in_complete(void *phl, void *rxobj, u32 inbuf_len, u8 status_c
 		rtw_phl_start_rx_process(phl);
 }
 
-void phl_wp_report_record_sts_usb(struct phl_info_t *phl_info, u8 macid, u16 ac_queue,
-			 u8 txsts)
-{
-	struct rtw_phl_stainfo_t *phl_sta = NULL;
-	struct rtw_hal_stainfo_t *hal_sta = NULL;
-	struct rtw_wp_rpt_stats *wp_rpt_stats= NULL;
-
-	phl_sta = rtw_phl_get_stainfo_by_macid(phl_info, macid);
-
-	if (phl_sta) {
-		hal_sta = phl_sta->hal_sta;
-		/* Record Per ac queue statistics */
-		wp_rpt_stats = &hal_sta->trx_stat.wp_rpt_stats[ac_queue];
-
-		_os_spinlock(phl_to_drvpriv(phl_info), &hal_sta->trx_stat.tx_sts_lock, _bh, NULL);
-		if (TX_STATUS_TX_DONE == txsts) {
-			/* record total tx ok*/
-			hal_sta->trx_stat.tx_ok_cnt++;
-			/* record per ac queue tx ok*/
-			wp_rpt_stats->tx_ok_cnt++;
-		} else {
-			/* record total tx fail*/
-			hal_sta->trx_stat.tx_fail_cnt++;
-			/* record per ac queue tx fail*/
-			if (TX_STATUS_TX_FAIL_REACH_RTY_LMT == txsts)
-				wp_rpt_stats->rty_fail_cnt++;
-			else if (TX_STATUS_TX_FAIL_LIFETIME_DROP == txsts)
-				wp_rpt_stats->lifetime_drop_cnt++;
-			else if (TX_STATUS_TX_FAIL_MACID_DROP == txsts)
-				wp_rpt_stats->macid_drop_cnt++;
-		}
-		_os_spinunlock(phl_to_drvpriv(phl_info), &hal_sta->trx_stat.tx_sts_lock, _bh, NULL);
-
-		PHL_TRACE(COMP_PHL_DBG, _PHL_DEBUG_,"macid: %u, ac_queue: %u, tx_ok_cnt: %u, rty_fail_cnt: %u, "
-			"lifetime_drop_cnt: %u, macid_drop_cnt: %u\n"
-			, macid, ac_queue, wp_rpt_stats->tx_ok_cnt, wp_rpt_stats->rty_fail_cnt
-			, wp_rpt_stats->lifetime_drop_cnt, wp_rpt_stats->macid_drop_cnt);
-		PHL_TRACE(COMP_PHL_DBG, _PHL_DEBUG_,"totoal tx ok: %u \n totoal tx fail: %u\n"
-			, hal_sta->trx_stat.tx_ok_cnt, hal_sta->trx_stat.tx_fail_cnt);
-	} else {
-		PHL_TRACE(COMP_PHL_DBG, _PHL_DEBUG_, "%s: PHL_STA not found\n",
-				__FUNCTION__);
-	}
-}
-
 void _phl_rx_handle_wp_report_usb(struct phl_info_t *phl_info,
 							struct rtw_phl_rx_pkt *phl_rx)
 {
@@ -1565,7 +1524,7 @@ void _phl_rx_handle_wp_report_usb(struct phl_info_t *phl_info,
 		if (0 == rsize)
 			break;
 
-		phl_wp_report_record_sts_usb(phl_info, macid, ac_queue, txsts);
+		phl_rx_wp_report_record_sts(phl_info, macid, ac_queue, txsts);
 		pkt += rsize;
 		pkt_len -= rsize;
 	}
@@ -1610,12 +1569,12 @@ static void phl_rx_process_usb(struct phl_info_t *phl_info,
 			phl_recycle_rx_buf(phl_info, phl_rx);
 			break;
 		case RTW_RX_TYPE_TX_WP_RELEASE_HOST:
-			#ifdef CONFIG_PHL_USB_RELEASE_RPT_ENABLE
+			#ifdef CONFIG_PHL_RELEASE_RPT_ENABLE
 			_phl_rx_handle_wp_report_usb(phl_info, phl_rx);
 			phl_recycle_rx_buf(phl_info, phl_rx);
 			phl_rx = NULL;
 			break;
-			#endif /* CONFIG_PHL_USB_RELEASE_RPT_ENABLE */
+			#endif /* CONFIG_PHL_RELEASE_RPT_ENABLE */
 		case RTW_RX_TYPE_C2H:
 		case RTW_RX_TYPE_CHANNEL_INFO:
 		case RTW_RX_TYPE_TX_RPT:

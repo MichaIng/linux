@@ -802,13 +802,17 @@ rtw_phl_ecsa_cancel(
 	struct phl_ecsa_ctrl_t *ecsa_ctrl =
 		(struct phl_ecsa_ctrl_t *)phl_info->ecsa_ctrl;
 
+	PHL_INFO("%s >> \n", __func__);
+
 	if(ecsa_ctrl == NULL){
 		status = RTW_PHL_STATUS_FAILURE;
 		goto exit;
 	}
 
-	if(ecsa_ctrl->state == ECSA_STATE_NONE)
+	if(ecsa_ctrl->state == ECSA_STATE_NONE) {
+		PHL_INFO("%s, skip (already ECSA_STATE_NONE)\n", __func__);
 		goto exit;
+	}
 
 	_os_cancel_timer(d, &ecsa_ctrl->timer);
 
@@ -830,6 +834,7 @@ rtw_phl_ecsa_cancel(
 	_os_spinunlock(d, &(ecsa_ctrl->lock), _bh, NULL);
 
 exit:
+	PHL_INFO("%s << (%d)\n", __func__, status);
 	return status;
 }
 

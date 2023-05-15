@@ -110,6 +110,12 @@ void phl_thermal_protect_watchdog(struct phl_info_t *phl_info)
 {
 	struct rtw_phl_com_t *phl_com = phl_info->phl_com;
 	bool action_changed = false;
+	u8 min_tx_duty = phl_com->dev_cap.min_tx_duty;
+	u8 next_tx_duty = THERMAL_NO_TX_DUTY_CTRL;
+	u8 duty_interval = 1;
+
+	if (min_tx_duty == THERMAL_NO_TX_DUTY_CTRL)
+		return;
 
 	if(phl_com->drv_mode != RTW_DRV_MODE_NORMAL &&
 	   phl_com->drv_mode != RTW_DRV_MODE_HIGH_THERMAL)
@@ -120,20 +126,18 @@ void phl_thermal_protect_watchdog(struct phl_info_t *phl_info)
 	if(action_changed == false)
 		return;
 
-	switch (phl_com->thermal_protect_action){
-		case PHL_THERMAL_PROTECT_ACTION_NONE:
-			_phl_thermal_protect_disable_all_txop(phl_info, false);
-			_phl_thermal_protect_reduce_ampdu_num(phl_info, 0);
-			break;
-		case PHL_THERMAL_PROTECT_ACTION_LEVEL1:
-			_phl_thermal_protect_disable_all_txop(phl_info, true);
-			_phl_thermal_protect_reduce_ampdu_num(phl_info, 70);
-			break;
-		case PHL_THERMAL_PROTECT_ACTION_LEVEL2:
-			_phl_thermal_protect_reduce_ampdu_num(phl_info, 50);
-			break;
-		default:
-			break;
+	duty_interval = (THERMAL_NO_TX_DUTY_CTRL - min_tx_duty) / PHL_THERMAL_PROTECT_ACTION_LEVEL_MAX;
+	if (duty_interval == 0)
+		duty_interval = 1;
+
+	if (phl_com->thermal_protect_action == PHL_THERMAL_PROTECT_ACTION_NONE) {
+		phl_thermal_protect_stop_tx_duty(phl_info);
+	} else {
+		next_tx_duty = THERMAL_TX_DUTY_CTRL_DURATION - (duty_interval * (u8)phl_com->thermal_protect_action);
+		if (next_tx_duty >= min_tx_duty)
+			phl_thermal_protect_cfg_tx_duty(phl_info,
+							THERMAL_TX_DUTY_CTRL_DURATION,
+							next_tx_duty);
 	}
 }
 

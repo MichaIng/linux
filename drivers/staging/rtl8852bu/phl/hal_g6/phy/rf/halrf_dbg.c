@@ -49,6 +49,7 @@ void halrf_dbg_setting_init(struct rf_info *rf)
 	/*DBG_RF_PSD		| */
 	/*DBG_RF_CHK		| */
 	/*DBG_RF_XTAL_TRACK 	| */
+	/*DBG_RF_FW			| */
 	0;
 
 	rf->cmn_dbg_msg_cnt = HALRF_WATCHDOG_PERIOD;
@@ -218,6 +219,12 @@ void halrf_dbg_trace(struct rf_info *rf, char input[][16], u32 *_used,
 			 "11. (( %s ))POWER\n",
 			 ((rf->dbg_component & DBG_RF_POWER) ? ("V") : (".")));
 		RF_DBG_CNSL(out_len, used, output + used, out_len - used,
+			 "16. (( %s ))PSD\n",
+			 ((rf->dbg_component & DBG_RF_PSD) ? ("V") : (".")));
+		RF_DBG_CNSL(out_len, used, output + used, out_len - used,
+			 "18. (( %s ))XTAL TRK\n",
+			 ((rf->dbg_component & RF18_XTAL_TRK) ? ("V") : (".")));
+		RF_DBG_CNSL(out_len, used, output + used, out_len - used,
 			 "28. (( %s ))FW\n",
 			 ((rf->dbg_component & DBG_RF_FW) ? ("V") : (".")));
 		RF_DBG_CNSL(out_len, used, output + used, out_len - used,
@@ -322,6 +329,8 @@ void _halrf_dpk_info(struct rf_info *rf, char input[][16], u32 *_used,
 	if (dpk->bp[0][0].ch == 0) {
 		RF_DBG_CNSL(out_len, used, output + used, out_len - used, "\n %-25s\n",
 			"No DPK had been done before!!!");
+		*_used = used;
+		*_out_len = out_len;
 		return;
 	}
 
@@ -331,6 +340,9 @@ void _halrf_dpk_info(struct rf_info *rf, char input[][16], u32 *_used,
 
 	RF_DBG_CNSL(out_len, used, output + used, out_len - used, " %-25s = %s\n",
 		 "BT IQK timeout", rf->is_bt_iqk_timeout ? "Yes" : "No");
+
+	RF_DBG_CNSL(out_len, used, output + used, out_len - used, " %-25s = %d ms\n",
+		 "DPK processing time", dpk->dpk_time);
 
 	RF_DBG_CNSL(out_len, used, output + used, out_len - used, " %-25s = %s\n",
 		 "DPD status", dpk->is_dpk_enable ? "Enable" : "Disable");
@@ -458,8 +470,14 @@ void halrf_rx_dck_info(struct rf_info *rf, char input[][16], u32 *_used,
 	if (rx_dck->loc[0].cur_ch == 0) {
 		RF_DBG_CNSL(out_len, used, output + used, out_len - used, "\n %-25s\n",
 			"No RX_DCK had been done before!!!");
+
+		*_used = used;
+		*_out_len = out_len;
 		return;
 	}
+
+	RF_DBG_CNSL(out_len, used, output + used, out_len - used, " %-25s = %d ms\n",
+		 "RX_DCK processing time", rx_dck->rxdck_time);
 
 	for (path = 0; path < KPATH; path++) {
 		RF_DBG_CNSL(out_len, used, output + used, out_len - used,
@@ -773,6 +791,11 @@ void _halrf_tssi_info(struct rf_info *rf, char input[][16], u32 *_used,
 		 bw == 0 ? "20M" : (bw == 1 ? "40M" : "80M"),
 		 txsc_ch);
 
+	RF_DBG_CNSL(out_len, used, output + used, out_len - used, " %-25s = %d.%dms / %d.%dms\n",
+		 "Total / Alimk Time",
+		 tssi_info->tssi_total_time / 1000, tssi_info->tssi_total_time % 1000,
+		 tssi_info->tssi_alimk_time / 1000, tssi_info->tssi_alimk_time % 1000);
+
 	RF_DBG_CNSL(out_len, used, output + used, out_len - used, " %-25s : DE(%d) = EFUSE(%d) + Trim(%d)\n",
 		 "TSSI DE CCK A",
 		 tssi_info->curr_tssi_cck_de[RF_PATH_A],
@@ -1034,7 +1057,7 @@ void halrf_iqk_dbg_cmd(struct rf_info *rf, char input[][16], u32 *_used,
 		return;
 	}
 	if (_os_strcmp(input[1], cmd[0]) == 0) {
-		for (i = 1; i < 8; i++)
+		for (i = 1; i < 7; i++)
 			RF_DBG_CNSL(out_len, used, output + used, out_len - used,
 				 "  %s\n", cmd[i]);
 	} else if (_os_strcmp(input[1], cmd[1]) == 0) {
@@ -1077,7 +1100,7 @@ void halrf_pwr_table_dbg_cmd(struct rf_info *rf, char input[][16], u32 *_used,
 	u32 used = *_used;
 	u32 out_len = *_out_len;
 	u32 val = 0;
-	u32 tmp;
+	u32 tmp, phy;
 	u8 i;
 
 	if (_os_strcmp(input[1], cmd[0]) == 0) {
@@ -1085,17 +1108,26 @@ void halrf_pwr_table_dbg_cmd(struct rf_info *rf, char input[][16], u32 *_used,
 			RF_DBG_CNSL(out_len, used, output + used, out_len - used,
 				 "  %s\n", cmd[i]);
 	} else if (_os_strcmp(input[1], cmd[1]) == 0) {
+		_os_sscanf(input[2], "%d", &phy);
+		if (phy >= HW_PHY_MAX)
+			phy = HW_PHY_0;
 		RF_DBG_CNSL(out_len, used, output + used, out_len - used,
 			 "Power by rate info\n");
-		halrf_pwr_by_rate_info(rf, input, &used, output, &out_len);
+		halrf_pwr_by_rate_info(rf, input, &used, output, &out_len, phy);
 	} else if (_os_strcmp(input[1], cmd[2]) == 0) {
+		_os_sscanf(input[2], "%d", &phy);
+		if (phy >= HW_PHY_MAX)
+			phy = HW_PHY_0;
 		RF_DBG_CNSL(out_len, used, output + used, out_len - used,
 			 "Power limit info\n");
-		halrf_pwr_limit_info(rf, input, &used, output, &out_len);
+		halrf_pwr_limit_info(rf, input, &used, output, &out_len, phy);
 	} else if (_os_strcmp(input[1], cmd[3]) == 0) {
+		_os_sscanf(input[2], "%d", &phy);
+		if (phy >= HW_PHY_MAX)
+			phy = HW_PHY_0;
 		RF_DBG_CNSL(out_len, used, output + used, out_len - used,
 			 "Power limit RU info\n");
-		halrf_pwr_limit_ru_info(rf, input, &used, output, &out_len);
+		halrf_pwr_limit_ru_info(rf, input, &used, output, &out_len, phy);
 	} else if (_os_strcmp(input[1], cmd[4]) == 0) {
 		pwr->fix_power[RF_PATH_A] = false;
 		pwr->fix_power_dbm[RF_PATH_A] = 0;
@@ -1108,11 +1140,12 @@ void halrf_pwr_table_dbg_cmd(struct rf_info *rf, char input[][16], u32 *_used,
 		halrf_set_power(rf, HW_PHY_0, PWR_BY_RATE);
 		halrf_set_power(rf, HW_PHY_0, PWR_LIMIT);
 		halrf_set_power(rf, HW_PHY_0, PWR_LIMIT_RU);
-#ifndef RTW_FLASH_98D
-		//halrf_set_power(rf, HW_PHY_1, PWR_BY_RATE);
-		//halrf_set_power(rf, HW_PHY_1, PWR_LIMIT);
-		//halrf_set_power(rf, HW_PHY_1, PWR_LIMIT_RU);
-#endif
+
+		if (rf->hal_com->dbcc_en) {
+			halrf_set_power(rf, HW_PHY_1, PWR_BY_RATE);
+			halrf_set_power(rf, HW_PHY_1, PWR_LIMIT);
+			halrf_set_power(rf, HW_PHY_1, PWR_LIMIT_RU);
+		}
 	} else if (_os_strcmp(input[1], cmd[5]) == 0) {
 		_os_sscanf(input[2], "%d", &tmp);
 
@@ -1121,6 +1154,9 @@ void halrf_pwr_table_dbg_cmd(struct rf_info *rf, char input[][16], u32 *_used,
 			 tmp / 2,  tmp * 10 / 2 % 10);
 
 		halrf_set_fix_power_to_struct(rf, HW_PHY_0, (s8)tmp);
+
+		if (rf->hal_com->dbcc_en)
+			halrf_set_fix_power_to_struct(rf, HW_PHY_1, (s8)tmp);
 	} else if (_os_strcmp(input[1], cmd[6]) == 0) {
 		_os_sscanf(input[2], "%d", &tmp);
 
@@ -1256,6 +1292,9 @@ void _halrf_gapk_info(struct rf_info *rf, char input[][16], u32 *_used,
 
 	RF_DBG_CNSL(out_len, used, output + used, out_len - used, " %-25s = 0x%x\n",
 		 "RFK init ver", rfk_init_ver);
+
+	RF_DBG_CNSL(out_len, used, output + used, out_len - used, " %-25s = %d ms\n",
+		 "TxGapK processing time", txgapk_info->txgapk_time);
 
 	RF_DBG_CNSL(out_len, used, output + used, out_len - used, " %-25s = %d / %d / %d (RFE type:%d)\n",
 		 "Ext_PA 2G / 5G / 6G", rf->fem.epa_2g, rf->fem.epa_5g, rf->fem.epa_6g,
@@ -1437,3 +1476,165 @@ void halrf_dump_rf_reg_cmd(struct rf_info *rf, char input[][16], u32 *_used,
 	*_used = used;
 	*_out_len = out_len;
 }
+
+void halrf_hwtx_dbg_cmd(struct rf_info *rf, char input[][16], u32 *_used,
+			 char *output, u32 *_out_len)
+{
+	u32 value[10] = {0};
+	u8 i;
+
+	for (i = 0; i < 4; i++)
+		if (input[i + 1])
+			_os_sscanf(input[i + 1], "%d", &value[i]);
+
+	if (_os_strcmp(input[1], "-h") == 0) {
+		RF_DBG_CNSL(*_out_len, *_used, output + *_used, *_out_len - *_used,
+			 "echo rf hwtx enable path cnt dB\n");
+		RF_DBG_CNSL(*_out_len, *_used, output + *_used, *_out_len - *_used,
+			 "Enable / Disable = 1 / 0\n");
+		RF_DBG_CNSL(*_out_len, *_used, output + *_used, *_out_len - *_used,
+			 "PathA / PathB = 0 / 1\n");
+		RF_DBG_CNSL(*_out_len, *_used, output + *_used, *_out_len - *_used,
+			 "EX:echo rf hwtx 1 0 0 10\n");
+	}
+
+	RF_DBG_CNSL(*_out_len, *_used, output + *_used, *_out_len - *_used,
+		"==>Enable:%d	Path:%d   Count:%d   Power:%ddB\n", value[0], value[1], value[2], value[3]);
+
+	//halrf_tssi_hw_tx_8852a(rf, 0, path, cnt, dbm, T_HT_MF, 0, enable);
+	if (value[0] == 1) {
+		RF_DBG_CNSL(*_out_len, *_used, output + *_used, *_out_len - *_used,
+			 "HW TX Start\n");
+
+		halrf_btc_rfk_ntfy(rf, (BIT(HW_PHY_0) << 4), RF_BTC_TSSI, RFK_START);
+		halrf_tmac_tx_pause(rf, HW_PHY_0, true);
+
+		halrf_hw_tx(rf, (u8)value[1], (u16)value[2],
+			(s16)(value[3] * 4), T_HT_MF, 0, 1);
+	}
+
+	if (value[0] == 0) {
+		RF_DBG_CNSL(*_out_len, *_used, output + *_used, *_out_len - *_used,
+			 "HW TX Stop\n");
+
+		halrf_hw_tx(rf, (u8)value[1], (u16)value[2],
+			(s16)(value[3] * 4), T_HT_MF, 0, 0);
+
+		halrf_tx_mode_switch(rf, HW_PHY_0, 0);
+
+		halrf_tmac_tx_pause(rf, HW_PHY_0, false);
+		halrf_btc_rfk_ntfy(rf, (BIT(HW_PHY_0) << 4), RF_BTC_TSSI, RFK_STOP);
+	}
+}
+
+void halrf_kfree_dbg_cmd(struct rf_info *rf, char input[][16], u32 *_used,
+			 char *output, u32 *_out_len)
+{
+	struct halrf_kfree_info *kfree = &rf->kfree_info;
+
+	char *cmd[3] = {"-h", "info", "efuse"};
+	u32 val = 0;
+	u8 i, tmp;
+
+	if (_os_strcmp(input[1], cmd[0]) == 0) {
+		for (i = 1; i < 3; i++)
+			RF_DBG_CNSL(*_out_len, *_used, output + *_used, *_out_len - *_used,
+				 "  %s\n", cmd[i]);
+	} else if (_os_strcmp(input[1], cmd[1]) == 0) {
+		halrf_kfree_get_info(rf, input, _used, output, _out_len);
+	} else if (_os_strcmp(input[1], cmd[2]) == 0) {
+		if (_os_strcmp(input[2], "-h") == 0)
+			RF_DBG_CNSL(*_out_len, *_used, output + *_used, *_out_len - *_used,
+				 " EX: echo rf kfree efuse 0x5dc\n");
+		else {
+			_os_sscanf(input[2], "%x", &val);
+			halrf_phy_efuse_get_info(rf, val, 1, &tmp);
+			RF_DBG_CNSL(*_out_len, *_used, output + *_used, *_out_len - *_used,
+					 "Physical Efuse 0x%X=0x%X\n", val, tmp);
+		}
+	} else
+		RF_DBG_CNSL(*_out_len, *_used, output + *_used, *_out_len - *_used,
+				 " No CMD find!!\n");
+}
+
+void halrf_chl_rfk_dbg_cmd(struct rf_info *rf, char input[][16], u32 *_used,
+			 char *output, u32 *_out_len)
+{
+	u8 idx = 2;
+	char *cmd[2] = {"-h","info"};
+	u32 used = *_used;
+	u32 out_len = *_out_len;
+	u32 val = 0;
+	u8 i;
+
+	if (_os_strcmp(input[1], cmd[0]) == 0) {
+		for (i = 1; i < idx; i++)
+			RF_DBG_CNSL(out_len, used, output + used, out_len - used,
+				 "  %s\n", cmd[i]);
+	} else if (_os_strcmp(input[1], cmd[1]) == 0) {
+		//DACK
+		RF_DBG_CNSL(out_len, used, output + used, out_len - used,"\n------->\n[[DACK]] ====>\n");
+		if (!(rf->support_ability & HAL_RF_DACK))
+			RF_DBG_CNSL(out_len, used, output + used, out_len - used, "DACK is Unsupported!!!\n");
+		else	
+			halrf_dack_info(rf, input, &used, output, &out_len);
+		//IQK
+		RF_DBG_CNSL(out_len, used, output + used, out_len - used,"\n------->\n[[IQK]] ====>\n");
+		if (!(rf->support_ability & HAL_RF_IQK))
+			RF_DBG_CNSL(out_len, used, output + used, out_len - used, "IQK is Unsupported!!!\n");
+		else
+			_halrf_iqk_info(rf, input, &used, output, &out_len);		
+		//DPK
+		RF_DBG_CNSL(out_len, used, output + used, out_len - used,"\n------->\n[[DPK]] ====>\n");
+		if (!(rf->support_ability & HAL_RF_DPK))
+			RF_DBG_CNSL(out_len, used, output + used, out_len - used, "DPK is Unsupported!!!\n");
+		else	
+			_halrf_dpk_info(rf, input, &used, output, &out_len);	
+		//DCK
+		RF_DBG_CNSL(out_len, used, output + used, out_len - used,"\n------->\n[[RXDCK]] ====>\n");
+		if (!(rf->support_ability & HAL_RF_RXDCK))
+			RF_DBG_CNSL(out_len, used, output + used, out_len - used, "RXDCK is Unsupported!!!\n");
+		else			
+			halrf_rx_dck_info(rf, input, &used, output, &out_len);	
+		//TXGAPK
+		RF_DBG_CNSL(out_len, used, output + used, out_len - used,"\n------->\n[[TXGAPK]] ====>\n");
+		if (!(rf->support_ability & HAL_RF_TXGAPK))
+			RF_DBG_CNSL(out_len, used, output + used, out_len - used, "TXGAPK is Unsupported!!!\n");
+		else 	
+			_halrf_gapk_info(rf, input, &used, output, &out_len);	
+		//TSSI
+		RF_DBG_CNSL(out_len, used, output + used, out_len - used,"\n------->\n[[TSSI]] ====>\n");
+		if (!(rf->support_ability & HAL_RF_TX_PWR_TRACK))
+			RF_DBG_CNSL(out_len, used, output + used, out_len - used, "TX_PWR_TRACK is Unsupported!!!\n");
+		else	
+			_halrf_tssi_info(rf, input, &used, output, &out_len);	
+		//PWR TABLE RATE
+		RF_DBG_CNSL(out_len, used, output + used, out_len - used,"\n------->\n[[PWR TABLE RATE]] PHY0====>\n");
+		halrf_pwr_by_rate_info(rf, input, &used, output, &out_len, HW_PHY_0);
+
+		if (rf->hal_com->dbcc_en) {
+			RF_DBG_CNSL(out_len, used, output + used, out_len - used,"\n------->\n[[PWR TABLE RATE]] is DBCC, PHY1====>\n");
+			halrf_pwr_by_rate_info(rf, input, &used, output, &out_len, HW_PHY_1);
+		}
+		//PWR TABLE LIMIT
+		RF_DBG_CNSL(out_len, used, output + used, out_len - used,"\n------->\n[[PWR TABLE LIMIT]] PHY0====>\n");
+		halrf_pwr_limit_info(rf, input, &used, output, &out_len, HW_PHY_0);
+
+		if (rf->hal_com->dbcc_en) {
+			RF_DBG_CNSL(out_len, used, output + used, out_len - used,"\n------->\n[[PWR TABLE LIMIT]] is DBCC,PHY1====>\n");
+			halrf_pwr_limit_info(rf, input, &used, output, &out_len, HW_PHY_1);
+		}
+		//THERMAL
+		RF_DBG_CNSL(out_len, used, output + used, out_len - used,"\n------->\n[[THERMAL]] ====>\n");
+		RF_DBG_CNSL(out_len, used, output + used, out_len - used,
+			 "Thermal A: %d\n", halrf_get_thermal(rf, RF_PATH_A));
+		RF_DBG_CNSL(out_len, used, output + used, out_len - used,
+			 "Thermal B: %d\n", halrf_get_thermal(rf, RF_PATH_B)); 
+	} else
+		RF_DBG_CNSL(out_len, used, output + used, out_len - used,
+				 " No CMD find!!\n");
+
+	*_used = used;
+	*_out_len = out_len;
+}
+

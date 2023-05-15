@@ -51,6 +51,12 @@ enum rtw_phl_status rtw_phl_mcc_dur_lim_change(struct phl_info_t *phl,
 
 bool rtw_phl_mcc_inprogress(struct phl_info_t *phl, u8 band_idx);
 
+enum rtw_phl_status rtw_phl_mcc_reset(struct phl_info_t *phl,
+					u8 band_idx);
+
+enum rtw_phl_status rtw_phl_mcc_recovery(struct phl_info_t *phl,
+					u8 band_idx);
+
 enum rtw_phl_status rtw_phl_mcc_enable(struct phl_info_t *phl,
 					struct rtw_wifi_role_t *cur_role);
 
@@ -75,6 +81,8 @@ void rtw_phl_mcc_deinit(struct phl_info_t *phl);
 bool rtw_phl_mcc_get_dbg_info(struct phl_info_t *phl, u8 band_idx,
 				enum rtw_phl_mcc_dbg_type type, void *info);
 
+bool phl_mcc_set_dbg_info(struct phl_info_t *phl,
+				struct rtw_phl_mcc_dbg_info *mcc_dbg_i);
 #else /* CONFIG_MCC_SUPPORT ==0 */
 #define rtw_phl_mcc_watchdog(_phl, _band_idx)
 #define phl_mcc_client_link_notify_for_ap(_phl, _wrole, _state)
@@ -84,6 +92,8 @@ bool rtw_phl_mcc_get_dbg_info(struct phl_info_t *phl, u8 band_idx,
 #define rtw_phl_mcc_init(_phl) RTW_PHL_STATUS_FAILURE
 #define rtw_phl_mcc_deinit(_phl)
 #define rtw_phl_mcc_inprogress(_phl, _band_idx) false
+#define rtw_phl_mcc_reset(_phl, _band_idx) RTW_PHL_STATUS_SUCCESS
+#define rtw_phl_mcc_recovery(_phl, _band_idx) RTW_PHL_STATUS_SUCCESS
 #define rtw_phl_tdmra_duration_change(_phl, _info) RTW_PHL_STATUS_FAILURE
 #define rtw_phl_tdmra_enable(_phl, _cur_role) RTW_PHL_STATUS_FAILURE
 #define rtw_phl_tdmra_disable(_phl, _spec_role) RTW_PHL_STATUS_FAILURE

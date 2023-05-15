@@ -76,6 +76,7 @@ struct phl_wow_info {
 	u32 kapkt_pkt_token;
 	u32 ack_pkt_token;
 	u32 wp_token;
+	u32 probe_req_pkt_token;
 
 	/* func */
 	struct rtw_keep_alive_info keep_alive_info;
@@ -112,8 +113,6 @@ enum rtw_phl_status phl_wow_deinit_precfg(struct phl_wow_info *wow_info);
 enum rtw_phl_status phl_wow_deinit_postcfg(struct phl_wow_info *wow_info);
 
 void phl_reset_wow_info(struct phl_wow_info *wow_info);
-
-u8 phl_wow_nlo_exist(struct phl_wow_info *wow_info);
 
 enum rtw_phl_status phl_wow_func_en(struct phl_wow_info *wow_info);
 

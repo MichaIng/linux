@@ -58,7 +58,8 @@ enum PHL_DBG_CMD_ID {
 	PHL_DBG_ECSA,
 	PHL_DBG_MCC,
 	PHL_DBG_LTR,
-	PHL_DBG_CFG_TX_DUTY
+	PHL_DBG_CFG_TX_DUTY,
+	PHL_DBG_SET_LEVEL
 };
 
 static const struct phl_dbg_cmd_info phl_dbg_cmd_i[] = {
@@ -83,7 +84,8 @@ static const struct phl_dbg_cmd_info phl_dbg_cmd_i[] = {
 	{"ecsa", PHL_DBG_ECSA},
 	{"mcc", PHL_DBG_MCC},
 	{"ltr", PHL_DBG_LTR},
-	{"tx_duty", PHL_DBG_CFG_TX_DUTY}
+	{"tx_duty", PHL_DBG_CFG_TX_DUTY},
+	{"dbglevel", PHL_DBG_SET_LEVEL}
 };
 
 enum rtw_hal_status

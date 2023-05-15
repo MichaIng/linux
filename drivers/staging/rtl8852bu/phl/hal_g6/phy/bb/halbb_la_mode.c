@@ -264,7 +264,7 @@ void halbb_la_mac_cfg_buf_default(struct bb_info *bb)
 {
 	struct bb_la_mode_info *la = &bb->bb_cmn_hooker->bb_la_mode_i;
 	struct la_string_info *buf = &la->la_string_i;
-	enum la_buff_mode_t mode;
+	enum la_buff_mode_t mode = LA_BUFF_192K;
 
 	switch (bb->ic_type) {
 	case BB_RTL8852A:

@@ -576,6 +576,12 @@ u32 mac_hal_deinit(struct mac_ax_adapter *adapter)
 		return ret;
 	}
 
+	ret = rst_dbcc_info(adapter);
+	if (ret != MACSUCCESS) {
+		PLTFM_MSG_ERR("[ERR]reset dbcc info %d\n", ret);
+		return ret;
+	}
+
 	ret = free_sec_info_tbl(adapter, SEC_CAM_NORMAL);
 	if (ret != MACSUCCESS) {
 		PLTFM_MSG_ERR("[ERR]remove security info tbl\n");

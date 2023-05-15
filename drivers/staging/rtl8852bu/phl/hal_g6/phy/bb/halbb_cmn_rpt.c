@@ -507,7 +507,7 @@ void halbb_show_phy_hitogram_su(struct bb_info *bb)
 			       HALBB_SNPRINT_SIZE);
 	BB_DBG(bb, DBG_CMN, "  %-8s %-9s  %s\n", "[TH]", "(Avg)", bb->dbg_buf);
 	/*val*/
-	avg->cn_avg = (u8)HALBB_DIV(acc->cn_avg_acc, valid_cnt);
+	avg->cn_avg = (u8)HALBB_DIV(acc->cn_avg_acc, pkt_cnt->pkt_cnt_2ss);
 	halbb_print_hist_2_buf(bb, hist->cn_avg_hist, BB_HIST_SIZE, bb->dbg_buf,
 			       HALBB_SNPRINT_SIZE);
 	BB_DBG(bb, DBG_CMN, "%-9s (%02d.%03d)  %s\n", "[CN_avg]",
@@ -970,10 +970,11 @@ void halbb_rx_pkt_su_phy_hist(struct bb_info *bb)
 	hist->snr_avg_hist[intvl]++;
 
 	/*CN_avg Histogram*/
-	acc->cn_avg_acc += psts_1->cn_avg;
+	if (rate_i->ss == 2)
+		acc->cn_avg_acc += psts_1->cn_avg;
 	intvl = halbb_find_intrvl(bb, (psts_1->cn_avg >> 1), hist_th->cn_hist_th, BB_HIST_TH_SIZE);
 	hist->cn_avg_hist[intvl]++;
-	
+
 	/*CFO_avg Histogram*/
 	if (bb_cfo_trk->cfo_src == CFO_SRC_FD)
 		cfo = psts_1->cfo_avg;
@@ -1072,6 +1073,18 @@ void halbb_rx_pkt_su_store_in_sta_info(struct bb_info *bb, struct physts_rxd *de
 			rssi_t->rssi_bcn_ma = MA_ACC(rssi_t->rssi_bcn_ma, (u16)psts_h->rssi_avg, ma_fac, RSSI_MA_H);
 			rssi_t->rssi_bcn = (u8)GET_MA_VAL(rssi_t->rssi_bcn_ma, RSSI_MA_H);
 		}
+
+		for (i = 0; i < HALBB_MAX_PATH; i++) {
+			if (!(physts->rx_path_en & BIT(i)))
+				continue;
+
+			if (rssi_t->rssi_bcn_ma_path[i] == 0) {
+				rssi_t->rssi_bcn_ma_path[i] = (u16)(psts_h->rssi[i] << RSSI_MA_H);
+			} else {
+				rssi_t->rssi_bcn_ma_path[i] = MA_ACC(rssi_t->rssi_bcn_ma_path[i], (u16)psts_h->rssi[i], ma_fac, RSSI_MA_H);
+			}
+		}
+
 		rssi_t->pkt_cnt_bcn++;
 	} else {
 		ma_fac = rssi_t->ma_factor;
@@ -1098,7 +1111,7 @@ void halbb_rx_pkt_su_store_in_sta_info(struct bb_info *bb, struct physts_rxd *de
 			if (rssi_t->rssi_ma_path[i] == 0) {
 				rssi_t->rssi_ma_path[i] = (u16)(psts_h->rssi[i] << RSSI_MA_H);
 			} else {
-				rssi_t->rssi_ma_path[i] =  MA_ACC(rssi_t->rssi_ma_path[i], (u16)psts_h->rssi[i], ma_fac, RSSI_MA_H);
+				rssi_t->rssi_ma_path[i] = MA_ACC(rssi_t->rssi_ma_path[i], (u16)psts_h->rssi[i], ma_fac, RSSI_MA_H);
 			}
 		}
 

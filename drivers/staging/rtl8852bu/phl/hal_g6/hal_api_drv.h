@@ -44,6 +44,8 @@ u32 rtw_hal_read_rf_reg(struct rtw_hal_com_t *hal_com,
 bool rtw_hal_write_rf_reg(struct rtw_hal_com_t *hal_com,
 					enum rf_path path, u32 addr, u32 mask, u32 data);
 
+u8 rtw_hal_ex_cn_report(struct rtw_hal_com_t *hal_com);
+
 u32 rtw_hal_bb_read_cr(struct rtw_hal_com_t *hal_com, u32 addr, u32 mask);
 
 bool rtw_hal_bb_write_cr(struct rtw_hal_com_t *hal_com, u32 addr, u32 mask,
@@ -211,6 +213,9 @@ rtw_hal_mac_get_buffer_data(struct rtw_hal_com_t *hal_com, u32 strt_addr,
 enum rtw_hal_status
 rtw_hal_fw_log_cfg(void *hal, u8 op, u8 type, u32 value);
 
+enum rtw_hal_status
+rtw_hal_mac_tx_path_map_cfg(struct rtw_hal_com_t *hal_com,
+                            struct hal_txmap_cfg *txmap_cfg);
 
 /* HALBB APIs for HW TX */
 

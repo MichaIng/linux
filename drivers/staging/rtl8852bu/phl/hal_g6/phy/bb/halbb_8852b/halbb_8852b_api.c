@@ -26,6 +26,19 @@
 
 #ifdef BB_8852B_SUPPORT
 
+u8 halbb_ex_cn_report_8852b(struct bb_info *bb)
+{
+	struct bb_cmn_rpt_info	*cmn_rpt = &bb->bb_cmn_rpt_i;
+	struct bb_physts_avg_info *avg = &cmn_rpt->bb_physts_avg_i;
+	u8 cn_report = 0;
+
+	halbb_set_reg(bb, 0x42a0, BIT(23), 0x1);
+	cn_report = (avg->cn_avg >> 1);
+	BB_DBG(bb, DBG_CMN, "[CN_avg] = %d\n", (avg->cn_avg >> 1));
+	return cn_report;
+
+}
+
 bool halbb_set_pwr_ul_tb_ofst_8852b(struct bb_info *bb,
 				    s16 pw_ofst, enum phl_phy_idx phy_idx)
 {
@@ -558,6 +571,8 @@ void halbb_ctrl_btg_8852b(struct bb_info *bb, bool btg)
 		halbb_set_reg(bb, 0x4738, BIT(19), 0x1);
 		halbb_set_reg(bb, 0x4738, BIT(22), 0x0);
 		// Path B
+		halbb_set_reg(bb, 0x476c, 0xFF000000, 0x20);
+		halbb_set_reg(bb, 0x4778, 0xFF, 0x30);
 		halbb_set_reg(bb, 0x4AA4, BIT(19), 0x1);
 		halbb_set_reg(bb, 0x4AA4, BIT(22), 0x1);
 		BB_DBG(bb, DBG_PHY_CONFIG, "[BT] Apply BTG Setting\n");
@@ -575,11 +590,13 @@ void halbb_ctrl_btg_8852b(struct bb_info *bb, bool btg)
 		halbb_set_reg(bb, 0x4738, BIT(19), 0x0);
 		halbb_set_reg(bb, 0x4738, BIT(22), 0x0);
 		// Path B
+		halbb_set_reg(bb, 0x476c, 0xFF000000, 0x1a);
+		halbb_set_reg(bb, 0x4778, 0xFF, 0x2a);
 		halbb_set_reg(bb, 0x4AA4, BIT(19), 0x0);
 		halbb_set_reg(bb, 0x4AA4, BIT(22), 0x0);
 		BB_DBG(bb, DBG_PHY_CONFIG, "[BT] Disable BTG Setting\n");
 		// Ignore Grant BT by PMAC Setting
-		halbb_set_reg(bb, 0x980, 0x1e0000, 0x0);
+		halbb_set_reg(bb, 0x980, 0x1e0000, 0xc);
 		BB_DBG(bb, DBG_PHY_CONFIG, "[BT] Ignore Grant BT by PMAC Setting\n");
 		// Reset BT share
 		halbb_set_reg(bb, 0x49C4, BIT(14), 0x0);
@@ -598,22 +615,56 @@ void halbb_ctrl_btc_preagc_8852b(struct bb_info *bb, bool bt_en)
 		// DFIR Corner
 		halbb_set_reg(bb, 0x46D0, BIT(1) | BIT(0), 0x3);
 		halbb_set_reg(bb, 0x4790, BIT(1) | BIT(0), 0x3);
-		// LNA Backoff at Normal
-		halbb_set_reg(bb, 0x46a0, 0x3f, 0x8);
-		halbb_set_reg(bb, 0x49f4, 0x3f, 0x8);
+		
+		// BT trakcing always on
+		halbb_set_reg(bb, 0x4ad4, MASKDWORD, 0xf);
+		halbb_set_reg(bb, 0x4ae0, MASKDWORD, 0xf);
+
+		// LNA6_OP1dB
+		halbb_set_reg(bb, 0x4688, MASKBYTE3, 0x80);
+		halbb_set_reg(bb, 0x476C, MASKBYTE3, 0x80);
+
+		// LNA6_TIA0_1_OP1dB
+		halbb_set_reg(bb, 0x4694, MASKBYTE0, 0x80);
+		halbb_set_reg(bb, 0x4694, MASKBYTE1, 0x80);
+		halbb_set_reg(bb, 0x4778, MASKBYTE0, 0x80);
+		halbb_set_reg(bb, 0x4778, MASKBYTE1, 0x80);
+		
 		// LNA, TIA, ADC backoff at BT TX
-		halbb_set_reg(bb, 0x4ae4, 0xffffff, 0x78899e);
-		halbb_set_reg(bb, 0x4aec, 0xffffff, 0x78899e);
+		halbb_set_reg(bb, 0x4ae4, 0xffffff, 0x780D1E);
+		halbb_set_reg(bb, 0x4aec, 0xffffff, 0x780D1E);
+
+		// IBADC backoff
+		halbb_set_reg(bb, 0x469c, 0xfc000000, 0x34);
+		halbb_set_reg(bb, 0x49f0, 0xfc000000, 0x34);
+		
 	} else {
 		// DFIR Corner
 		halbb_set_reg(bb, 0x46D0, BIT(1) | BIT(0), 0x0);
 		halbb_set_reg(bb, 0x4790, BIT(1) | BIT(0), 0x0);
-		// LNA Backoff at Normal
-		halbb_set_reg(bb, 0x46a0, 0x3f, 0x1e);
-		halbb_set_reg(bb, 0x49f4, 0x3f, 0x1e);
+		
+		// BT trakcing always on
+		halbb_set_reg(bb, 0x4ad4, MASKDWORD, 0x60);
+		halbb_set_reg(bb, 0x4ae0, MASKDWORD, 0x60);
+
+		// LNA6_OP1dB
+		halbb_set_reg(bb, 0x4688, MASKBYTE3, 0x1a);
+		halbb_set_reg(bb, 0x476C, MASKBYTE3, 0x1a);
+
+		// LNA6_TIA0_1_OP1dB
+		halbb_set_reg(bb, 0x4694, MASKBYTE0, 0x2a);
+		halbb_set_reg(bb, 0x4694, MASKBYTE1, 0x2a);
+		halbb_set_reg(bb, 0x4778, MASKBYTE0, 0x2a);
+		halbb_set_reg(bb, 0x4778, MASKBYTE1, 0x2a);
+
 		// LNA, TIA, ADC backoff at BT TX
-		halbb_set_reg(bb, 0x4ae4, 0xffffff, 0x4d34d2);
-		halbb_set_reg(bb, 0x4aec, 0xffffff, 0x4d34d2);
+		halbb_set_reg(bb, 0x4ae4, 0xffffff, 0x79E99E);
+		halbb_set_reg(bb, 0x4aec, 0xffffff, 0x79E99E);
+
+		// IBADC backoff
+		halbb_set_reg(bb, 0x469c, 0xfc000000, 0x26);
+		halbb_set_reg(bb, 0x49f0, 0xfc000000, 0x26);
+		
 	}
 }
 bool halbb_bw_setting_8852b(struct bb_info *bb, enum channel_width bw,
@@ -714,6 +765,9 @@ bool halbb_ctrl_bw_8852b(struct bb_info *bb, u8 pri_ch, enum channel_width bw,
 			halbb_set_reg_cmn(bb, 0x49C4, 0x3000, 0x1, phy_idx);
 			/*Pri ch:[11:8]=0x0 */
 			halbb_set_reg_cmn(bb, 0x49C4, 0xf00, 0x0, phy_idx);
+			/*Set RF mode at 3 */
+			halbb_set_reg_cmn(bb, 0x12ac, 0xfff000, 0x333, phy_idx);
+			halbb_set_reg_cmn(bb, 0x32ac, 0xfff000, 0x333, phy_idx);
 		} else if (bw == CHANNEL_WIDTH_10) {
 			/*RF_BW:[31:30]=0x0 */
 			halbb_set_reg_cmn(bb, 0x49C0, 0xC0000000, 0x0,
@@ -722,6 +776,9 @@ bool halbb_ctrl_bw_8852b(struct bb_info *bb, u8 pri_ch, enum channel_width bw,
 			halbb_set_reg_cmn(bb, 0x49C4, 0x3000, 0x2, phy_idx);
 			/*Pri ch:[11:8]=0x0 */
 			halbb_set_reg_cmn(bb, 0x49C4, 0xf00, 0x0, phy_idx);
+			/*Set RF mode at 3 */
+			halbb_set_reg_cmn(bb, 0x12ac, 0xfff000, 0x333, phy_idx);
+			halbb_set_reg_cmn(bb, 0x32ac, 0xfff000, 0x333, phy_idx);
 		} else if (bw == CHANNEL_WIDTH_20) {
 			/*RF_BW:[31:30]=0x0 */
 			halbb_set_reg_cmn(bb, 0x49C0, 0xC0000000, 0x0,
@@ -730,6 +787,9 @@ bool halbb_ctrl_bw_8852b(struct bb_info *bb, u8 pri_ch, enum channel_width bw,
 			halbb_set_reg_cmn(bb, 0x49C4, 0x3000, 0x0, phy_idx);
 			/*Pri ch:[11:8]=0x0 */
 			halbb_set_reg_cmn(bb, 0x49C4, 0xf00, 0x0, phy_idx);
+			/*Set RF mode at 3 */
+			halbb_set_reg_cmn(bb, 0x12ac, 0xfff000, 0x333, phy_idx);
+			halbb_set_reg_cmn(bb, 0x32ac, 0xfff000, 0x333, phy_idx);
 		}
 
 		break;
@@ -740,6 +800,9 @@ bool halbb_ctrl_bw_8852b(struct bb_info *bb, u8 pri_ch, enum channel_width bw,
 		halbb_set_reg_cmn(bb, 0x49C4, 0x3000, 0x0, phy_idx);
 		/*Pri ch:[11:8] */
 		halbb_set_reg_cmn(bb, 0x49C4, 0xf00, pri_ch, phy_idx);
+		/*Set RF mode at 3 */
+		halbb_set_reg_cmn(bb, 0x12ac, 0xfff000, 0x333, phy_idx);
+		halbb_set_reg_cmn(bb, 0x32ac, 0xfff000, 0x333, phy_idx);
 		/*CCK primary channel */
 		if (pri_ch == 1)
 			halbb_set_reg(bb, 0x237c, BIT(0), 1);
@@ -754,6 +817,9 @@ bool halbb_ctrl_bw_8852b(struct bb_info *bb, u8 pri_ch, enum channel_width bw,
 		halbb_set_reg_cmn(bb, 0x49C4, 0x3000, 0x0, phy_idx);
 		/*Pri ch:[11:8] */
 		halbb_set_reg_cmn(bb, 0x49C4, 0xf00, pri_ch, phy_idx);
+		/*Set RF mode at A */
+		halbb_set_reg_cmn(bb, 0x12ac, 0xfff000, 0xaaa, phy_idx);
+		halbb_set_reg_cmn(bb, 0x32ac, 0xfff000, 0xaaa, phy_idx);
 
 		break;
 	default:
@@ -889,9 +955,9 @@ bool halbb_ctrl_bw_ch_8852b(struct bb_info *bb, u8 pri_ch, u8 central_ch,
 	bool rpt = true;
 	bool cck_en = false;
 	u8 pri_ch_idx = 0;
-	bool is_2g_ch;
+	bool is_5g_ch;
 	
-	is_2g_ch = (band == BAND_ON_24G) ? true : false;
+	is_5g_ch = (band == BAND_ON_5G) ? true : false;
 	/*==== [Set pri_ch idx] ====*/
 	if (central_ch <= 14) {
 #ifdef BANDEDGE_FILTER_CFG_FOR_ULOFDMA
@@ -951,11 +1017,7 @@ bool halbb_ctrl_bw_ch_8852b(struct bb_info *bb, u8 pri_ch, u8 central_ch,
 	halbb_ctrl_cck_en_8852b(bb, cck_en, phy_idx);
 	/*==== [Spur elimination] ====*/
 		//TBD
-	if (is_2g_ch && ((bb->rx_path == RF_PATH_B) || (bb->rx_path == RF_PATH_AB))){
-		halbb_ctrl_btg_8852b(bb, true);
-	} else if (is_2g_ch && (bb->rx_path == RF_PATH_A)) {
-		halbb_ctrl_btg_8852b(bb, false);
-	} else {
+	if (is_5g_ch){
 		// Path A
 		halbb_set_reg(bb, 0x4738, BIT(19), 0x0);
 		halbb_set_reg(bb, 0x4738, BIT(22), 0x0);
@@ -963,7 +1025,7 @@ bool halbb_ctrl_bw_ch_8852b(struct bb_info *bb, u8 pri_ch, u8 central_ch,
 		halbb_set_reg(bb, 0x4AA4, BIT(19), 0x0);
 		halbb_set_reg(bb, 0x4AA4, BIT(22), 0x0);
 		// Ignore Grant BT by PMAC Setting
-		halbb_set_reg(bb, 0x980, 0x1e0000, 0xf);
+		//halbb_set_reg(bb, 0x980, 0x1e0000, 0xf);
 		// Reset BT share
 		halbb_set_reg(bb, 0x49C4, BIT(14), 0x0);
 		halbb_set_reg(bb, 0x49C0, 0x3c00000, 0x0);

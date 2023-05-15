@@ -53,6 +53,9 @@
 #define FWCMD_C2H_FUNC_NULL		0xFF
 #define FWCMD_C2H_CAT_NULL		0xFF
 
+#define FWCMD_C2H_FUNC_FTMRPT 0x2
+#define FWCMD_C2H_FUNC_FTMACKRPT 0x3
+
 /**
  * @struct h2c_buf_head
  * @brief h2c_buf_head
@@ -845,5 +848,7 @@ u32 mac_get_c2h_event(struct mac_ax_adapter *adapter,
 
 u32 mac_notify_fw_dbcc(struct mac_ax_adapter *adapter, u8 en);
 
+void H2CRegIncreaseCounter(struct mac_ax_adapter *adapter);
+void C2HRegIncreaseCounter(struct mac_ax_adapter *adapter);
 #endif
 

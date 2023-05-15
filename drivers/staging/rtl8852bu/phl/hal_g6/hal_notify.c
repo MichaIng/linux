@@ -22,6 +22,22 @@ void rtw_hal_notification(void *hal, enum phl_msg_evt_id event, u8 hw_idx)
 
 	PHL_TRACE(COMP_PHL_DBG, _PHL_INFO_, "%s: event(%d), hw_idx(%d)\n",
 	          __func__, event, hw_idx);
+	if (!hal_info->hal_com->is_hal_init) {
+		PHL_TRACE(COMP_PHL_DBG, _PHL_INFO_, "%s:hal is not started!\n",
+				__func__);
+		return;
+	}
+
+	if ((TEST_STATUS_FLAG(hal_info->phl_com->dev_state,
+			      RTW_DEV_SURPRISE_REMOVAL))) {
+		if (event == MSG_EVT_DBG_FULL_REG_DUMP ||
+		    event == MSG_EVT_DBG_TX_DUMP ||
+		    event == MSG_EVT_DBG_RX_DUMP) {
+			PHL_TRACE(COMP_PHL_DBG, _PHL_INFO_, "%s: Surprise Removal!\n",
+				  __func__);
+			return;
+		}
+	}
 
 	if (hw_idx == HW_BAND_MAX) {
 		for (idx = 0; idx < hw_idx; idx++) {

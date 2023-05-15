@@ -83,6 +83,7 @@ void phl_reset_rx_stats(struct rtw_stats *stats)
 	stats->rx_traffic.lvl = RTW_TFC_IDLE;
 	stats->rx_traffic.sts = 0;
 	stats->rx_tf_cnt = 0;
+	stats->pre_rx_tf_cnt = 0;
 }
 
 void
@@ -359,7 +360,7 @@ enum rtw_phl_status _phl_add_rx_pkt(struct phl_info_t *phl_info,
 	wptr = (u16)_os_atomic_read(drv, &ring->phl_idx);
 	rptr = (u16)_os_atomic_read(drv, &ring->core_idx);
 
-	ring_res = phl_calc_avail_wptr(rptr, wptr, MAX_PHL_RING_ENTRY_NUM);
+	ring_res = phl_calc_avail_wptr(rptr, wptr, MAX_PHL_RX_RING_ENTRY_NUM);
 	PHL_TRACE(COMP_PHL_RECV, _PHL_DEBUG_,
 		"[3] _phl_add_rx_pkt::[Query] phl_idx =%d , core_idx =%d , ring_res =%d\n",
 		_os_atomic_read(drv, &ring->phl_idx),
@@ -372,7 +373,7 @@ enum rtw_phl_status _phl_add_rx_pkt(struct phl_info_t *phl_info,
 	}
 
 	wptr = wptr + 1;
-	if (wptr >= MAX_PHL_RING_ENTRY_NUM)
+	if (wptr >= MAX_PHL_RX_RING_ENTRY_NUM)
 		wptr = 0;
 
 	ring->entry[wptr] = recvpkt;
@@ -403,7 +404,7 @@ phl_sta_ps_enter(struct phl_info_t *phl_info, struct rtw_phl_stainfo_t *sta,
                  struct rtw_wifi_role_t *role)
 {
 	void *d = phl_to_drvpriv(phl_info);
-	/* enum rtw_hal_status hal_status; */
+	enum rtw_hal_status hal_status;
 	struct rtw_phl_evt_ops *ops = &phl_info->phl_com->evt_ops;
 
 	_os_atomic_set(d, &sta->ps_sta, 1);
@@ -414,13 +415,12 @@ phl_sta_ps_enter(struct phl_info_t *phl_info, struct rtw_phl_stainfo_t *sta,
 	          sta->mac_addr[3], sta->mac_addr[4], sta->mac_addr[5],
 	          sta->aid, sta->macid, sta);
 
-	/* TODO: comment out because beacon may stop if we do this frequently */
-	/* hal_status = rtw_hal_set_macid_pause(phl_info->hal, */
-	/*                                         sta->macid, true); */
-	/* if (RTW_HAL_STATUS_SUCCESS != hal_status) { */
-	/*         PHL_WARN("%s(): failed to pause macid tx, macid=%u\n", */
-	/*                  __FUNCTION__, sta->macid); */
-	/* } */
+	hal_status = rtw_hal_set_macid_pause(phl_info->hal,
+	                                     sta->macid, true);
+	if (RTW_HAL_STATUS_SUCCESS != hal_status) {
+	        PHL_WARN("%s(): failed to pause macid tx, macid=%u\n",
+	                 __FUNCTION__, sta->macid);
+	}
 
 	if (ops->ap_ps_sta_ps_change)
 		ops->ap_ps_sta_ps_change(d, role->id, sta->mac_addr, true);
@@ -431,7 +431,7 @@ phl_sta_ps_exit(struct phl_info_t *phl_info, struct rtw_phl_stainfo_t *sta,
                 struct rtw_wifi_role_t *role)
 {
 	void *d = phl_to_drvpriv(phl_info);
-	/* enum rtw_hal_status hal_status; */
+	enum rtw_hal_status hal_status;
 	struct rtw_phl_evt_ops *ops = &phl_info->phl_com->evt_ops;
 
 	PHL_TRACE(COMP_PHL_PS, _PHL_INFO_,
@@ -442,13 +442,12 @@ phl_sta_ps_exit(struct phl_info_t *phl_info, struct rtw_phl_stainfo_t *sta,
 
 	_os_atomic_set(d, &sta->ps_sta, 0);
 
-	/* TODO: comment out because beacon may stop if we do this frequently */
-	/* hal_status = rtw_hal_set_macid_pause(phl_info->hal, */
-	/*                                         sta->macid, false); */
-	/* if (RTW_HAL_STATUS_SUCCESS != hal_status) { */
-	/*         PHL_WARN("%s(): failed to resume macid tx, macid=%u\n", */
-	/*                  __FUNCTION__, sta->macid); */
-	/* } */
+	hal_status = rtw_hal_set_macid_pause(phl_info->hal,
+	                                     sta->macid, false);
+	if (RTW_HAL_STATUS_SUCCESS != hal_status) {
+	        PHL_WARN("%s(): failed to resume macid tx, macid=%u\n",
+	                 __FUNCTION__, sta->macid);
+	}
 
 	if (ops->ap_ps_sta_ps_change)
 		ops->ap_ps_sta_ps_change(d, role->id, sta->mac_addr, false);
@@ -494,9 +493,16 @@ phl_rx_handle_sta_process(struct phl_info_t *phl_info,
 	 */
 	if (!m->more_frag &&
 	    (m->frame_type == RTW_FRAME_TYPE_DATA ||
-	     m->frame_type == RTW_FRAME_TYPE_CTRL) &&
+	     m->frame_type == RTW_FRAME_TYPE_MGNT) &&
 	    (role->type == PHL_RTYPE_AP ||
 	     role->type == PHL_RTYPE_P2P_GO)) {
+		/* May get a @rx with macid set to our self macid, check if that
+		 * happens here to avoid pausing self macid. This is put here so
+		 * we wouldn't do it on our normal rx path, which degrades rx
+		 * throughput significantly. */
+		if (phl_self_stainfo_chk(phl_info, role, sta))
+			return;
+
 		if (_os_atomic_read(d, &sta->ps_sta)) {
 			if (!m->pwr_bit)
 				phl_sta_ps_exit(phl_info, sta, role);
@@ -571,7 +577,7 @@ out:
 	r->head_seq_num = seq_inc(r->head_seq_num);
 }
 
-#define HT_RX_REORDER_BUF_TIMEOUT_MS 100
+#define HT_RX_REORDER_BUF_TIMEOUT_MS 500
 
 /*
  * If the MPDU at head_seq_num is ready,
@@ -869,6 +875,9 @@ enum rtw_phl_status phl_rx_reorder(struct phl_info_t *phl_info,
 		  }
 	}
 
+	if (phl_is_mp_mode(phl_info->phl_com))
+		goto dont_reorder;
+
 	if (meta->bc || meta->mc)
 		goto dont_reorder;
 
@@ -952,7 +961,7 @@ u8 phl_check_recv_ring_resource(struct phl_info_t *phl_info)
 
 	wptr = (u16)_os_atomic_read(drv_priv, &ring->phl_idx);
 	rptr = (u16)_os_atomic_read(drv_priv, &ring->core_idx);
-	avail = phl_calc_avail_wptr(rptr, wptr, MAX_PHL_RING_ENTRY_NUM);
+	avail = phl_calc_avail_wptr(rptr, wptr, MAX_PHL_RX_RING_ENTRY_NUM);
 
 	if (0 == avail)
 		return false;
@@ -1071,7 +1080,7 @@ u16 rtw_phl_query_new_rx_num(void *phl)
 		rptr = (u16)_os_atomic_read(phl_to_drvpriv(phl_info),
 						&ring->core_idx);
 		new_rx = phl_calc_avail_rptr(rptr, wptr,
-						MAX_PHL_RING_ENTRY_NUM);
+						MAX_PHL_RX_RING_ENTRY_NUM);
 	}
 
 	return new_rx;
@@ -1093,7 +1102,7 @@ struct rtw_recv_pkt *rtw_phl_query_rx_pkt(void *phl)
 		rptr = (u16)_os_atomic_read(drv_priv, &ring->core_idx);
 
 		ring_res = phl_calc_avail_rptr(rptr, wptr,
-							MAX_PHL_RING_ENTRY_NUM);
+							MAX_PHL_RX_RING_ENTRY_NUM);
 
 		PHL_TRACE(COMP_PHL_RECV, _PHL_DEBUG_,
 			"[4] %s::[Query] phl_idx =%d , core_idx =%d , ring_res =%d\n",
@@ -1105,7 +1114,7 @@ struct rtw_recv_pkt *rtw_phl_query_rx_pkt(void *phl)
 		if (ring_res > 0) {
 			rptr = rptr + 1;
 
-			if (rptr >= MAX_PHL_RING_ENTRY_NUM) {
+			if (rptr >= MAX_PHL_RX_RING_ENTRY_NUM) {
 				rptr=0;
 				recvpkt = (struct rtw_recv_pkt *)ring->entry[rptr];
 				ring->entry[rptr]=NULL;
@@ -1172,6 +1181,9 @@ void rtw_phl_rx_bar(void *phl, struct rtw_phl_stainfo_t *sta, u8 tid, u16 seq)
 	_os_list frames;
 
 	INIT_LIST_HEAD(&frames);
+
+	if (tid >= RTW_MAX_TID_NUM)
+		goto out;
 
 	_os_spinlock(drv_priv, &sta->tid_rx_lock, _bh, NULL);
 
@@ -1632,6 +1644,56 @@ phl_rx_proc_ppdu_sts(struct phl_info_t *phl_info, struct rtw_phl_rx_pkt *phl_rx)
 #endif
 }
 
+void phl_rx_wp_report_record_sts(struct phl_info_t *phl_info,
+				 u8 macid, u16 ac_queue, u8 txsts)
+{
+	struct rtw_phl_stainfo_t *phl_sta = NULL;
+	struct rtw_hal_stainfo_t *hal_sta = NULL;
+	struct rtw_wp_rpt_stats *wp_rpt_stats= NULL;
+
+	phl_sta = rtw_phl_get_stainfo_by_macid(phl_info, macid);
+
+	if (phl_sta) {
+		hal_sta = phl_sta->hal_sta;
+
+		if (hal_sta->trx_stat.wp_rpt_stats == NULL) {
+			PHL_ERR("rtp_stats NULL\n");
+			return;
+		}
+		/* Record Per ac queue statistics */
+		wp_rpt_stats = &hal_sta->trx_stat.wp_rpt_stats[ac_queue];
+
+		_os_spinlock(phl_to_drvpriv(phl_info), &hal_sta->trx_stat.tx_sts_lock, _bh, NULL);
+		if (TX_STATUS_TX_DONE == txsts) {
+			/* record total tx ok*/
+			hal_sta->trx_stat.tx_ok_cnt++;
+			/* record per ac queue tx ok*/
+			wp_rpt_stats->tx_ok_cnt++;
+		} else {
+			/* record total tx fail*/
+			hal_sta->trx_stat.tx_fail_cnt++;
+			/* record per ac queue tx fail*/
+			if (TX_STATUS_TX_FAIL_REACH_RTY_LMT == txsts)
+				wp_rpt_stats->rty_fail_cnt++;
+			else if (TX_STATUS_TX_FAIL_LIFETIME_DROP == txsts)
+				wp_rpt_stats->lifetime_drop_cnt++;
+			else if (TX_STATUS_TX_FAIL_MACID_DROP == txsts)
+				wp_rpt_stats->macid_drop_cnt++;
+		}
+		_os_spinunlock(phl_to_drvpriv(phl_info), &hal_sta->trx_stat.tx_sts_lock, _bh, NULL);
+
+		PHL_TRACE(COMP_PHL_DBG, _PHL_DEBUG_,"macid: %u, ac_queue: %u, tx_ok_cnt: %u, rty_fail_cnt: %u, "
+			"lifetime_drop_cnt: %u, macid_drop_cnt: %u\n"
+			, macid, ac_queue, wp_rpt_stats->tx_ok_cnt, wp_rpt_stats->rty_fail_cnt
+			, wp_rpt_stats->lifetime_drop_cnt, wp_rpt_stats->macid_drop_cnt);
+		PHL_TRACE(COMP_PHL_DBG, _PHL_DEBUG_,"totoal tx ok: %u \n totoal tx fail: %u\n"
+			, hal_sta->trx_stat.tx_ok_cnt, hal_sta->trx_stat.tx_fail_cnt);
+	} else {
+		PHL_TRACE(COMP_PHL_DBG, _PHL_DEBUG_, "%s: PHL_STA not found\n",
+				__FUNCTION__);
+	}
+}
+
 static void _dump_rx_reorder_info(struct phl_info_t *phl_info,
 				  struct rtw_phl_stainfo_t *sta)
 {
@@ -1711,5 +1773,4 @@ void phl_rx_dbg_dump(struct phl_info_t *phl_info, u8 band_idx)
 		PHL_TRACE(COMP_PHL_DBG, _PHL_ERR_, "%s: cmd enqueue fail!\n",
 			  __func__);
 	}
-
 }

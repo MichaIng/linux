@@ -177,6 +177,10 @@ struct bb_efuse_info{
 	s8 efuse_ofst_tb; // 8852A:S(7,4) 8852B:S(8,4)
 };
 
+struct bb_cmn_dbg_info {
+	bool cmn_log_2_cnsl_en;
+};
+
 struct bb_cmn_info {
 	u8 bb_dm_number;
 #ifdef HALBB_PSD_SUPPORT
@@ -190,6 +194,7 @@ struct bb_cmn_info {
 #endif
 	struct bb_echo_cmd_info	bb_echo_cmd_i;
 	struct bb_func_hooker_info bb_func_hooker_i;
+	struct bb_cmn_dbg_info bb_cmn_dbg_i;
 };
 
 #ifdef HALBB_DIG_MCC_SUPPORT
@@ -310,6 +315,9 @@ struct bb_info {
 	struct bb_8852a_2_info	bb_8852a_2_i;
 	struct bb_h2c_fw_cmw	bb_fw_cmw_i;
 #endif
+#ifdef BB_8852B_SUPPORT
+	struct bb_8852b_info	bb_8852b_i;
+#endif
 #ifdef HALBB_RA_SUPPORT
 	struct bb_ra_info	bb_ra_i[PHL_MAX_STA_NUM];
 #endif
@@ -330,6 +338,9 @@ struct bb_info {
 #endif
 #ifdef HALBB_CFO_TRK_SUPPORT
 	struct bb_cfo_trk_info	bb_cfo_trk_i;
+#endif
+#ifdef HALBB_UL_TB_CTRL_SUPPORT
+	struct bb_ul_tb_info	bb_ul_tb_i;
 #endif
 #ifdef HALBB_PHYSTS_PARSING_SUPPORT
 	struct bb_physts_info	bb_physts_i;
@@ -373,6 +384,9 @@ struct bb_info {
 #ifdef HALBB_DYN_L2H_SUPPORT
 	struct bb_dyn_l2h_info bb_dyn_l2h_i;
 #endif
+#ifdef HALBB_PATH_DIV_SUPPORT
+	struct bb_pathdiv_info bb_path_div_i;
+#endif
 	/*@=== [HALBB Timer] ================================================*/
 #ifdef HALBB_RUA_SUPPORT
 	/*struct rtw_rua_tbl rtw_rua_t;*/
@@ -392,4 +406,5 @@ void halbb_supportability_dbg(struct bb_info *bb, char input[][16], u32 *_used,
 			     char *output, u32 *_out_len);
 void halbb_pause_func_dbg(struct bb_info *bb, char input[][16], u32 *_used,
 			  char *output, u32 *_out_len);
+void halbb_store_data(struct bb_info *bb);
 #endif
