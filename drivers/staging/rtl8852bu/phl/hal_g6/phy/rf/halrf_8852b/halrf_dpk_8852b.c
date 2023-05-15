@@ -131,22 +131,22 @@ u8 _dpk_one_shot_8852b(
 	phy_map = (BIT(phy) << 4) | BIT(path);
 
 	dpk_cmd = (u16)((id << 8) | (0x19 + (path << 4)));
-
+#if 0
 	halrf_btc_rfk_ntfy(rf, phy_map, RF_BTC_DPK, RFK_ONESHOT_START);
-
+#endif
 	halrf_wreg(rf, 0x8000, MASKDWORD, dpk_cmd);
 
 	r_bff8 = (u8)halrf_rreg(rf, 0xbff8, MASKBYTE0);
-	while (r_bff8 != 0x55 && count < 2000) {
-		halrf_delay_us(rf, 10);
+	while (r_bff8 != 0x55 && count < 20000) {
+		halrf_delay_us(rf, 1);
 		r_bff8 = (u8)halrf_rreg(rf, 0xbff8, MASKBYTE0);
 		count++;
 	}
 
 	halrf_wreg(rf, 0x8010, MASKBYTE0, 0x0);
-
+#if 0
 	halrf_btc_rfk_ntfy(rf, phy_map, RF_BTC_DPK, RFK_ONESHOT_STOP);
-
+#endif
 	RF_DBG(rf, DBG_RF_DPK, "[DPK] one-shot for %s = 0x%04x (count=%d)\n",
 	       id == 0x06 ? "LBK_RXIQK" : (id == 0x10 ? "SYNC" :
 	       (id == 0x11 ? "MDPK_IDL" : (id == 0x12 ? "MDPK_MPA" :
@@ -155,7 +155,7 @@ u8 _dpk_one_shot_8852b(
 		(id == 0x17 ? "KIP_RESOTRE" : "DPK_TXAGC")))))))),
 	       dpk_cmd, count);
 
-	if (count == 2000) {
+	if (count == 20000) {
 		RF_DBG(rf, DBG_RF_DPK, "[DPK] one-shot over 20ms!!!!\n");
 		return 1;
 	} else
@@ -425,8 +425,8 @@ void _dpk_lbk_rxiqk_8852b(
 	halrf_wrf(rf, path, 0x1e, BIT(19), 0x0);
 	halrf_wrf(rf, path, 0x1e, MASKRF, 0x80014); /*POW IQKPLL, 9.25MHz offset for IQKPLL*/
 
-	for (i = 0; i < 7; i++)
-		halrf_delay_us(rf, 10); /*IQKPLL's settling time*/	
+	for (i = 0; i < 70; i++)
+		halrf_delay_us(rf, 1); /*IQKPLL's settling time*/	
 
 	halrf_wreg(rf, 0x5864, BIT(29), 0x1);
 	halrf_wreg(rf, 0x802c, 0x0FFF0000, 0x025); /*[27:16] Rx_tone_idx=0x025 (9.25MHz)*/

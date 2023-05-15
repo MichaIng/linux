@@ -450,16 +450,21 @@ u32 cmd_mac_fw_curtcb(struct mac_ax_adapter *adapter,
 u32 cmd_mac_fw_status_parser(struct mac_ax_adapter *adapter, char input[][MAC_MAX_ARGV],
 			     u32 input_num, char *output, u32 out_len, u32 *used)
 {
-	u32 i, cmd_strlen;
+	u32 i, cmd_strlen, *para_start_addr, para_val;
 	char *fw_status_cmd;
 	u16 id = FWSTATUS_OPCODE_MASK;
 	struct mac_ax_fwstatus_payload data;
 	u32 hal_cmd_ary_size = sizeof(mac_fw_status_cmd_i) / sizeof(struct mac_hal_cmd_info);
 
-	if (input_num < 2) {
+	if (input_num < OPCODE_HDR_LEN) {
 		//PLTFM_MSG_TRACE("fw status invalid op code\n");
 		MAC_DBG_MSG(out_len, *used, output + *used, out_len - *used,
-			    "fw status invalid op code\n");
+			    "\nfw status invalid op code\n");
+		return MACFWSTATUSFAIL;
+	}
+	if (input_num > MAX_FWSTATSUS_PKT_LEN) {
+		MAC_DBG_MSG(out_len, *used, output + *used, out_len - *used,
+			    "\nfw status argument should be less than 10\n");
 		return MACFWSTATUSFAIL;
 	}
 	 /* Parsing Cmd ID */
@@ -495,8 +500,43 @@ u32 cmd_mac_fw_status_parser(struct mac_ax_adapter *adapter, char input[][MAC_MA
 	}
 	// gen h2c
 	data.dword0 = (u32)id;
-	data.dword1 = FWSTATUS_OPCODE_MASK;
-
+	data.dword1 = (u32)input_num - OPCODE_HDR_LEN;
+	if (input_num > OPCODE_HDR_LEN) {
+		para_start_addr = &data.dword2;
+		for (i = OPCODE_HDR_LEN; i < input_num; i++) {
+			para_val = PLTFM_STRTOUL(input[i], 16);
+			*para_start_addr = para_val;
+			para_start_addr++;
+		}
+		/*
+		 *MAC_DBG_MSG(out_len, *used, output + *used, out_len - *used,
+		 *	    "input parameter num = %d\n", input_num);
+		 *MAC_DBG_MSG(out_len, *used, output + *used, out_len - *used,
+		 *	    "data 0 = 0x%x\n", data.dword0);
+		 *MAC_DBG_MSG(out_len, *used, output + *used, out_len - *used,
+		 *	    "data 1 = 0x%x\n", data.dword1);
+		 *MAC_DBG_MSG(out_len, *used, output + *used, out_len - *used,
+		 *	    "data 2 = 0x%x\n", data.dword2);
+		 *MAC_DBG_MSG(out_len, *used, output + *used, out_len - *used,
+		 *	    "data 3 = 0x%x\n", data.dword3);
+		 *MAC_DBG_MSG(out_len, *used, output + *used, out_len - *used,
+		 *	    "data 4 = 0x%x\n", data.dword4);
+		 *MAC_DBG_MSG(out_len, *used, output + *used, out_len - *used,
+		 *	    "data 5 = 0x%x\n", data.dword5);
+		 *MAC_DBG_MSG(out_len, *used, output + *used, out_len - *used,
+		 *	    "data 6 = 0x%x\n", data.dword6);
+		 *MAC_DBG_MSG(out_len, *used, output + *used, out_len - *used,
+		 *	    "data 7 = 0x%x\n", data.dword7);
+		 *MAC_DBG_MSG(out_len, *used, output + *used, out_len - *used,
+		 *	    "data 8 = 0x%x\n", data.dword8);
+		 *MAC_DBG_MSG(out_len, *used, output + *used, out_len - *used,
+		 *	    "data 9 = 0x%x\n", data.dword9);
+		 *MAC_DBG_MSG(out_len, *used, output + *used, out_len - *used,
+		 *	    "data10 = 0x%x\n", data.dword10);
+		 *MAC_DBG_MSG(out_len, *used, output + *used, out_len - *used,
+		 *	    "data11 = 0x%x\n", data.dword11);
+		 */
+	}
 	if (mac_fw_status_cmd(adapter, &data)) {
 		//PLTFM_MSG_TRACE("FW STATUS H2C Fail!\n");
 		MAC_DBG_MSG(out_len, *used, output + *used, out_len - *used,
@@ -581,6 +621,7 @@ s32 mac_halmac_cmd(struct mac_ax_adapter *adapter, char *input, char *output, u3
 {
 	char *token;
 	u32 argc = 0;
+	u32 token_len = 0;
 	char argv[MAC_MAX_ARGC][MAC_MAX_ARGV];
 
 	if (output) {
@@ -594,8 +635,16 @@ s32 mac_halmac_cmd(struct mac_ax_adapter *adapter, char *input, char *output, u3
 	do {
 		token = PLTFM_STRSEP(&input, ", ");
 		if (token) {
-			if (PLTFM_STRLEN(token) <= MAC_MAX_ARGV)
+			token_len = PLTFM_STRLEN(token);
+			if (token_len <= MAC_MAX_ARGV) {
+				if (token_len > 0) {
+					if (token[token_len - 1] == '\n') {
+						--token_len;
+						token[token_len] = 0;
+					}
+				}
 				PLTFM_STRCPY(argv[argc], token);
+			}
 
 			argc++;
 		} else {
@@ -671,6 +720,10 @@ u32 c2h_fw_status(struct mac_ax_adapter *adapter, u8 *buf, u32 len,
 	u8 *content;
 	struct fw_status_pkt pkt_info;
 	struct fw_status_proc_class *proc = fw_status_proc_sys;
+	char *output = adapter->fw_dbgcmd.buf;
+	u32 *used = &adapter->fw_dbgcmd.used;
+	u32 out_len = adapter->fw_dbgcmd.out_len;
+	//u32 remain_len = out_len - *used;
 
 	PLTFM_MSG_TRACE("[--------------------]%s\n", __func__);
 	hdr0 = ((struct fwcmd_hdr *)buf)->hdr0;
@@ -703,6 +756,8 @@ u32 c2h_fw_status(struct mac_ax_adapter *adapter, u8 *buf, u32 len,
 			content += pkt_info.length;
 			for (; proc->id != FW_STATUS_MAX; proc++) {
 				if (GET_FIELD_OPCODE(pkt_info.op_code) == proc->id) {
+					MAC_DBG_MSG(out_len, *used, output + *used,
+						    out_len - *used, "\n");
 					ret = proc->handler(adapter, pkt_info.data,
 					pkt_info.length);
 				}
@@ -803,7 +858,9 @@ u32 fw_status_meminfo_fast_handler(struct mac_ax_adapter *adapter, u8 *buf, u32 
 		    "Owner ID\tType\t\tTotalSize(B)\n");
 	MAC_DBG_MSG(out_len, *used, output + *used, out_len - *used,
 		    "------------------------------------------------\n");
-
+	MAC_DBG_MSG(out_len, *used, output + *used, out_len - *used,
+		    "%s\n", (const char *)buf);
+	#if 0
 	while (mem_info->total_size != 0) {
 		MAC_DBG_MSG(out_len, *used, output + *used, out_len - *used, "%s\t\t%s\t\t%u\r\n",
 			    MallocIDName[mem_info->owner_id],
@@ -811,6 +868,7 @@ u32 fw_status_meminfo_fast_handler(struct mac_ax_adapter *adapter, u8 *buf, u32 
 			    mem_info->total_size);
 		mem_info++;
 	}
+	#endif
 	return MACSUCCESS;
 }
 
@@ -833,7 +891,9 @@ u32 fw_status_meminfo_slow_handler(struct mac_ax_adapter *adapter, u8 *buf, u32 
 		    "Owner ID\tType\t\tTotalSize(B)\n");
 	MAC_DBG_MSG(out_len, *used, output + *used, out_len - *used,
 		    "------------------------------------------------\n");
-
+	MAC_DBG_MSG(out_len, *used, output + *used, out_len - *used,
+		    "%s\n", (const char *)buf);
+	#if 0
 	while (mem_info->total_size != 0) {
 		MAC_DBG_MSG(out_len, *used, output + *used, out_len - *used, "%s\t\t%s\t\t%u\r\n",
 			    MallocIDName[mem_info->owner_id],
@@ -841,6 +901,7 @@ u32 fw_status_meminfo_slow_handler(struct mac_ax_adapter *adapter, u8 *buf, u32 
 			    mem_info->total_size);
 		mem_info++;
 	}
+	#endif
 	return MACSUCCESS;
 }
 

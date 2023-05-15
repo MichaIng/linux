@@ -684,30 +684,99 @@ u32 mac_get_wl_dis_gpio(struct mac_ax_adapter *adapter, u8 *gpio)
 #define MAC_AX_HCI_SEL_PCIE_UART 2
 #define MAC_AX_HCI_SEL_PCIE_USB 3
 #define MAC_AX_HCI_SEL_SDIO_MULT 4
-#define MAC_AX_HCI_SEL_PCIE_G1_UART 6
-#define MAC_AX_HCI_SEL_PCIE_G1_USB 7
+#define MAC_AX_HCI_SEL_RSVD 5
+#define MAC_AX_HCI_SEL_PCIE_GEN1_UART 6
+#define MAC_AX_HCI_SEL_PCIE_GEN1_USB 7
 	struct mac_ax_intf_ops *ops = adapter_to_intf_ops(adapter);
 	u32 val;
 
 	val = MAC_REG_R32(R_AX_SYS_STATUS1);
 	val = GET_FIELD(val, B_AX_HCI_SEL_V4);
 
-	switch (val) {
-	case MAC_AX_HCI_SEL_SDIO_UART:
-	case MAC_AX_HCI_SEL_USB_MULT:
-	case MAC_AX_HCI_SEL_PCIE_UART:
-	case MAC_AX_HCI_SEL_PCIE_USB:
-	case MAC_AX_HCI_SEL_PCIE_G1_UART:
-	case MAC_AX_HCI_SEL_PCIE_G1_USB:
-		*gpio = 9;
-		break;
-	case MAC_AX_HCI_SEL_SDIO_MULT:
-		*gpio = 15;
-		break;
-	default:
-		PLTFM_MSG_ERR("%s: Wrong HCI\n", __func__);
-		return MACNOITEM;
+#if MAC_AX_8852A_SUPPORT
+	/* In AP, */
+	/*   MAC_AX_HCI_SEL_PCIE_UART and MAC_AX_HCI_SEL_SDIO_UART */
+	/*   are only supported in 2G eFEM, not in 5G/5G 6G*/
+	if (is_chip_id(adapter, MAC_AX_CHIP_ID_8852A)) {
+		switch (val) {
+#ifdef PHL_FEATURE_AP
+		case MAC_AX_HCI_SEL_PCIE_UART:
+		case MAC_AX_HCI_SEL_SDIO_UART:
+			*gpio = 9;
+			break;
+#else
+		case MAC_AX_HCI_SEL_USB_MULT:
+		case MAC_AX_HCI_SEL_PCIE_UART:
+		case MAC_AX_HCI_SEL_PCIE_USB:
+			*gpio = 9;
+			break;
+		case MAC_AX_HCI_SEL_SDIO_UART:
+			*gpio = 15;
+			break;
+#endif
+		default:
+			PLTFM_MSG_ERR("%s: Wrong HCI\n", __func__);
+			return MACNOITEM;
+		}
 	}
+#endif
+
+#if MAC_AX_8852B_SUPPORT
+	if (is_chip_id(adapter, MAC_AX_CHIP_ID_8852B)) {
+		switch (val) {
+		case MAC_AX_HCI_SEL_USB_MULT:
+		case MAC_AX_HCI_SEL_PCIE_UART:
+		case MAC_AX_HCI_SEL_PCIE_USB:
+		case MAC_AX_HCI_SEL_PCIE_GEN1_UART:
+		case MAC_AX_HCI_SEL_PCIE_GEN1_USB:
+			*gpio = 9;
+			break;
+		case MAC_AX_HCI_SEL_SDIO_UART:
+		case MAC_AX_HCI_SEL_SDIO_MULT:
+			*gpio = 15;
+			break;
+		default:
+			PLTFM_MSG_ERR("%s: Wrong HCI\n", __func__);
+			return MACNOITEM;
+		}
+	}
+#endif
+
+#if MAC_AX_8852C_SUPPORT
+	if (is_chip_id(adapter, MAC_AX_CHIP_ID_8852C)) {
+		switch (val) {
+		case MAC_AX_HCI_SEL_PCIE_USB:
+		case MAC_AX_HCI_SEL_PCIE_GEN1_UART:
+		case MAC_AX_HCI_SEL_PCIE_GEN1_USB:
+			*gpio = 9;
+			break;
+		case MAC_AX_HCI_SEL_SDIO_UART:
+		case MAC_AX_HCI_SEL_SDIO_MULT:
+			*gpio = 17;
+			break;
+		default:
+			PLTFM_MSG_ERR("%s: Wrong HCI\n", __func__);
+			return MACNOITEM;
+		}
+	}
+#endif
+
+#if MAC_AX_8192XB_SUPPORT
+	if (is_chip_id(adapter, MAC_AX_CHIP_ID_8192XB)) {
+		switch (val) {
+		case MAC_AX_HCI_SEL_USB_MULT: /* USB */
+		case MAC_AX_HCI_SEL_PCIE_USB: /* PCIE */
+			*gpio = 9;
+			break;
+		case MAC_AX_HCI_SEL_SDIO_MULT: /* SDIO */
+			*gpio = 15;
+			break;
+		default:
+			PLTFM_MSG_ERR("%s: Wrong HCI\n", __func__);
+			return MACNOITEM;
+		}
+	}
+#endif
 
 	return MACSUCCESS;
 }

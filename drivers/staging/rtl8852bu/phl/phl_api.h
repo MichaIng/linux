@@ -1,6 +1,5 @@
 /******************************************************************************
- *
- * Copyright(c) 2019 Realtek Corporation.
+ * Copyright(c) 2019 - 2022 Realtek Corporation.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of version 2 of the GNU General Public License as
@@ -73,6 +72,8 @@ void rtw_phl_stop(void *phl);
 bool rtw_phl_is_init_completed(void *phl);
 
 void rtw_phl_ps_set_rt_cap(void *phl, u8 band_idx, bool ps_allow, enum phl_ps_rt_rson rt_rson);
+void rtw_phl_dbg_ps_op_mode(void *phl, u8 band_idx, u8 ps_mode, u8 ps_op_mode);
+void rtw_phl_dbg_ps_cap(void *phl, u8 band_idx, u8 ps_mode, u8 ps_cap);
 enum rtw_phl_status rtw_phl_ps_set_rf_state(void *phl, u8 band_idx, enum rtw_rf_state rf_state);
 
 enum rtw_phl_status rtw_phl_suspend(void *phl, struct rtw_phl_stainfo_t *sta, u8 wow_en);
@@ -478,9 +479,8 @@ void rtw_phl_led_set_action(void *phl, enum rtw_led_event event,
 void rtw_phl_led_control(void *phl, enum rtw_led_event led_event);
 
 #ifdef CONFIG_RTW_ACS
-u16 rtw_phl_acs_get_channel_by_idx(void *phl, u8 ch_idx);
-u8 rtw_phl_acs_get_clm_ratio_by_idx(void *phl, u8 ch_idx);
-s8  rtw_phl_noise_query_by_idx(void *phl, u8 ch_idx);
+enum rtw_phl_status rtw_phl_get_acs_info(void *phl, struct rtw_acs_info_parm *parm);
+u8 rtw_phl_get_acs_chnl_tbl_idx(void *phl, enum band_type band, u8 channel);
 #endif /* CONFIG_RTW_ACS */
 
 void rtw_phl_get_env_rpt(void *phl, struct rtw_env_report *env_rpt, struct rtw_wifi_role_t *wrole);
@@ -515,6 +515,8 @@ s8 rtw_phl_get_power_limit(void *phl, u8 hw_band,
 void
 rtw_phl_enable_ext_pwr_lmt(void *phl, u8 hw_band,
 	struct rtw_phl_ext_pwr_lmt_info *ext_pwr_lmt_info);
+void
+rtw_phl_set_ext_pwr_lmt_en(void *phl, bool enable);
 
 void rtw_phl_init_ppdu_sts_para(struct rtw_phl_com_t *phl_com,
 				bool en_psts_per_pkt, bool psts_ampdu,
@@ -629,7 +631,8 @@ void rtw_phl_event_notify(void *phl, enum phl_msg_evt_id event,
 			struct rtw_wifi_role_t *wrole);
 void rtw_phl_notification(void *phl,
                           enum phl_msg_evt_id event,
-                          struct rtw_wifi_role_t *wrole);
+                          struct rtw_wifi_role_t *wrole,
+                          bool direct);
 void rtw_phl_dev_terminate_ntf(void *phl);
 
 enum rtw_phl_status
@@ -649,7 +652,7 @@ u8 rtw_phl_get_sta_mgnt_rssi(struct rtw_phl_stainfo_t *psta);
 enum rtw_phl_status
 rtw_phl_txsts_rpt_config(void *phl, struct rtw_phl_stainfo_t *phl_sta);
 
-#ifdef CONFIG_USB_HCI
+#if defined(CONFIG_USB_HCI) || defined(CONFIG_PCI_HCI)
 /* tx_ok/tx_fail are from release report*/
 enum rtw_phl_status
 rtw_phl_get_tx_ok_rpt(void *phl, struct rtw_phl_stainfo_t *phl_sta, u32 *tx_ok_cnt,
@@ -663,11 +666,16 @@ rtw_phl_get_tx_fail_rpt(void *phl, struct rtw_phl_stainfo_t *phl_sta, u32 *tx_fa
 enum rtw_phl_status
 rtw_phl_get_tx_retry_rpt(void *phl, struct rtw_phl_stainfo_t *phl_sta, u32 *tx_retry_cnt,
  enum phl_ac_queue qsel);
-#endif /* CONFIG_USB_HCI */
+#endif /* CONFIG_USB_HCI || CONFIG_PCI_HCI */
 
 enum rtw_rx_status rtw_phl_get_rx_status(void *phl);
 
 void rtw_phl_dbg_dump_rx(void *phl, struct rtw_wifi_role_t *wrole);
+
+void rtw_phl_tx_packet_event_notify(void *phl,
+	struct rtw_wifi_role_t *wifi_role,
+	enum phl_pkt_evt_type pkt_type);
+
 
 /******************************************************************************
  *
@@ -680,5 +688,15 @@ bool rtw_phl_get_pwr_lmt_en(void *phl, u8 band_idx);
 
 enum rtw_phl_status rtw_phl_set_tx_power(void *phl, u8 band_idx);
 
+enum rtw_phl_status
+rtw_phl_cmd_get_txinfo_pwr(void *phl, s16 *pwr_dbm,
+				enum phl_band_idx band_idx,
+				bool direct);
+/*****************************************************************************/
+
+u32 rtw_phl_get_phy_stat_info(void *phl, enum phl_band_idx hw_band,
+			      enum phl_stat_info_query phy_stat);
+
+enum rtl_ic_id rtw_phl_get_ic_id(void *phl);
 #endif /*_PHL_API_H_*/
 

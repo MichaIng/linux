@@ -20,7 +20,7 @@
 #include "../../mac_def.h"
 #if MAC_AX_8852B_SUPPORT
 
-#define PWR_SEQ_VER_8852B  10
+#define PWR_SEQ_VER_8852B  17
 
 u32 mac_pwr_on_sdio_8852b(void *vadapter);
 u32 mac_pwr_on_usb_8852b(void *vadapter);

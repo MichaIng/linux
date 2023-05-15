@@ -67,61 +67,22 @@ bool rtw_hal_check_thermal_protect(
 	PHL_INFO("%s: Cur action = %x\n", __FUNCTION__, phl_com->thermal_protect_action);
 	PHL_INFO("%s: status = %x\n", __FUNCTION__, status);
 
-	switch (phl_com->thermal_protect_action){
-		case PHL_THERMAL_PROTECT_ACTION_NONE:
-			if(status == HALRF_THERMAL_STATUS_ABOVE_THRESHOLD){
-				phl_com->thermal_protect_action =
-					PHL_THERMAL_PROTECT_ACTION_LEVEL1;
+	if (status == HALRF_THERMAL_STATUS_ABOVE_THRESHOLD) {
+		if (phl_com->thermal_protect_action < PHL_THERMAL_PROTECT_ACTION_LEVEL_MAX) {
+			if (phl_com->thermal_protect_action == PHL_THERMAL_PROTECT_ACTION_NONE)
 				phl_com->drv_mode = RTW_DRV_MODE_HIGH_THERMAL;
-				action_changed = true;
-			}
-			else if(status == HALRF_THERMAL_STATUS_BELOW_THRESHOLD ||
-				status == HALRF_THERMAL_STATUS_STAY_THRESHOLD){
-				/* Do nothing */
-			}
-			else{
-				PHL_ERR("Unknown thermal status(%x)!\n", status);
-			}
-			break;
-		case PHL_THERMAL_PROTECT_ACTION_LEVEL1:
-			if(status == HALRF_THERMAL_STATUS_BELOW_THRESHOLD){
-				phl_com->thermal_protect_action =
-					PHL_THERMAL_PROTECT_ACTION_NONE;
+			phl_com->thermal_protect_action++;
+			action_changed = true;
+		}
+	} else if (status == HALRF_THERMAL_STATUS_BELOW_THRESHOLD) {
+		if (phl_com->thermal_protect_action > PHL_THERMAL_PROTECT_ACTION_NONE) {
+			if (phl_com->thermal_protect_action == PHL_THERMAL_PROTECT_ACTION_LEVEL1)
 				phl_com->drv_mode = RTW_DRV_MODE_NORMAL;
-				action_changed = true;
-			}
-			else if(status == HALRF_THERMAL_STATUS_ABOVE_THRESHOLD){
-				phl_com->thermal_protect_action =
-					PHL_THERMAL_PROTECT_ACTION_LEVEL2;
-				action_changed = true;
-			}
-			else if(status == HALRF_THERMAL_STATUS_STAY_THRESHOLD){
-				/* Do nothing */
-			}
-			else{
-				PHL_ERR("Unknown thermal status(%x)!\n", status);
-			}
-			break;
-		case PHL_THERMAL_PROTECT_ACTION_LEVEL2:
-			if(status == HALRF_THERMAL_STATUS_BELOW_THRESHOLD){
-				phl_com->thermal_protect_action =
-					PHL_THERMAL_PROTECT_ACTION_LEVEL1;
-				action_changed = true;
-			}
-			else if(status == HALRF_THERMAL_STATUS_ABOVE_THRESHOLD){
-				/* No next action */
-			}
-			else if(status == HALRF_THERMAL_STATUS_STAY_THRESHOLD){
-				/* Do nothing */
-			}
-			else{
-				PHL_ERR("Unknown thermal status(%x)!\n", status);
-			}
-			break;
-		default:
-			PHL_ERR("Unknown thermal protect action(%x)!\n",
-				phl_com->thermal_protect_action);
-			break;
+			phl_com->thermal_protect_action--;
+			action_changed = true;
+		}
+	} else {
+		/* Do nothing */
 	}
 	if(action_changed)
 		PHL_INFO("%s: Next action = %x\n", __FUNCTION__, phl_com->thermal_protect_action);

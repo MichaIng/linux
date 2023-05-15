@@ -41,3 +41,60 @@ enum rtw_phl_status rtw_phl_set_tx_power(void *phl, u8 band_idx)
 	return hstatus == RTW_HAL_STATUS_SUCCESS ? RTW_PHL_STATUS_SUCCESS : RTW_PHL_STATUS_FAILURE;
 }
 
+enum rtw_phl_status rtw_phl_get_txinfo_pwr(void *phl, s16 *pwr_dbm)
+{
+	struct phl_info_t *phl_info = phl;
+	enum rtw_hal_status hstatus = RTW_HAL_STATUS_FAILURE;
+	s16 power_dbm = 0;
+
+	hstatus = rtw_hal_get_txinfo_power(phl_info->hal, &power_dbm);
+	*pwr_dbm = power_dbm;
+
+	return hstatus == RTW_HAL_STATUS_SUCCESS ? RTW_PHL_STATUS_SUCCESS : RTW_PHL_STATUS_FAILURE;
+}
+
+#ifdef CONFIG_CMD_DISP
+enum rtw_phl_status
+rtw_phl_cmd_get_txinfo_pwr(void *phl, s16 *pwr_dbm,
+				enum phl_band_idx band_idx,
+				bool direct) /* if caller already in cmd/msg, use direct = true */
+{
+	struct phl_info_t *phl_info = (struct phl_info_t *)phl;
+	enum rtw_phl_status psts = RTW_PHL_STATUS_FAILURE;
+
+	if (direct) {
+		psts = rtw_phl_get_txinfo_pwr(phl, pwr_dbm);
+		goto exit;
+	}
+
+	psts = phl_cmd_enqueue(phl_info,
+				band_idx,
+				MSG_EVT_GET_TX_PWR_DBM,
+				(u8*)pwr_dbm,
+				sizeof(s16),
+				NULL,
+				PHL_CMD_WAIT,
+				0);
+	if (is_cmd_failure(psts)) {
+		/* Send cmd success, but wait cmd fail */
+		psts = RTW_PHL_STATUS_FAILURE;
+	} else if (psts != RTW_PHL_STATUS_SUCCESS) {
+		/* Send cmd fail */
+		psts = RTW_PHL_STATUS_FAILURE;
+	}
+
+exit:
+	return psts;
+}
+#else
+enum rtw_phl_status
+rtw_phl_cmd_get_txinfo_pwr(void *phl, s16 *pwr_dbm,
+				enum phl_band_idx band_idx,
+				bool direct)
+{
+	struct phl_info_t *phl_info = (struct phl_info_t *)phl;
+
+	return rtw_phl_get_txinfo_pwr(phl, pwr_dbm);
+}
+#endif
+

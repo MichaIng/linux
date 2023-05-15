@@ -24,6 +24,7 @@
 #include "dle.h"
 #include "hci_fc.h"
 #include "power_saving.h"
+#include "otpkeysinfo.h"
 
 #if MAC_AX_PCIE_SUPPORT
 #include "_pcie.h"
@@ -35,6 +36,16 @@
 #if MAC_AX_8852B_SUPPORT
 #include "../fw_ax/rtl8852b/hal8852b_fw_u1.h"
 #include "../fw_ax/rtl8852b/hal8852b_fw.h"
+#endif
+
+#if MAC_AX_8852A_SUPPORT
+#define FWDL_PLE_BASE_ADDR_8852A 0xB8760000
+#endif
+#if MAC_AX_8852B_SUPPORT
+#define FWDL_PLE_BASE_ADDR_8852B 0xB8718000
+#endif
+#if MAC_AX_8852C_SUPPORT
+#define FWDL_PLE_BASE_ADDR_8852C 0xB8760000
 #endif
 
 #define FWHDR_HDR_LEN (sizeof(struct fwhdr_hdr_t))
@@ -55,6 +66,42 @@
 #define RTL8852B_ROM_ADDR 0x18900000
 #define RTL8852C_ROM_ADDR 0x20000000
 #define RTL8192XB_ROM_ADDR 0x20000000
+#define FWDL_WAIT_CNT 400000
+#define FWDL_SECTION_MAX_NUM 6
+#define FWDL_SECURITY_SECTION_CONSTANT (64 + (FWDL_SECTION_MAX_NUM * 32 * 2))
+#define FWDL_SECURITY_SECTION_TYPE 9
+#define FWDL_SECURITY_SIGLEN 512
+#define FWDL_SECTION_CHKSUM_LEN	8
+#define FWDL_SECTION_PER_PKT_LEN 2020
+#define FWDL_TRY_CNT 3
+
+struct fwhdr_section_info {
+	u8 redl;
+	u8 *addr;
+	u32 len;
+	u32 dladdr;
+	u32 mssc;
+	u8 type;
+};
+
+struct fw_bin_info {
+	u8 section_num;
+	u32 hdr_len;
+	u32 git_idx;
+	u32 is_fw_use_ple;
+	struct fwhdr_section_info section_info[FWDL_SECTION_MAX_NUM];
+};
+
+struct hw_info {
+	u8 chip;
+	u8 cut;
+	u8 category;
+};
+
+struct fwld_info {
+	u32 len;
+	u8 *fw;
+};
 
 /**
  * @struct fwhdr_hdr_t
@@ -422,6 +469,23 @@ u32 mac_ram_boot(struct mac_ax_adapter *adapter, u8 *fw, u32 len);
  * @retval u32
  */
 u32 mac_enable_fw(struct mac_ax_adapter *adapter, enum rtw_fw_type cat);
+/**
+ * @}
+ * @}
+ */
+
+/**
+ * @brief mac_query_fw_buff
+ *
+ * @param *adapter
+ * @param cat
+ * @param **fw
+ * @param *fw_len
+ * @return Please Place Description here.
+ * @retval u32
+ */
+u32
+mac_query_fw_buff(struct mac_ax_adapter *adapter, enum rtw_fw_type cat, u8 **fw, u32 *fw_len);
 /**
  * @}
  * @}

@@ -92,6 +92,9 @@ void halbb_ic_hw_setting_init(struct bb_info *bb)
 		#ifdef HALBB_DYN_CSI_RSP_SUPPORT
 		halbb_dcr_init(bb);
 		#endif
+		#ifdef BB_DYN_DTR
+		halbb_dyn_dtr_init_8852b(bb);
+		#endif	
 		break;
 	#endif
 
@@ -249,7 +252,9 @@ u64 halbb_supportability_default(struct bb_info *bb)
 				BB_ENVMNTR |
 				BB_CFO_TRK |
 				BB_DIG |
+				BB_UL_TB_CTRL |
 				/*BB_ANT_DIV |*/
+				/*BB_PATH_DIV |*/
 				0;
 		break;
 #endif
@@ -263,6 +268,8 @@ u64 halbb_supportability_default(struct bb_info *bb)
 				BB_CFO_TRK |
 				BB_ENVMNTR |
 				BB_DIG |
+				BB_UL_TB_CTRL |
+				BB_PWR_CTRL |
 				0;
 
 		break;
@@ -277,15 +284,19 @@ u64 halbb_supportability_default(struct bb_info *bb)
 					BB_ENVMNTR |
 					BB_CFO_TRK |
 					BB_DIG |
+					BB_UL_TB_CTRL |
 					/*BB_ANT_DIV |*/
 					0;
 			break;
 #endif
-
 	default:
 		BB_WARNING("[%s]\n", __func__);
 		break;
 	}
+#ifdef HALBB_PATH_DIV_SUPPORT
+		if (bb->ic_type == BB_RTL8852B)
+			support_ability |= BB_PATH_DIV;
+#endif
 	return support_ability;
 }
 
@@ -410,6 +421,9 @@ enum rtw_hal_status halbb_dm_init(struct bb_info *bb, enum phl_phy_idx phy_idx)
 	#ifdef HALBB_CFO_TRK_SUPPORT
 	halbb_cfo_trk_init(bb);
 	#endif
+	#ifdef HALBB_UL_TB_CTRL_SUPPORT
+	halbb_ul_tb_ctrl_init(bb);
+	#endif
 	#ifdef HALBB_RA_SUPPORT
 	halbb_ra_init(bb);
 	#endif
@@ -427,6 +441,9 @@ enum rtw_hal_status halbb_dm_init(struct bb_info *bb, enum phl_phy_idx phy_idx)
 	#endif
 	#ifdef HALBB_CH_INFO_SUPPORT
 	halbb_ch_info_init(bb);
+	#endif
+	#ifdef HALBB_PATH_DIV_SUPPORT
+	halbb_pathdiv_init(bb);
 	#endif
 	halbb_reset_adc(bb);
 
@@ -525,6 +542,11 @@ void halbb_cr_cfg_init(struct bb_info *bb)
 	#ifdef HALBB_CFO_TRK_SUPPORT
 	halbb_cr_cfg_cfo_trk_init(bb);
 	#endif
+	#ifdef HALBB_UL_TB_CTRL_SUPPORT
+	halbb_cr_cfg_ul_tb_init(bb);
+	#endif
+
+
 }
 
 void halbb_buffer_deinit(struct rtw_phl_com_t *phl_com,

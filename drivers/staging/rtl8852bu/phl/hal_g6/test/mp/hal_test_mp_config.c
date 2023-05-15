@@ -396,6 +396,21 @@ enum rtw_hal_status rtw_hal_mp_trigger_fw_conflict(struct mp_context *mp, struct
 	return hal_status;
 }
 
+enum rtw_hal_status rtw_hal_mp_config_set_gpio(struct mp_context *mp, struct mp_config_arg *arg)
+{
+	enum rtw_hal_status hal_status = RTW_HAL_STATUS_FAILURE;
+	struct hal_info_t *hal_info = (struct hal_info_t *)mp->hal;
+
+	hal_status = rtw_hal_mac_set_sw_gpio_mode(hal_info, RTW_AX_SW_IO_MODE_OUTPUT_PP, arg->gpio_id);
+	if(hal_status != RTW_HAL_STATUS_SUCCESS){
+		PHL_INFO("%s: hal_status = %d\n", __FUNCTION__, hal_status);
+		return hal_status;
+	}
+
+	hal_status = rtw_hal_mac_sw_gpio_ctrl(hal_info, arg->gpio_enable, arg->gpio_id);
+	PHL_INFO("%s: hal_status = %d\n", __FUNCTION__, hal_status);
+	return hal_status;
+}
 
 enum rtw_hal_status rtw_hal_mp_ic_hw_setting_init(struct mp_context *mp)
 {
@@ -404,6 +419,15 @@ enum rtw_hal_status rtw_hal_mp_ic_hw_setting_init(struct mp_context *mp)
 	hal_status = rtw_hal_bb_ic_hw_setting_init(mp->hal);
 
 	return hal_status;
+}
+
+
+u32 rtw_hal_get_uuid(struct mp_context *mp)
+{
+	struct hal_info_t *hal_info = (struct hal_info_t *)mp->hal;
+	struct rtw_hal_com_t *hal_com = hal_info->hal_com;
+
+	return hal_com->uuid;
 }
 
 #endif /* CONFIG_HAL_TEST_MP */

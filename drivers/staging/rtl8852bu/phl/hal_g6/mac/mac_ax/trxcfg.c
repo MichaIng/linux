@@ -1089,6 +1089,12 @@ static u32 trxptcl_init(struct mac_ax_adapter *adapter, u8 band,
 	val32 |= B_AX_RXTRIG_FCSCHK_EN;
 	MAC_REG_W32(reg, val32);
 
+	/*disable 5.5M CCK rate response for PHY performance consideration*/
+	val32 = MAC_REG_R32(R_AX_TRXPTCL_RRSR_CTL_0);
+	val32 = SET_CLR_WORD(val32, WMAC_CCK_EN_1M, B_AX_WMAC_RRSB_AX_CCK);
+	val32 = SET_CLR_WORD(val32, WMAC_RRSR_RATE_LEGACY_EN, B_AX_WMAC_RESP_RATE_EN);
+	MAC_REG_W32(R_AX_TRXPTCL_RRSR_CTL_0, val32);
+
 	return MACSUCCESS;
 }
 
@@ -1436,7 +1442,13 @@ static u32 nav_ctrl_init(struct mac_ax_adapter *adapter, u8 band)
 
 	info.plcp_upd_nav_en = 1;
 	info.tgr_fram_upd_nav_en = 1;
+
+#ifdef PHL_FEATURE_AP
 	info.nav_up = NAV_12MS;
+#else
+	info.nav_up = NAV_25MS;
+#endif
+
 	ret = mac_two_nav_cfg(adapter, &info);
 
 	return MACSUCCESS;
@@ -1471,6 +1483,7 @@ u32 dmac_init(struct mac_ax_adapter *adapter, struct mac_ax_trx_info *info,
 		return ret;
 	}
 
+	ret = sec_info_tbl_init(adapter, SEC_CAM_NORMAL);
 	ret = sec_eng_init(adapter);
 	if (ret != MACSUCCESS) {
 		PLTFM_MSG_ERR("[ERR]Security Engine init %d\n", ret);

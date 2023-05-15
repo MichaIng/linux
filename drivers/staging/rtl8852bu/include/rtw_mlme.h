@@ -543,6 +543,9 @@ struct mlme_priv {
 
 #endif
 
+	/* VHT or HE IE is configured by upper layer or not (hostapd or wpa_supplicant) */
+	u8 upper_layer_setting;
+
 #ifdef CONFIG_80211AC_VHT
 	struct vht_priv	vhtpriv;
 #ifdef ROKU_PRIVATE
@@ -752,7 +755,8 @@ struct mlme_priv {
 #define RTW_AUTO_SCAN_REASON_2040_BSS			BIT0
 #define RTW_AUTO_SCAN_REASON_ACS				BIT1
 #define RTW_AUTO_SCAN_REASON_ROAM				BIT2
-#define RTW_AUTO_SCAN_REASON_MESH_OFFCH_CAND	BIT3
+#define RTW_AUTO_SCAN_REASON_ROAM_ACTIVE			BIT3
+#define RTW_AUTO_SCAN_REASON_MESH_OFFCH_CAND		BIT4
 
 void rtw_mlme_reset_auto_scan_int(_adapter *adapter, u8 *reason);
 

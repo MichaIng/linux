@@ -150,6 +150,7 @@ bool halbb_cfg_bbcr_ax_8852b(struct bb_info *bb, bool is_form_folder,
 	u32 v1 = 0, v2 = 0;
 	u8 h_size = 0;
 	u8 h_idx = 0;
+	bool ret = false;
 
 	BB_DBG(bb, DBG_INIT, "===> %s\n", __func__);
 
@@ -180,6 +181,10 @@ bool halbb_cfg_bbcr_ax_8852b(struct bb_info *bb, bool is_form_folder,
 	BB_DBG(bb, DBG_INIT, "array[i] = 0x%x, array[i+1] = 0x%x\n", array[i], array[i + 1]);
 
 	halbb_flag_2_default_8852b(&is_matched, &find_target);
+	#ifdef HALBB_FW_OFLD_SUPPORT
+	if (halbb_check_fw_ofld(bb))
+		BB_WARNING("Becareful it is fwofld mode in BB init !!");
+	#endif
 	while ((i + 1) < array_len) {
 		v1 = array[i];
 		v2 = array[i + 1];
@@ -223,12 +228,20 @@ bool halbb_cfg_bbcr_ax_8852b(struct bb_info *bb, bool is_form_folder,
 			break;
 		default:
 			if (is_matched) 
+				#ifdef HALBB_FW_OFLD_SUPPORT
+				ret = halbb_fwcfg_bb_phy_8852a_2(bb, v1, v2, phy_idx);
+				#else
 				halbb_cfg_bb_phy_8852b(bb, v1, v2, phy_idx);
+				#endif
 			break;
 		}
 	}
 	BB_DBG(bb, DBG_INIT, "BBCR Init Success\n\n");
+	#ifdef HALBB_FW_OFLD_SUPPORT
+	return ret;
+	#else
 	return true;
+	#endif
 }
 
 bool halbb_cfg_bb_gain_ax_8852b(struct bb_info *bb, bool is_form_folder,

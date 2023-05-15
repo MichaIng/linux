@@ -1,6 +1,6 @@
 /******************************************************************************
  *
- * Copyright(c) 2007 - 2020 Realtek Corporation.
+ * Copyright(c) 2007 - 2022 Realtek Corporation.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of version 2 of the GNU General Public License as
@@ -87,9 +87,15 @@ int rtw_scan_mode = 1;/* active, passive */
 #endif /* CONFIG_POWER_SAVING */
 #ifdef CONFIG_RTW_IPS
 	int rtw_ips_mode = PS_OP_MODE_AUTO;
+#ifdef CONFIG_FWIPS
+	int rtw_ips_cap = PS_CAP_PWRON |
+			PS_CAP_RF_OFF |
+			PS_CAP_CLK_GATED |
+			PS_CAP_PWR_GATED;
+#endif /* CONFIG_FWIPS */
 #else
 	int rtw_ips_mode = PS_OP_MODE_DISABLED;
-#endif
+#endif /* CONFIG_RTW_IPS */
 #ifdef CONFIG_RTW_LPS
 	int rtw_lps_mode = PS_OP_MODE_AUTO;
 	int rtw_lps_cap = PS_CAP_PWRON |
@@ -99,7 +105,7 @@ int rtw_scan_mode = 1;/* active, passive */
 #else
 	int rtw_lps_mode = PS_OP_MODE_DISABLED;
 	int rtw_lps_cap = PS_CAP_PWRON;
-#endif
+#endif /* CONFIG_RTW_LPS */
 
 #ifdef CONFIG_NARROWBAND_SUPPORTING
 int rtw_nb_config = CONFIG_NB_VALUE;
@@ -229,7 +235,7 @@ int rtw_ht_enable = 1;
 #ifdef CONFIG_RTW_CUSTOMIZE_BWMODE
 int rtw_bw_mode = CONFIG_RTW_CUSTOMIZE_BWMODE;
 #else
-int rtw_bw_mode = ((BW_CAP_80M | BW_CAP_40M | BW_CAP_20M) << 4 ) | (BW_CAP_40M | BW_CAP_20M);
+int rtw_bw_mode = 0x21;
 #endif
 
 int rtw_ampdu_enable = 1;/* for enable tx_ampdu , */ /* 0: disable, 0x1:enable */
@@ -250,6 +256,11 @@ module_param(rtw_max_amsdu_len, uint, 0644);
 * 1: Force the AMSDU filed in ADDBA Resp. to be enabled.
 */
 int rtw_tx_ampdu_amsdu = 2;
+
+/* 0: Default by halmac provided. */
+/* other: Setting by driver. The final decision will take a samller value from halmac or driver. */
+int rtw_tx_ampdu_num = 0;
+module_param(rtw_tx_ampdu_num, int, 0644);
 
 int rtw_quick_addba_req = 0;
 
@@ -279,8 +290,11 @@ MODULE_PARM_DESC(rtw_rx_ampdu_sz_limit_4ss, "RX AMPDU size limit for 4SS link of
 * BIT2 - 80MHz, 0: non-support, 1: support
 * BIT3 - 160MHz, 0: non-support, 1: support */
 int rtw_short_gi = 0xf;
-/* BIT0: Enable VHT LDPC Rx, BIT1: Enable VHT LDPC Tx, BIT4: Enable HT LDPC Rx, BIT5: Enable HT LDPC Tx */
-int rtw_ldpc_cap = 0x33;
+/* BIT0: Enable VHT LDPC Rx, BIT1: Enable VHT LDPC Tx
+ * BIT2: Enable HE LDPC Rx, BIT3: Enable HE LDPC Tx
+ * BIT4: Enable HT LDPC Rx, BIT5: Enable HT LDPC Tx
+ */
+int rtw_ldpc_cap = 0x3f;
 /* BIT0: Enable VHT STBC Rx, BIT1: Enable VHT STBC Tx
 * BIT4: Enable HT STBC Rx, BIT5: Enable HT STBC Tx
 * BIT8: Enable HE STBC Rx, BIT9: Enable HE STBC Rx(greater than 80M)
@@ -675,11 +689,21 @@ int rtw_adaptivity_th_edcca_hl_diff = CONFIG_RTW_ADAPTIVITY_TH_EDCCA_HL_DIFF;
 module_param(rtw_adaptivity_th_edcca_hl_diff, int, 0644);
 MODULE_PARM_DESC(rtw_adaptivity_th_edcca_hl_diff, "th_edcca_hl_diff for Adaptivity");
 
+
+int rtw_adaptivity_idle_probability = 0;
+module_param(rtw_adaptivity_idle_probability, int, 0644);
+MODULE_PARM_DESC(rtw_adaptivity_idle_probability, "rtw_adaptivity_idle_probability");
+
 #ifdef CONFIG_DFS_MASTER
 uint rtw_dfs_region_domain = CONFIG_RTW_DFS_REGION_DOMAIN;
 module_param(rtw_dfs_region_domain, uint, 0644);
 MODULE_PARM_DESC(rtw_dfs_region_domain, "0:NONE, 1:FCC, 2:MKK, 3:ETSI");
 #endif
+
+#ifdef CONFIG_FW_IO_OFLD_SUPPORT
+uint rtw_fw_ofld_cap = 1;
+module_param(rtw_fw_ofld_cap, uint, 0644);
+#endif /*CONFIG_FW_IO_OFLD_SUPPORT*/
 
 uint rtw_amsdu_mode = RTW_AMSDU_MODE_NON_SPP;
 module_param(rtw_amsdu_mode, uint, 0644);
@@ -826,13 +850,16 @@ MODULE_PARM_DESC(rtw_phy_file_path, "The path of phy parameter");
 * BIT4 - RF_TXPWR_BY_RATE,		0: non-support, 1: support
 * BIT5 - RF_TXPWR_TRACK,		0: non-support, 1: support
 * BIT6 - RF_TXPWR_LMT,			0: non-support, 1: support
-* BIT7 - RF_TXPWR_LMT_RU,		0: non-support, 1: support*/
-int rtw_load_phy_file = (BIT1 | BIT3);
+* BIT7 - RF_TXPWR_LMT_RU,		0: non-support, 1: support
+* BIT8 - BB_PHY_REG_GAIN_FILE		0: non-support, 1: support
+*/
+int rtw_load_phy_file = (BIT1 | BIT3 | BIT4 | BIT6 | BIT7);
 module_param(rtw_load_phy_file, int, 0644);
 MODULE_PARM_DESC(rtw_load_phy_file, "PHY File Bit Map");
 int rtw_decrypt_phy_file = 0;
 module_param(rtw_decrypt_phy_file, int, 0644);
 MODULE_PARM_DESC(rtw_decrypt_phy_file, "Enable Decrypt PHY File");
+bool rtw_is_free_param_info = true;
 #endif
 
 
@@ -971,6 +998,16 @@ module_param(rtw_roch_min_home_dur, uint, 0644);
 module_param(rtw_roch_max_away_dur, uint, 0644);
 module_param(rtw_roch_extend_dur, uint, 0644);
 #endif
+
+#ifdef CONFIG_QUOTA_TURBO_ENABLE
+int rtw_quota_turbo_en = true;
+#else
+int rtw_quota_turbo_en = false;
+#endif
+module_param(rtw_quota_turbo_en, int, 0644);
+
+uint rtw_scan_pch_ex = 0;
+module_param(rtw_scan_pch_ex, uint, 0644);
 
 static void rtw_regsty_load_target_tx_power(struct registry_priv *regsty)
 {
@@ -1114,6 +1151,8 @@ static void rtw_load_phy_file_path (struct dvobj_priv *dvobj)
 	if (rtw_load_phy_file & LOAD_BB_PHY_REG_FILE) {
 		phl_com->phy_sw_cap[0].bb_phy_reg_info.para_src = RTW_PARA_SRC_EXTNAL;
 		phl_com->phy_sw_cap[1].bb_phy_reg_info.para_src = RTW_PARA_SRC_EXTNAL;
+		phl_com->phy_sw_cap[0].bb_phy_reg_info.hal_phy_folder = rtw_phy_file_path;
+		phl_com->phy_sw_cap[1].bb_phy_reg_info.hal_phy_folder = rtw_phy_file_path;
 	}
 
 	if (rtw_load_phy_file & LOAD_RF_RADIO_FILE) {
@@ -1121,26 +1160,45 @@ static void rtw_load_phy_file_path (struct dvobj_priv *dvobj)
 		phl_com->phy_sw_cap[1].rf_radio_a_info.para_src = RTW_PARA_SRC_EXTNAL;
 		phl_com->phy_sw_cap[0].rf_radio_b_info.para_src = RTW_PARA_SRC_EXTNAL;
 		phl_com->phy_sw_cap[1].rf_radio_b_info.para_src = RTW_PARA_SRC_EXTNAL;
+		phl_com->phy_sw_cap[0].rf_radio_a_info.hal_phy_folder = rtw_phy_file_path;
+		phl_com->phy_sw_cap[1].rf_radio_a_info.hal_phy_folder = rtw_phy_file_path;
+		phl_com->phy_sw_cap[0].rf_radio_b_info.hal_phy_folder = rtw_phy_file_path;
+		phl_com->phy_sw_cap[1].rf_radio_b_info.hal_phy_folder = rtw_phy_file_path;
 	}
 
 	if (rtw_load_phy_file & LOAD_RF_TXPWR_BY_RATE) {
 		phl_com->phy_sw_cap[0].rf_txpwr_byrate_info.para_src = RTW_PARA_SRC_EXTNAL;
 		phl_com->phy_sw_cap[1].rf_txpwr_byrate_info.para_src = RTW_PARA_SRC_EXTNAL;
+		phl_com->phy_sw_cap[0].rf_txpwr_byrate_info.hal_phy_folder = rtw_phy_file_path;
+		phl_com->phy_sw_cap[1].rf_txpwr_byrate_info.hal_phy_folder = rtw_phy_file_path;
 	}
 
 	if (rtw_load_phy_file & LOAD_RF_TXPWR_TRACK_FILE) {
 		phl_com->phy_sw_cap[0].rf_txpwrtrack_info.para_src = RTW_PARA_SRC_EXTNAL;
 		phl_com->phy_sw_cap[1].rf_txpwrtrack_info.para_src = RTW_PARA_SRC_EXTNAL;
+		phl_com->phy_sw_cap[0].rf_txpwrtrack_info.hal_phy_folder = rtw_phy_file_path;
+		phl_com->phy_sw_cap[1].rf_txpwrtrack_info.hal_phy_folder = rtw_phy_file_path;
 	}
 
 	if (rtw_load_phy_file & LOAD_RF_TXPWR_LMT_FILE) {
 		phl_com->phy_sw_cap[0].rf_txpwrlmt_info.para_src = RTW_PARA_SRC_EXTNAL;
 		phl_com->phy_sw_cap[1].rf_txpwrlmt_info.para_src = RTW_PARA_SRC_EXTNAL;
+		phl_com->phy_sw_cap[0].rf_txpwrlmt_info.hal_phy_folder = rtw_phy_file_path;
+		phl_com->phy_sw_cap[1].rf_txpwrlmt_info.hal_phy_folder = rtw_phy_file_path;
 	}
 
 	if (rtw_load_phy_file & LOAD_RF_TXPWR_LMT_RU_FILE) {
 		phl_com->phy_sw_cap[0].rf_txpwrlmt_ru_info.para_src = RTW_PARA_SRC_EXTNAL;
 		phl_com->phy_sw_cap[1].rf_txpwrlmt_ru_info.para_src = RTW_PARA_SRC_EXTNAL;
+		phl_com->phy_sw_cap[0].rf_txpwrlmt_ru_info.hal_phy_folder = rtw_phy_file_path;
+		phl_com->phy_sw_cap[1].rf_txpwrlmt_ru_info.hal_phy_folder = rtw_phy_file_path;
+	}
+
+	if (rtw_load_phy_file & LOAD_BB_PHY_REG_GAIN_FILE) {
+		phl_com->phy_sw_cap[0].bb_phy_reg_gain_info.para_src = RTW_PARA_SRC_EXTNAL;
+		phl_com->phy_sw_cap[1].bb_phy_reg_gain_info.para_src = RTW_PARA_SRC_EXTNAL;
+		phl_com->phy_sw_cap[0].bb_phy_reg_gain_info.hal_phy_folder = rtw_phy_file_path;
+		phl_com->phy_sw_cap[1].bb_phy_reg_gain_info.hal_phy_folder = rtw_phy_file_path;
 	}
 #endif/* CONFIG_LOAD_PHY_PARA_FROM_FILE */
 }
@@ -1148,10 +1206,17 @@ static void rtw_load_phy_file_path (struct dvobj_priv *dvobj)
 void rtw_core_update_default_setting (struct dvobj_priv *dvobj)
 {
 	struct rtw_phl_com_t *phl_com = GET_PHL_COM(dvobj);
+	u8 max_bw_mode = 0;
 
 	#ifdef CONFIG_LOAD_PHY_PARA_FROM_FILE
 	rtw_load_phy_file_path(dvobj);
+	phl_com->dev_sw_cap.bfree_para_info = rtw_is_free_param_info;
 	#endif /* CONFIG_LOAD_PHY_PARA_FROM_FILE */
+
+	if (is_supported_24g(rtw_band_type))
+		max_bw_mode = BW_MODE_2G(rtw_bw_mode);
+	if (is_supported_5g(rtw_band_type))
+		max_bw_mode = rtw_max(BW_MODE_5G(rtw_bw_mode), max_bw_mode);
 
 	phl_com->dev_sw_cap.fw_cap.dlram_en = true;
 	phl_com->dev_sw_cap.fw_cap.dlrom_en = false;
@@ -1163,15 +1228,17 @@ void rtw_core_update_default_setting (struct dvobj_priv *dvobj)
 
 	phl_com->phy_sw_cap[0].proto_sup = rtw_wireless_mode;
 	phl_com->phy_sw_cap[0].band_sup = rtw_band_type;
-	phl_com->phy_sw_cap[0].bw_sup = BW_CAP_80M | BW_CAP_40M | BW_CAP_20M; //rtw_bw_mode;
+	phl_com->phy_sw_cap[0].bw_sup = ch_width_to_bw_cap(max_bw_mode + 1) - 1; /* max supported bw */
 	phl_com->phy_sw_cap[0].txss = rtw_tx_nss;
 	phl_com->phy_sw_cap[0].rxss = rtw_rx_nss;
+	phl_com->phy_sw_cap[0].txagg_num = rtw_tx_ampdu_num;
 
 	phl_com->phy_sw_cap[1].proto_sup = rtw_wireless_mode;
 	phl_com->phy_sw_cap[1].band_sup = rtw_band_type;
-	phl_com->phy_sw_cap[1].bw_sup = rtw_bw_mode;
+	phl_com->phy_sw_cap[1].bw_sup = ch_width_to_bw_cap(max_bw_mode + 1) - 1; /* max supported bw */
 	phl_com->phy_sw_cap[1].txss = rtw_tx_nss;
 	phl_com->phy_sw_cap[1].rxss = rtw_rx_nss;
+	phl_com->phy_sw_cap[1].txagg_num = rtw_tx_ampdu_num;
 
 	phl_com->phy_sw_cap[0].hw_rts_time_th = 88;
 	phl_com->phy_sw_cap[0].hw_rts_len_th = 4080;
@@ -1193,8 +1260,13 @@ void rtw_core_update_default_setting (struct dvobj_priv *dvobj)
 	phl_com->proto_sw_cap[1].max_amsdu_len = rtw_max_amsdu_len;
 
 #if defined(CONFIG_PCI_HCI)
-	#if !defined(CONFIG_PCI_ASPM)
-	/* Disable all PCIE Backdoor to avoid PCIE IOT */
+	#if defined(CONFIG_PCI_ASPM)
+	phl_com->bus_sw_cap.l0s_ctrl = (rtw_pci_aspm_enable & BIT1) ? RTW_PCIE_BUS_FUNC_ENABLE : RTW_PCIE_BUS_FUNC_DISABLE;
+	phl_com->bus_sw_cap.l1_ctrl = (rtw_pci_aspm_enable & BIT2) ? RTW_PCIE_BUS_FUNC_ENABLE : RTW_PCIE_BUS_FUNC_DISABLE;
+	phl_com->bus_sw_cap.l1ss_ctrl = (rtw_pci_aspm_enable & BIT3) ? RTW_PCIE_BUS_FUNC_ENABLE : RTW_PCIE_BUS_FUNC_DISABLE;
+	phl_com->bus_sw_cap.wake_ctrl = RTW_PCIE_BUS_FUNC_DEFAULT;
+	phl_com->bus_sw_cap.crq_ctrl = (rtw_pci_aspm_enable & BIT0) ? RTW_PCIE_BUS_FUNC_ENABLE : RTW_PCIE_BUS_FUNC_DISABLE;
+	#else
 	phl_com->bus_sw_cap.l0s_ctrl = RTW_PCIE_BUS_FUNC_DISABLE;
 	phl_com->bus_sw_cap.l1_ctrl = RTW_PCIE_BUS_FUNC_DISABLE;
 	phl_com->bus_sw_cap.l1ss_ctrl = RTW_PCIE_BUS_FUNC_DISABLE;
@@ -1210,6 +1282,20 @@ void rtw_core_update_default_setting (struct dvobj_priv *dvobj)
 	phl_com->bus_sw_cap.rxbuf_num = 512;
 #endif
 	phl_com->bus_sw_cap.rpbuf_num = 0;	/* by default */
+
+#ifdef CONFIG_PCIE_TRX_MIT_DYN
+	phl_com->bus_sw_cap.mit_ctl.tx_timer = 0;
+	phl_com->bus_sw_cap.mit_ctl.tx_counter = 0;
+	phl_com->bus_sw_cap.mit_ctl.rx_timer = PCIE_RX_INT_MIT_TIMER;
+	phl_com->bus_sw_cap.mit_ctl.rx_counter = 0;
+	phl_com->bus_sw_cap.mit_ctl.fixed_mitigation = 0;
+#else
+	phl_com->bus_sw_cap.mit_ctl.tx_timer = 0;
+	phl_com->bus_sw_cap.mit_ctl.tx_counter = 0;
+	phl_com->bus_sw_cap.mit_ctl.rx_timer = 0;
+	phl_com->bus_sw_cap.mit_ctl.rx_counter = 0;
+	phl_com->bus_sw_cap.mit_ctl.fixed_mitigation = 0;
+#endif
 #endif /*CONFIG_PCI_HCI*/
 
 #ifdef CONFIG_BTC
@@ -1351,13 +1437,22 @@ void rtw_core_update_default_setting (struct dvobj_priv *dvobj)
 	/* If rf_board_opt is not assigned to specific value, it must be set to 0xFF as default. */
 	phl_com->dev_sw_cap.rf_board_opt = 0xFF;
 
+#ifdef CONFIG_POWER_SAVE
 #ifdef CONFIG_RTW_IPS
 	phl_com->dev_sw_cap.ps_cap.ips_en = rtw_ips_mode;
+#ifdef CONFIG_FWIPS
+	phl_com->dev_sw_cap.ps_cap.ips_cap = rtw_ips_cap;
+#endif /* CONFIG_FWIPS */
 #endif
 #ifdef CONFIG_RTW_LPS
 	phl_com->dev_sw_cap.ps_cap.lps_en = rtw_lps_mode;
 	phl_com->dev_sw_cap.ps_cap.lps_cap = rtw_lps_cap;
 #endif
+
+	phl_com->dev_sw_cap.ps_cap.lps_wow_en = PS_OP_MODE_FORCE_ENABLED;
+	phl_com->dev_sw_cap.ps_cap.lps_wow_cap =
+		PS_CAP_PWRON | PS_CAP_RF_OFF | PS_CAP_CLK_GATED | PS_CAP_PWR_GATED;
+#endif /* CONFIG_POWER_SAVE */
 
 #ifdef CONFIG_RTW_LED
 	rtw_phl_led_set_ctrl_mode(GET_PHL_INFO(dvobj), 0, RTW_LED_CTRL_HW_TX_MODE);
@@ -1368,6 +1463,11 @@ void rtw_core_update_default_setting (struct dvobj_priv *dvobj)
 #else
 	phl_com->dev_sw_cap.rpq_agg_num = 0; /* MAC default num: 121 for all IC */
 #endif
+	#ifdef CONFIG_FW_IO_OFLD_SUPPORT
+	phl_com->dev_sw_cap.fw_cap.offload_cap = rtw_fw_ofld_cap;
+	#endif
+
+	phl_com->dev_sw_cap.quota_turbo = rtw_quota_turbo_en;
 }
 
 u8 rtw_load_dvobj_registry(struct dvobj_priv *dvobj)
@@ -1413,6 +1513,18 @@ uint rtw_load_registry(_adapter *padapter)
 		 && (registry_par->channel <= 14))
 		registry_par->channel = 36;
 
+	registry_par->adaptivity_en = (u8)rtw_adaptivity_en;
+	registry_par->adaptivity_mode = (u8)rtw_adaptivity_mode;
+	registry_par->adaptivity_th_l2h_ini = (s8)rtw_adaptivity_th_l2h_ini;
+	registry_par->adaptivity_th_edcca_hl_diff = (s8)rtw_adaptivity_th_edcca_hl_diff;
+	registry_par->adaptivity_idle_probability = (u8)rtw_adaptivity_idle_probability;
+
+	if (registry_par->adaptivity_idle_probability == 1) {
+		rtw_vrtl_carrier_sense = DISABLE_VCS;
+		rtw_vcs_type = NONE_VCS;
+		rtw_hw_rts_en = 0;
+	}
+
 	registry_par->vrtl_carrier_sense = (u8)rtw_vrtl_carrier_sense ;
 	registry_par->vcs_type = (u8)rtw_vcs_type;
 	registry_par->rts_thresh = (u16)rtw_rts_thresh;
@@ -1427,12 +1539,12 @@ uint rtw_load_registry(_adapter *padapter)
 	registry_par->tdmadig_mode = (u8)rtw_tdmadig_mode;
 	registry_par->tdmadig_dynamic = (u8) rtw_dynamic_tdmadig;
 	registry_par->power_mgnt = PM_PS_MODE_ACTIVE;
-	registry_par->ips_mode = IPS_NONE;
 	#else
 	registry_par->power_mgnt = (u8)rtw_power_mgnt;
-	registry_par->ips_mode = (u8)rtw_ips_mode;
 	#endif/*CONFIG_TDMADIG*/
 	registry_par->lps_level = (u8)rtw_lps_level;
+	registry_par->ips_mode = (u8)rtw_ips_mode;
+	registry_par->lps_mode = (u8)rtw_lps_mode;
 	registry_par->en_dyn_rrsr = (u8)rtw_en_dyn_rrsr;
 	registry_par->set_rrsr_value = (u32)rtw_rrsr_value;
 #ifdef CONFIG_LPS_1T1R
@@ -1495,6 +1607,7 @@ uint rtw_load_registry(_adapter *padapter)
 #endif
 #endif
 		registry_par->tx_ampdu_amsdu = (u8)rtw_tx_ampdu_amsdu;
+		registry_par->tx_ampdu_num = (u8)rtw_tx_ampdu_num;
 		registry_par->tx_quick_addba_req = (u8)rtw_quick_addba_req;
 		registry_par->short_gi = (u8)rtw_short_gi;
 		registry_par->ldpc_cap = (u8)rtw_ldpc_cap;
@@ -1643,11 +1756,6 @@ int rtw_stbc_cap = 0x13;
 
 	registry_par->hiq_filter = (u8)rtw_hiq_filter;
 
-	registry_par->adaptivity_en = (u8)rtw_adaptivity_en;
-	registry_par->adaptivity_mode = (u8)rtw_adaptivity_mode;
-	registry_par->adaptivity_th_l2h_ini = (s8)rtw_adaptivity_th_l2h_ini;
-	registry_par->adaptivity_th_edcca_hl_diff = (s8)rtw_adaptivity_th_edcca_hl_diff;
-
 	registry_par->boffefusemask = (u8)rtw_OffEfuseMask;
 	registry_par->bFileMaskEfuse = (u8)rtw_FileMaskEfuse;
 	registry_par->bBTFileMaskEfuse = (u8)rtw_FileMaskEfuse;
@@ -1754,6 +1862,7 @@ int rtw_stbc_cap = 0x13;
 	ATOMIC_SET(&registry_par->set_hide_ssid_timer, 0);
 #endif
 	registry_par->amsdu_mode = (u8)rtw_amsdu_mode;
+	registry_par->scan_pch_ex_time = (u16)rtw_scan_pch_ex;
 	return status;
 }
 
@@ -1792,8 +1901,10 @@ static void rtw_cfg_adaptivity_mode_msg(void *sel, _adapter *adapter)
 
 void rtw_cfg_adaptivity_config_msg(void *sel, _adapter *adapter)
 {
+	struct registry_priv *regsty = &adapter->registrypriv;
 	rtw_cfg_adaptivity_en_msg(sel, adapter);
 	rtw_cfg_adaptivity_mode_msg(sel, adapter);
+	_RTW_PRINT_SEL(sel, "adaptivity_idle_probability = %u\n", regsty->adaptivity_idle_probability);
 }
 
 bool rtw_cfg_adaptivity_needed(_adapter *adapter)

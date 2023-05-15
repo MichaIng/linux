@@ -292,7 +292,7 @@ bool halrf_sel_headline_8852b(struct rf_info *rf, u32 *array, u32 array_len,
 		rfe_para = (array[i] & 0x00ff0000) >> 16; 
 		cv_para = array[i] & 0x0ff;
 		if (rfe_para == rfe_drv) {
-			if (cv_para > cv_max) {
+			if (cv_para >= cv_max) {
 				cv_max = cv_para;
 				*headline_idx = (u8)(i >> 1);
 				RF_DBG(rf, DBG_RF_INIT, "cv_max:%d\n", cv_max);
