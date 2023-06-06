@@ -189,16 +189,6 @@
 		};
 	};
 
-	csi_pins: csi-pins {
-		csi-pins-pwdn {
-			starfive,pins = <PAD_GPIO18>;
-			starfive,pinmux = <PAD_GPIO18_FUNC_SEL 0>;
-			starfive,pin-ioconfig = <IO(GPIO_IE(1))>;
-			starfive,pin-gpio-dout = <GPO_HIGH>;
-			starfive,pin-gpio-doen = <OEN_LOW>;
-		};
-	};
-
 	pwmdac0_pins: pwmdac0-pins {
 		pwmdac0-pins-left {
 			starfive,pins = <PAD_GPIO33>;
@@ -466,6 +456,22 @@
 				regulator-min-microvolt = <1800000>;
 				regulator-max-microvolt = <1800000>;
 			};
+			sdio_vdd: ALDO4 {
+					regulator-boot-on;
+					regulator-always-on;
+					regulator-compatible = "sdio_vdd";
+					regulator-name = "sdio_vdd";
+					regulator-min-microvolt = <1800000>;
+					regulator-max-microvolt = <1800000>;
+			};
+			vcc_3v3: DCDC1 {
+					regulator-boot-on;
+					regulator-always-on;
+					regulator-compatible = "vcc_3v3";
+					regulator-name = "vcc_3v3";
+					regulator-min-microvolt = <3300000>;
+					regulator-max-microvolt = <3300000>;
+			};
 			cpu_vdd: DCDC2 {
 				regulator-boot-on;
 				regulator-always-on;
@@ -553,7 +559,11 @@
 	#address-cells = <1>;
 	#size-cells = <0>;
 	phy0: ethernet-phy@0 {
-		rxc_dly_en = <1>;
+		rgmii_sw_dr_2 = <0x0>;
+		rgmii_sw_dr = <0x3>;
+		rgmii_sw_dr_rxc = <0x6>;
+		rxc_dly_en = <0>;
+		rx_delay_sel = <0xa>;
 		tx_delay_sel_fe = <5>;
 		tx_delay_sel = <0xa>;
 		tx_inverted_10 = <0x1>;
@@ -567,9 +577,13 @@
 	#size-cells = <0>;
 	status = "okay";
 	phy1: ethernet-phy@1 {
+		rgmii_sw_dr_2 = <0x0>;
+		rgmii_sw_dr = <0x3>;
+		rgmii_sw_dr_rxc = <0x6>;
 		tx_delay_sel_fe = <5>;
 		tx_delay_sel = <0>;
 		rxc_dly_en = <0>;
+		rx_delay_sel = <0x2>;
 		tx_inverted_10 = <0x1>;
 		tx_inverted_100 = <0x1>;
 		tx_inverted_1000 = <0x0>;
@@ -618,11 +632,10 @@
 
 
 &pcie1 {
-	pinctrl-names = "default", "perst-default", "perst-active";
+	pinctrl-names = "default";
 	pinctrl-0 = <&pcie1_wake_default>,
 		    <&pcie1_clkreq_default>;
-	pinctrl-1 = <&pcie1_perst_default>;
-	pinctrl-2 = <&pcie1_perst_active>;
+	reset-gpios = <&gpio 28 GPIO_ACTIVE_LOW>;
 	status = "okay";
 };
 
