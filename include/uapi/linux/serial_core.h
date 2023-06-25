@@ -277,4 +277,6 @@
 /* Freescale LINFlexD UART */
 #define PORT_LINFLEXUART	122
 
+#define PORT_16550A_AFE	124
+
 #endif /* _UAPILINUX_SERIAL_CORE_H */
