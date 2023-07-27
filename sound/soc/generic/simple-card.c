@@ -313,6 +313,12 @@ static int simple_dai_link_of(struct asoc_simple_priv *priv,
 	if (ret < 0)
 		goto dai_link_of_err;
 
+	if (!plat) {
+		dai_link->no_plat = 1;
+	} else {
+		dai_link->no_plat = 0;
+	}
+
 	ret = asoc_simple_parse_platform(plat, platforms);
 	if (ret < 0)
 		goto dai_link_of_err;
