@@ -8,9 +8,7 @@
 #include <linux/module.h>
 #include <linux/i2c.h>
 #include <linux/power_supply.h>
-#include <linux/power/bq25890_charger.h>
 #include <linux/regmap.h>
-#include <linux/regulator/driver.h>
 #include <linux/types.h>
 #include <linux/gpio/consumer.h>
 #include <linux/interrupt.h>
@@ -1015,75 +1013,6 @@ static int bq25890_usb_notifier(struct notifier_block *nb, unsigned long val,
 	return NOTIFY_OK;
 }
 
-#ifdef CONFIG_REGULATOR
-static int bq25890_vbus_enable(struct regulator_dev *rdev)
-{
-	struct bq25890_device *bq = rdev_get_drvdata(rdev);
-
-	return bq25890_set_otg_cfg(bq, 1);
-}
-
-static int bq25890_vbus_disable(struct regulator_dev *rdev)
-{
-	struct bq25890_device *bq = rdev_get_drvdata(rdev);
-
-	return bq25890_set_otg_cfg(bq, 0);
-}
-
-static int bq25890_vbus_is_enabled(struct regulator_dev *rdev)
-{
-	struct bq25890_device *bq = rdev_get_drvdata(rdev);
-
-	return bq25890_field_read(bq, F_OTG_CFG);
-}
-
-static const struct regulator_ops bq25890_vbus_ops = {
-	.enable = bq25890_vbus_enable,
-	.disable = bq25890_vbus_disable,
-	.is_enabled = bq25890_vbus_is_enabled,
-};
-
-static const struct regulator_desc bq25890_vbus_desc = {
-	.name = "usb_otg_vbus",
-	.of_match = "usb-otg-vbus",
-	.type = REGULATOR_VOLTAGE,
-	.owner = THIS_MODULE,
-	.ops = &bq25890_vbus_ops,
-	.fixed_uV = 5000000,
-	.n_voltages = 1,
-};
-
-static int bq25890_register_regulator(struct bq25890_device *bq)
-{
-	struct bq25890_platform_data *pdata = dev_get_platdata(bq->dev);
-	struct regulator_config cfg = {
-		.dev = bq->dev,
-		.driver_data = bq,
-	};
-	struct regulator_dev *reg;
-
-	if (!IS_ERR_OR_NULL(bq->usb_phy))
-		return 0;
-
-	if (pdata)
-		cfg.init_data = pdata->regulator_init_data;
-
-	reg = devm_regulator_register(bq->dev, &bq25890_vbus_desc, &cfg);
-	if (IS_ERR(reg)) {
-		return dev_err_probe(bq->dev, PTR_ERR(reg),
-				     "registering vbus regulator");
-	}
-
-	return 0;
-}
-#else
-static inline int
-bq25890_register_regulator(struct bq25890_device *bq)
-{
-	return 0;
-}
-#endif
-
 static int bq25890_get_chip_version(struct bq25890_device *bq)
 {
 	int id, rev;
@@ -1337,28 +1266,6 @@ static void bq25890_remove(struct i2c_client *client)
 	}
 }
 
-static void bq25890_shutdown(struct i2c_client *client)
-{
-	struct bq25890_device *bq = i2c_get_clientdata(client);
-
-	/*
-	 * TODO this if + return should probably be removed, but that would
-	 * introduce a function change for boards using the usb-phy framework.
-	 * This needs to be tested on such a board before making this change.
-	 */
-	if (!IS_ERR_OR_NULL(bq->usb_phy))
-		return;
-
-	/*
-	 * Turn off the 5v Boost regulator which outputs Vbus to the device's
-	 * Micro-USB or Type-C USB port. Leaving this on drains power and
-	 * this avoids the PMIC on some device-models seeing this as Vbus
-	 * getting inserted after shutdown, causing the device to immediately
-	 * power-up again.
-	 */
-	bq25890_set_otg_cfg(bq, 0);
-}
-
 #ifdef CONFIG_PM_SLEEP
 static int bq25890_suspend(struct device *dev)
 {
@@ -1438,7 +1345,6 @@ static struct i2c_driver bq25890_driver = {
 	},
 	.probe_new = bq25890_probe,
 	.remove = bq25890_remove,
-	.shutdown = bq25890_shutdown,
 	.id_table = bq25890_i2c_ids,
 };
 module_i2c_driver(bq25890_driver);
