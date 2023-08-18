@@ -123,4 +123,10 @@
 		#clock-cells = <0>;
 		clock-frequency = <24576000>;
 	};
+
+	es8316_mclk: es8316_mclk {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <12288000>;
+	};
 };
