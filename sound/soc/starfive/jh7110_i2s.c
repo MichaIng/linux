@@ -390,6 +390,16 @@ static int dw_i2s_hw_params(struct snd_pcm_substream *substream,
 			dev->capture_dma_data.dt.addr_width = DMA_SLAVE_BUSWIDTH_2_BYTES;
 		break;
 
+	case SNDRV_PCM_FORMAT_S24_LE:
+		config->data_width = 24;
+		dev->ccr = 0x08;
+		dev->xfer_resolution = 0x04;
+		if (playback)
+			dev->play_dma_data.dt.addr_width = DMA_SLAVE_BUSWIDTH_4_BYTES;
+		else
+			dev->capture_dma_data.dt.addr_width = DMA_SLAVE_BUSWIDTH_4_BYTES;		
+		break;
+
 	case SNDRV_PCM_FORMAT_S32_LE:
 		config->data_width = 32;
 		dev->ccr = 0x10;
@@ -401,7 +411,7 @@ static int dw_i2s_hw_params(struct snd_pcm_substream *substream,
 		break;
 
 	default:
-		dev_err(dev->dev, "designware-i2s: unsupported PCM fmt");
+		dev_err(dev->dev, "designware-i2s: unsupported PCM fmt %d", params_format(params));
 		return -EINVAL;
 	}
 
@@ -437,7 +447,7 @@ static int dw_i2s_hw_params(struct snd_pcm_substream *substream,
 	case TWO_CHANNEL_SUPPORT:
 		break;
 	default:
-		dev_err(dev->dev, "channel not supported\n");
+		dev_err(dev->dev, "channel not supported %d\n", config->chan_nr);
 		return -EINVAL;
 	}
 
