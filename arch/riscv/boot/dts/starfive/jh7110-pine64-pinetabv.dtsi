@@ -62,20 +62,19 @@
 			reusable;
 			size = <0x0 0x20000000>;
 			alignment = <0x0 0x1000>;
-			alloc-ranges = <0x0 0x80000000 0x0 0x20000000>;
+			alloc-ranges = <0x0 0x70000000 0x0 0x20000000>;
 			linux,cma-default;
 		};
 
 		e24_mem: e24@c0000000 {
-			no-map;
-			reg = <0x0 0xc0110000 0x0 0xf0000>;
+			reg = <0x0 0x6ce00000 0x0 0x1600000>;
 		};
 
 		xrp_reserved: xrpbuffer@f0000000 {
-			reg = <0x0 0xf0000000 0x0 0x01ffffff
-				0x0 0xf2000000 0x0 0x00001000
-				0x0 0xf2001000 0x0 0x00fff000
-				0x0 0xf3000000 0x0 0x00001000>;
+			reg = <0x0 0x69c00000 0x0 0x01ffffff
+				0x0 0x6bc00000 0x0 0x00001000
+				0x0 0x6bc01000 0x0 0x00fff000
+				0x0 0x6cc00000 0x0 0x00001000>;
 		};
 
 	};
@@ -728,9 +727,12 @@
 
 &sdio0 {
 	max-frequency = <100000000>;
+	assigned-clocks = <&clkgen JH7110_SDIO0_CLK_SDCARD>;
+	assigned-clock-rates = <50000000>;
 	card-detect-delay = <300>;
 	bus-width = <8>;
 	cap-mmc-highspeed;
+	mmc-hs200-1_8v;
 	non-removable;
 	cap-mmc-hw-reset;
 	post-power-on-delay-ms = <200>;
@@ -741,11 +743,13 @@
 
 &sdio1 {
 	max-frequency = <100000000>;
+	assigned-clocks = <&clkgen JH7110_SDIO1_CLK_SDCARD>;
+	assigned-clock-rates = <50000000>;
 	card-detect-delay = <300>;
 	bus-width = <4>;
+	cap-sd-highspeed;
 	no-sdio;
 	no-mmc;
-	cap-sd-highspeed;
 	post-power-on-delay-ms = <200>;
 	status = "okay";
 	cd-gpios = <&gpio 41 GPIO_ACTIVE_LOW>;
@@ -964,6 +968,7 @@
 };
 
 &co_process {
+	memory-region = <&e24_mem>;	
 	status = "okay";
 };
 
@@ -989,6 +994,7 @@
 };
 
 &xrp {
+	memory-region = <&xrp_reserved>;	
 	status = "okay";
 };
 
