@@ -1567,7 +1567,6 @@ static void rwnx_set_wiphy_params(struct rwnx_hw *rwnx_hw, struct wiphy *wiphy)
                "\n\n%s: CAUTION: USING PERMISSIVE CUSTOM REGULATORY RULES\n\n",
                __func__);
         wiphy->regulatory_flags |= REGULATORY_CUSTOM_REG;
-        wiphy->regulatory_flags |= REGULATORY_IGNORE_STALE_KICKOFF;
         wiphy_apply_custom_regulatory(wiphy, regdomain);
 #elif (LINUX_VERSION_CODE < KERNEL_VERSION(3, 14, 0))
         memcpy(country_code, default_ccode, sizeof(default_ccode));
@@ -1729,7 +1728,6 @@ void rwnx_custregd(struct rwnx_hw *rwnx_hw, struct wiphy *wiphy)
 // registration (in rwnx_set_wiphy_params()), so nothing has to be done here
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 0, 0)
-    wiphy->regulatory_flags |= REGULATORY_IGNORE_STALE_KICKOFF;
     wiphy->regulatory_flags |= REGULATORY_WIPHY_SELF_MANAGED;
 
     if (!rwnx_hw->mod_params->custregd)
