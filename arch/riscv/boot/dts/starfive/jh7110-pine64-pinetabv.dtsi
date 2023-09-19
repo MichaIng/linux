@@ -526,23 +526,6 @@
 	auto_calc_scl_lhcnt;
 	status = "okay";
 
-	panel_radxa@19 {
-		status = "okay";
-		compatible ="starfive_jadard";
-		reg = <0x19>;
-		//reset-gpio = <&gpio 23 0>;
-		//blen-gpio = <&gpio 45 0>;
-		enable-gpio = <&gpio 37 0>;
-		backlight = <&backlight>;
-		rotation = <90>;
-
-		port {
-			panel_out1: endpoint {
-				remote-endpoint = <&dsi1_output>;
-				};
-		};
-	};
-
 	touchscreen@14 {
 		status = "okay";
 		compatible = "goodix,gt911";
@@ -659,9 +642,6 @@
     };  
 
 };
-
-
-
 
 &i2c6 {
 	clock-frequency = <100000>;
@@ -958,6 +938,23 @@
 		};
 
 	};
+
+	panel: panel {
+		status = "okay";
+		compatible ="boe,th101mb31ig002-28a";
+		reg = <0x0>;
+		enable-gpio = <&gpio 37 GPIO_ACTIVE_HIGH>;
+		backlight = <&backlight>;
+		rotation = <90>;
+		power-supply = <&vcc_3v3>;
+
+		port {
+			panel_out1: endpoint {
+				remote-endpoint = <&dsi1_output>;
+			};
+		};
+	};
+
 };
 
 &mipi_dphy {
