@@ -11,6 +11,8 @@
 #include "stf_isp_ioctl.h"
 #include "stf_dmabuf.h"
 
+MODULE_IMPORT_NS(DMA_BUF);
+
 #define TOTAL_SIZE_LIMIT      (64 * 1024 * 1024)
 
 static size_t total_size;
