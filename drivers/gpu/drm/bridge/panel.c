@@ -90,6 +90,8 @@ static int panel_bridge_attach(struct drm_bridge *bridge,
 		drm_connector_register(connector);
 	}
 
+	drm_panel_bridge_set_orientation(connector, bridge);
+
 	return 0;
 }
 
