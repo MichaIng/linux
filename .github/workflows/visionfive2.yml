@@ -24,7 +24,7 @@ jobs:
         sudo DEBIAN_FRONTEND=noninteractive apt-get --no-install-recommends -qq dist-upgrade
         sudo DEBIAN_FRONTEND=noninteractive apt-get --no-install-recommends -qq install make gcc libc6-dev flex bison gcc-riscv64-linux-gnu bc libssl-dev
         rm -Rf linux-image-visionfive2
-        mkdir -p linux-image-visionfive2/DEBIAN linux-image-visionfive2/boot/extlinux #linux-image-visionfive2/lib/firmware
+        mkdir -p linux-image-visionfive2/DEBIAN linux-image-visionfive2/boot/extlinux linux-image-visionfive2/lib/firmware
     - name: Build Linux
       run: |
         > .scmversion # Avoid Git commit version suffix
@@ -36,7 +36,7 @@ jobs:
         find linux-image-visionfive2/usr/lib/linux-image-visionfive2 -mindepth 1 -regextype egrep \( ! -regex '.*/(starfive|vf2-overlay.*|jh7110-visionfive-v2.*\.dtb)' -o -regex '.*/jh7110-visionfive-v2-A1[01].dtb' \) -exec rm -Rf {} +
         make modules_install INSTALL_MOD_PATH='linux-image-visionfive2'
         rm linux-image-visionfive2/lib/modules/*/build linux-image-visionfive2/lib/modules/*/source
-        #curl -sSfo linux-image-visionfive2/lib/firmware/ECR6600U_transport.bin 'https://raw.githubusercontent.com/starfive-tech/buildroot/JH7110_VisionFive2_devel/package/starfive/usb_wifi/ECR6600U_transport.bin'
+        curl -sSfo linux-image-visionfive2/lib/firmware/ECR6600U_transport.bin 'https://raw.githubusercontent.com/starfive-tech/buildroot/JH7110_VisionFive2_devel/package/starfive/usb_wifi/ECR6600U_transport.bin'
         find linux-image-visionfive2 -type f -exec chmod 0644 {} +
         find linux-image-visionfive2 -type d -exec chmod 0755 {} +
     - name: Build package
