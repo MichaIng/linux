@@ -98,7 +98,6 @@ jobs:
         umask 377
         echo '${{ secrets.KNOWN_HOSTS }}' > ~/.ssh/known_hosts
         echo '${{ secrets.SSH_KEY }}' > ~/.ssh/id_ed25519
-        mv linux-image-visionfive2.deb linux-image-visionfive2_6.1.deb
-        curl -T 'linux-image-visionfive2_6.1.deb' --key ~/.ssh/id_ed25519 '${{ secrets.UPLOAD_URL }}all/'
+        curl -T 'linux-image-visionfive2.deb' --key ~/.ssh/id_ed25519 '${{ secrets.UPLOAD_URL }}all/'
         curl 'https://api.cloudflare.com/client/v4/zones/${{ secrets.CF_ZONE }}/purge_cache' -H 'Authorization: Bearer ${{ secrets.CF_TOKEN }}' -H 'Content-Type: application/json' \
         --data '{"files":["https://dietpi.com/downloads/binaries/testing/","https://dietpi.com/downloads/binaries/testing/linux-image-visionfive2.deb"]}'
