@@ -1,0 +1,5 @@
+#!/bin/dash
+set -e
+export DEB_MAINT_PARAMS=$* INITRD=Yes
+[ -d '/etc/kernel/preinst.d' ] && run-parts --arg='VERSION' --arg='VERSION' /etc/kernel/preinst.d
+exit 0

@@ -1,0 +1,5 @@
+#!/bin/dash
+set -e
+export DEB_MAINT_PARAMS=$* INITRD=Yes
+[ -d '/etc/kernel/postrm.d' ] && run-parts --arg='VERSION' --arg='VERSION' /etc/kernel/postrm.d
+exit 0
