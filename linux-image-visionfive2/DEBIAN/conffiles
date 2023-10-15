@@ -1,0 +1,3 @@
+/boot/extlinux/extlinux.conf
+/etc/fw_env.config
+/etc/u-boot-initial-env
