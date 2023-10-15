@@ -1,0 +1,6 @@
+#!/bin/dash
+set -e
+export DEB_MAINT_PARAMS=$* INITRD=Yes
+[ -d '/etc/kernel/postinst.d' ] && run-parts --arg='VERSION' --arg='VERSION' /etc/kernel/postinst.d
+sed -Ei '/^[[:blank:]]*(linux|kernel)/c\linux /boot/vmlinuz-VERSION' /boot/extlinux/extlinux.conf
+exit 0
