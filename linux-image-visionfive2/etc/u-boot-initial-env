@@ -6,14 +6,11 @@ ramdisk_addr_r=0x46100000
 fdtoverlay_addr_r=0x4f000000
 kernel_comp_addr_r=0x5a000000
 kernel_comp_size=0x4000000
-uboot_fdt_addr=0xf7facc50
 fdt_high=0xffffffffffffffff
 initrd_high=0xffffffffffffffff
 
-memory_addr=40000000
-fdtcontroladdr=f7facc50
-
 boot_prefixes=/ /boot/
+bootenv=uEnv.txt
 boot_scripts=boot.scr.uimg boot.scr
 efi_dtb_prefixes=/ /dtb/ /dtb/current/
 fdtfile=starfive/jh7110-visionfive-v2.dtb
@@ -24,11 +21,37 @@ chipa_set_uboot=fdt addr "${uboot_fdt_addr}"; run chipa_set
 chipa_set=if test "${chip_vision}" = A; then echo 'VisionFive 2 revision A detected, updating device tree for Ethernet access ...'; run chipa_gmac_set; fi
 chipa_gmac_set=fdt set /soc/ethernet@16030000/ethernet-phy@0 tx_inverted_10 <0x0>; fdt set /soc/ethernet@16030000/ethernet-phy@0 tx_inverted_100 <0x0>; fdt set /soc/ethernet@16030000/ethernet-phy@0 tx_inverted_1000 <0x0>; fdt set /soc/ethernet@16030000/ethernet-phy@0 tx_delay_sel <0x9>; fdt set /soc/ethernet@16040000/ethernet-phy@1 tx_inverted_10 <0x0>; fdt set /soc/ethernet@16040000/ethernet-phy@1 tx_inverted_100 <0x0>; fdt set /soc/ethernet@16040000/ethernet-phy@1 tx_inverted_1000 <0x0>; fdt set /soc/ethernet@16040000/ethernet-phy@1 tx_delay_sel <0x9>
 
-bootcmd=setenv devnum; run fdt_rewrite; run distro_bootcmd
-fdt_rewrite=for bootdev in mmc nvme; do if test "${bootdev}" = 'mmc'; then for devnum in 0 1; do run fdt_loaddtb; done; else devnum=0; pci enum; nvme scan; run fdt_loaddtb; fi; done
-fdt_loaddtb=echo "Trying to load device tree from ${bootdev}${devnum} partition 3 ..."; if fatload "${bootdev}" "${devnum}:3" "${fdt_addr_r}" "/dtbs/${fdtfile}"; then fdt addr "${fdt_addr_r}"; run fdt_sizecheck; run set_fdt_distro; fi
-fdt_sizecheck=fatsize "${bootdev}" "${devnum}:3" "/dtbs/${fdtfile}"
-set_fdt_distro=echo "Updating device tree /dtbs/${fdtfile} on ${bootdev}${devnum} partition 3 ..."; run chipa_set_linux; run cpu_vol_set; fatwrite "${bootdev}" "${devnum}:3" "${fdt_addr_r}" "/dtbs/${fdtfile}" "${filesize}"
+bootcmd=setenv devnum; for target in "${boot_targets}"; do echo "Trying to boot from ${target} ..."; run "bootcmd_${target}"; done
+
+boot_targets=mmc1 usb0 nvme0 mmc0 dhcp
+bootcmd_mmc1=devnum=1; run mmc_boot
+bootcmd_usb0=devnum=0; run usb_boot
+bootcmd_nvme0=devnum=0; run nvme_boot
+bootcmd_mmc0=devnum=0; run mmc_boot
+bootcmd_dhcp=devtype=dhcp; usb start; pci enum; if dhcp "${scriptaddr}" boot.scr.uimg; then source "${scriptaddr}"; fi; setenv efi_fdtfile "${fdtfile}"; setenv efi_old_vci "${bootp_vci}"; setenv efi_old_arch "${bootp_arch}"; setenv bootp_vci 'PXEClient:Arch:00027:UNDI:003000'; setenv bootp_arch '0x1b'; if dhcp "${kernel_addr_r}"; then tftpboot "${fdt_addr_r}" "dtb/${efi_fdtfile}"; if fdt addr "${fdt_addr_r}"; then bootefi "${kernel_addr_r}" "${fdt_addr_r}"; else bootefi "${kernel_addr_r}" "${fdtcontroladdr}"; fi; fi; setenv bootp_vci "${efi_old_vci}"; setenv bootp_arch "${efi_old_arch}"; setenv efi_fdtfile; setenv efi_old_arch; setenv efi_old_vci
+
+mmc_boot=if mmc dev "${devnum}"; then devtype=mmc; run scan_dev_for_boot_part; fi
+usb_boot=pci enum; usb reset; usb start; if usb dev "${devnum}"; then devtype=usb; run scan_dev_for_boot_part; fi
+nvme_boot=pci enum; nvme scan; if nvme dev "${devnum}"; then devtype=nvme; run scan_dev_for_boot_part; fi
+
+scan_dev_for_boot_part=part list "${devtype}" "${devnum}" -bootable devplist; env exists devplist || setenv devplist 1; for bootpart in ${devplist}; do if fstype "${devtype}" "${devnum}:${bootpart}" bootfstype; then run scan_dev_for_boot; fi; done; setenv devplist
+scan_dev_for_boot=echo "Scanning ${devtype} ${devnum}:${bootpart} ..."; for prefix in ${boot_prefixes}; do run scan_dev_for_uenv; run starfive_fdt_rewrite; run scan_dev_for_extlinux; run scan_dev_for_scripts; done; run scan_dev_for_efi
+scan_dev_for_uenv=if test -e "${devtype}" "${devnum}:${bootpart}" "${prefix}${bootenv}"; then echo "Found U-Boot environment file ${prefix}${bootenv}"; run load_uenv; fi
+scan_dev_for_extlinux=if test -e "${devtype}" "${devnum}:${bootpart}" "${prefix}extlinux/extlinux.conf"; then echo "Found ${prefix}extlinux/extlinux.conf"; run boot_extlinux; echo 'SCRIPT FAILED: continuing ...'; fi
+scan_dev_for_scripts=for script in ${boot_scripts}; do if test -e "${devtype}" "${devnum}:${bootpart}" "${prefix}${script}"; then echo "Found U-Boot script ${prefix}${script}"; run boot_a_script; echo 'SCRIPT FAILED: continuing ...'; fi; done
+scan_dev_for_efi=setenv efi_fdtfile "${fdtfile}"; for prefix in "${efi_dtb_prefixes}"; do if test -e "${devtype}" "${devnum}:${bootpart}" "${prefix}${efi_fdtfile}"; then run load_efi_dtb; fi; done; run boot_efi_bootmgr; if test -e "${devtype}" "${devnum}:${bootpart}" efi/boot/bootriscv64.efi; then echo 'Found EFI removable media binary efi/boot/bootriscv64.efi'; run boot_efi_binary; echo 'EFI LOAD FAILED: continuing ...'; fi; setenv efi_fdtfile
+
+load_uenv=if load "${devtype}" "${devnum}:${bootpart}" "${scriptaddr}" "${prefix}${bootenv}"; then env import -t "${scriptaddr}" "${filesize}" || echo "Importing U-Boot environment from RAM address ${scriptaddr} failed: continuing ..."; else echo "Loading U-Boot environment file ${prefix}${bootenv} into RAM failed: continuing ..."; fi
+boot_extlinux=sysboot "${devtype}" "${devnum}:${bootpart}" any "${scriptaddr}" "${prefix}extlinux/extlinux.conf"
+boot_a_script=load "${devtype}" "${devnum}:${bootpart}" "${scriptaddr}" "${prefix}${script}"; source "${scriptaddr}"
+load_efi_dtb=load "${devtype}" "${devnum}:${bootpart}" "${fdt_addr_r}" "${prefix}${efi_fdtfile}"
+boot_efi_bootmgr=if fdt addr "${fdt_addr_r}"; then bootefi bootmgr "${fdt_addr_r}"; else bootefi bootmgr; fi
+boot_efi_binary=load "${devtype}" "${devnum}:${bootpart}" "${kernel_addr_r}" efi/boot/bootriscv64.efi; if fdt addr "${fdt_addr_r}"; then bootefi "${kernel_addr_r}" "${fdt_addr_r}"; else bootefi "${kernel_addr_r}" "${fdtcontroladdr}"; fi
+
+starfive_fdt_rewrite=if test "${bootpart}" = 3 && test "${prefix}" = '/' && test -e "${devtype}" "${devnum}:${bootpart}" "${prefix}dtbs/${fdtfile}"; then run fdt_loaddtb; fi
+fdt_loaddtb=echo "Trying to load device tree from ${devtype}${devnum} partition ${bootpart} ..."; if fatload "${devtype}" "${devnum}:${bootpart}" "${fdt_addr_r}" "${prefix}dtbs/${fdtfile}"; then fdt addr "${fdt_addr_r}"; run fdt_sizecheck; run set_fdt_distro; fi
+fdt_sizecheck=fatsize "${devtype}" "${devnum}:${bootpart}" "${prefix}dtbs/${fdtfile}"
+set_fdt_distro=echo "Updating device tree ${prefix}dtbs/${fdtfile} on ${devtype}${devnum} partition ${bootpart} ..."; run chipa_set_linux; run cpu_vol_set; fatwrite "${devtype}" "${devnum}:${bootpart}" "${fdt_addr_r}" "${prefix}dtbs/${fdtfile}" "${filesize}"
 
 chipa_set_linux=run visionfive2_mem_set; run chipa_set
 visionfive2_mem_set=fdt memory "${memory_addr}" "${memory_size}"; run cma_resize
@@ -50,27 +73,3 @@ cpu_speed_1500_set=echo 'Updating device tree for 1500 MHz CPU speed ...'; fdt r
 cpu_vol_1020_set=echo 'Updating device tree for 1.02V CPU voltage ...'; fdt set /opp-table-0/opp-1500000000 opp-microvolt <1020000>
 cpu_vol_1040_set=echo 'Updating device tree for 1.04V CPU voltage ...'; fdt set /opp-table-0/opp-1500000000 opp-microvolt <1040000>
 cpu_vol_1060_set=echo 'Updating device tree for 1.06V CPU voltage ...'; fdt set /opp-table-0/opp-1500000000 opp-microvolt <1060000>
-
-distro_bootcmd=for target in "${boot_targets}"; do echo "Trying to boot from ${target} ..."; run "bootcmd_${target}"; done
-boot_targets=mmc1 usb0 nvme0 mmc0 dhcp
-bootcmd_mmc1=devnum=1; run mmc_boot
-bootcmd_usb0=devnum=0; run usb_boot
-bootcmd_nvme0=devnum=0; run nvme_boot
-bootcmd_mmc0=devnum=0; run mmc_boot
-bootcmd_dhcp=devtype=dhcp; usb start; pci enum; if dhcp "${scriptaddr}" boot.scr.uimg; then source "${scriptaddr}"; fi; setenv efi_fdtfile "${fdtfile}"; setenv efi_old_vci "${bootp_vci}"; setenv efi_old_arch "${bootp_arch}"; setenv bootp_vci PXEClient:Arch:00027:UNDI:003000; setenv bootp_arch 0x1b; if dhcp "${kernel_addr_r}"; then tftpboot "${fdt_addr_r}" "dtb/${efi_fdtfile}"; if fdt addr "${fdt_addr_r}"; then bootefi "${kernel_addr_r}" "${fdt_addr_r}"; else bootefi "${kernel_addr_r}" "${fdtcontroladdr}"; fi; fi; setenv bootp_vci "${efi_old_vci}"; setenv bootp_arch "${efi_old_arch}"; setenv efi_fdtfile; setenv efi_old_arch; setenv efi_old_vci
-
-mmc_boot=if mmc dev "${devnum}"; then devtype=mmc; run scan_dev_for_boot_part; fi
-usb_boot=pci enum; usb reset; usb start; if usb dev "${devnum}"; then devtype=usb; run scan_dev_for_boot_part; fi
-nvme_boot=pci enum; nvme scan; if nvme dev "${devnum}"; then devtype=nvme; run scan_dev_for_boot_part; fi
-
-scan_dev_for_boot_part=part list "${devtype}" "${devnum}" -bootable devplist; env exists devplist || setenv devplist 1; for distro_bootpart in ${devplist}; do if fstype "${devtype}" "${devnum}:${distro_bootpart}" bootfstype; then run scan_dev_for_boot; fi; done; setenv devplist
-scan_dev_for_boot=echo "Scanning ${devtype} ${devnum}:${distro_bootpart} ..."; for prefix in ${boot_prefixes}; do run scan_dev_for_extlinux; run scan_dev_for_scripts; done; run scan_dev_for_efi
-scan_dev_for_extlinux=if test -e "${devtype}" "${devnum}:${distro_bootpart}" "${prefix}extlinux/extlinux.conf"; then echo "Found ${prefix}extlinux/extlinux.conf"; run boot_extlinux; echo 'SCRIPT FAILED: continuing ...'; fi
-scan_dev_for_scripts=for script in ${boot_scripts}; do if test -e "${devtype}" "${devnum}:${distro_bootpart}" "${prefix}${script}"; then echo "Found U-Boot script ${prefix}${script}"; run boot_a_script; echo 'SCRIPT FAILED: continuing ...'; fi; done
-scan_dev_for_efi=setenv efi_fdtfile "${fdtfile}"; for prefix in "${efi_dtb_prefixes}"; do if test -e "${devtype}" "${devnum}:${distro_bootpart}" "${prefix}${efi_fdtfile}"; then run load_efi_dtb; fi; done; run boot_efi_bootmgr; if test -e "${devtype}" "${devnum}:${distro_bootpart}" efi/boot/bootriscv64.efi; then echo 'Found EFI removable media binary efi/boot/bootriscv64.efi'; run boot_efi_binary; echo 'EFI LOAD FAILED: continuing ...'; fi; setenv efi_fdtfile
-
-boot_extlinux=sysboot "${devtype}" "${devnum}:${distro_bootpart}" any "${scriptaddr}" "${prefix}extlinux/extlinux.conf"
-boot_a_script=load "${devtype}" "${devnum}:${distro_bootpart}" "${scriptaddr}" "${prefix}${script}"; source "${scriptaddr}"
-load_efi_dtb=load "${devtype}" "${devnum}:${distro_bootpart}" "${fdt_addr_r}" "${prefix}${efi_fdtfile}"
-boot_efi_bootmgr=if fdt addr "${fdt_addr_r}"; then bootefi bootmgr "${fdt_addr_r}"; else bootefi bootmgr; fi
-boot_efi_binary=load "${devtype}" "${devnum}:${distro_bootpart}" "${kernel_addr_r}" efi/boot/bootriscv64.efi; if fdt addr "${fdt_addr_r}"; then bootefi "${kernel_addr_r}" "${fdt_addr_r}"; else bootefi "${kernel_addr_r}" "${fdtcontroladdr}"; fi
