@@ -1,4 +1,4 @@
-name: VisionFive 2 kernel build
+name: Star64 kernel build
 on: [workflow_dispatch, push]
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -21,55 +21,55 @@ jobs:
     - name: Build Linux
       run: |
         > .scmversion # Avoid Git commit version suffix
-        mv dietpi_visionfive2_defconfig arch/riscv/configs/
-        make dietpi_visionfive2_defconfig
+        mv dietpi_star64_defconfig arch/riscv/configs/
+        make dietpi_star64_defconfig
         make -j$(nproc)
-        make install INSTALL_PATH='linux-image-visionfive2/boot'
-        make dtbs_install INSTALL_DTBS_PATH='linux-image-visionfive2/usr/lib/linux-image-visionfive2'
-        find linux-image-visionfive2/usr/lib/linux-image-visionfive2 -mindepth 1 -regextype egrep \( ! -regex '.*/(starfive|vf2-overlay.*|jh7110-starfive-visionfive-2-.*\.dtb)' -o -regex '.*/jh7110-starfive-visionfive-2-A1[01].dtb' \) -exec rm -Rf {} +
-        make modules_install INSTALL_MOD_PATH='linux-image-visionfive2'
-        rm linux-image-visionfive2/lib/modules/*/build linux-image-visionfive2/lib/modules/*/source
+        make install INSTALL_PATH='linux-image-star64/boot'
+        make dtbs_install INSTALL_DTBS_PATH='linux-image-star64/usr/lib/linux-image-star64'
+        find linux-image-star64/usr/lib/linux-image-star64 -mindepth 1 ! -name 'jh7110-pine64-star64.dtb' -exec rm -Rfv {} +
+        make modules_install INSTALL_MOD_PATH='linux-image-star64'
+        rm linux-image-star64/lib/modules/*/build linux-image-star64/lib/modules/*/source
         # WiFi/BT firmware: https://github.com/starfive-tech/buildroot/blob/JH7110_VisionFive2_devel/package/starfive/starfive-firmware/starfive-firmware.mk
         curl -fLO 'https://github.com/starfive-tech/buildroot/archive/JH7110_VisionFive2_devel.tar.gz'
         tar xf JH7110_VisionFive2_devel.tar.gz
         rm JH7110_VisionFive2_devel.tar.gz
-        mkdir -p linux-image-visionfive2/lib/firmware
-        cp -Rv buildroot-JH7110_VisionFive2_devel/package/starfive/starfive-firmware/*/* linux-image-visionfive2/lib/firmware/
+        mkdir -p linux-image-star64/lib/firmware
+        cp -Rv buildroot-JH7110_VisionFive2_devel/package/starfive/starfive-firmware/*/* linux-image-star64/lib/firmware/
         rm -R buildroot-JH7110_VisionFive2_devel
         # StarFive DRI library
         curl -sSfO 'https://raw.githubusercontent.com/starfive-tech/Debian/20221225T084846Z/gpu/DDK1.19-binary-xorg/IMG_GPU-xorg.tar.gz'
         tar xf IMG_GPU-xorg.tar.gz
         rm IMG_GPU-xorg.tar.gz
-        mkdir -p linux-image-visionfive2/usr/lib/riscv64-linux-gnu/dri
-        cp IMG_GPU-xorg/usr/local/lib/dri/starfive_dri.so linux-image-visionfive2/usr/lib/riscv64-linux-gnu/dri/
+        mkdir -p linux-image-star64/usr/lib/riscv64-linux-gnu/dri
+        cp IMG_GPU-xorg/usr/local/lib/dri/starfive_dri.so linux-image-star64/usr/lib/riscv64-linux-gnu/dri/
         rm -R IMG_GPU-xorg
         # Permissions
-        find linux-image-visionfive2 ! \( -path linux-image-visionfive2/DEBIAN -prune \) -type f -exec chmod 0644 {} +
-        find linux-image-visionfive2 -type d -exec chmod 0755 {} +
+        find linux-image-star64 ! \( -path linux-image-star64/DEBIAN -prune \) -type f -exec chmod 0644 {} +
+        find linux-image-star64 -type d -exec chmod 0755 {} +
     - name: Build package
       run: |
         echo 'Obtaining kernel and package version ...'
         kernelversion=$(make kernelversion)
-        curl -fO 'https://dietpi.com/downloads/binaries/linux-image-visionfive2.deb'
-        cur_version=$(dpkg-deb -f linux-image-visionfive2.deb Version)
-        rm linux-image-visionfive2.deb
+        curl -fO 'https://dietpi.com/downloads/binaries/linux-image-star64.deb'
+        cur_version=$(dpkg-deb -f linux-image-star64.deb Version)
+        rm linux-image-star64.deb
         cur_suffix=${cur_version#*-dietpi}
         echo "Current package version is : $cur_version"
         echo "New kernel version is      : $kernelversion"
         [ "$kernelversion-dietpi$cur_suffix" = "$cur_version" ] && version="$kernelversion-dietpi$((cur_suffix+1))" || version="$kernelversion-dietpi1"
         echo "New package version will be: $version"
-        sed -i "s/VERSION/$kernelversion/g" linux-image-visionfive2/boot/extlinux/extlinux.conf linux-image-visionfive2/DEBIAN/p*
-        find linux-image-visionfive2 ! \( -path linux-image-visionfive2/DEBIAN -prune \) -type f -exec md5sum {} + | sed 's|linux-image-visionfive2/||' > linux-image-visionfive2/DEBIAN/md5sums
-        sed -i -e "s/VERSION/$version/" -e "s/DATE/$(date -u '+%a, %d %b %Y %T %z')/" -e "s/SIZE/$(du -sk 'linux-image-visionfive2' | mawk '{print $1}')/" linux-image-visionfive2/DEBIAN/control
-        sudo chown -R 0:0 linux-image-visionfive2
-        dpkg-deb -b -Zxz -z9 -Sextreme linux-image-visionfive2
-        sudo rm -R linux-image-visionfive2
+        sed -i "s/VERSION/$kernelversion/g" linux-image-star64/boot/extlinux/extlinux.conf linux-image-star64/DEBIAN/p*
+        find linux-image-star64 ! \( -path linux-image-star64/DEBIAN -prune \) -type f -exec md5sum {} + | sed 's|linux-image-star64/||' > linux-image-star64/DEBIAN/md5sums
+        sed -i -e "s/VERSION/$version/" -e "s/DATE/$(date -u '+%a, %d %b %Y %T %z')/" -e "s/SIZE/$(du -sk 'linux-image-star64' | mawk '{print $1}')/" linux-image-star64/DEBIAN/control
+        sudo chown -R 0:0 linux-image-star64
+        dpkg-deb -b -Zxz -z9 -Sextreme linux-image-star64
+        sudo rm -R linux-image-star64
     - name: Upload
       run: |
         mkdir -p ~/.ssh
         umask 377
         echo '${{ secrets.KNOWN_HOSTS }}' > ~/.ssh/known_hosts
         echo '${{ secrets.SSH_KEY }}' > ~/.ssh/id_ed25519
-        curl -T 'linux-image-visionfive2.deb' --key ~/.ssh/id_ed25519 '${{ secrets.UPLOAD_URL }}all/'
+        curl -T 'linux-image-star64.deb' --key ~/.ssh/id_ed25519 '${{ secrets.UPLOAD_URL }}all/'
         curl 'https://api.cloudflare.com/client/v4/zones/${{ secrets.CF_ZONE }}/purge_cache' -H 'Authorization: Bearer ${{ secrets.CF_TOKEN }}' -H 'Content-Type: application/json' \
-        --data '{"files":["https://dietpi.com/downloads/binaries/testing/","https://dietpi.com/downloads/binaries/testing/linux-image-visionfive2.deb"]}'
+        --data '{"files":["https://dietpi.com/downloads/binaries/testing/","https://dietpi.com/downloads/binaries/testing/linux-image-star64.deb"]}'
