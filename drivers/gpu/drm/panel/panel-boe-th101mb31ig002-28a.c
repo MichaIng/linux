@@ -354,19 +354,12 @@ static int boe_dsi_probe(struct mipi_dsi_device *dsi)
 
 	return 0;
 }
-#if (LINUX_VERSION_CODE > KERNEL_VERSION(2, 6, 0))
-static int boe_dsi_remove(struct mipi_dsi_device *dsi)
-#else
 static void boe_dsi_remove(struct mipi_dsi_device *dsi)
-#endif
 {
 	struct boe *ctx = mipi_dsi_get_drvdata(dsi);
 
 	mipi_dsi_detach(dsi);
 	drm_panel_remove(&ctx->panel);
-#if (LINUX_VERSION_CODE > KERNEL_VERSION(2, 6, 0))
-	return 0;
-#endif
 }
 
 static const struct of_device_id boe_of_match[] = {
