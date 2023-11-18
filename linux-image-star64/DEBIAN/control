@@ -1,4 +1,4 @@
-Package: linux-image-visionfive2
+Package: linux-image-star64
 Version: VERSION
 Architecture: riscv64
 Maintainer: MichaIng <micha@dietpi.com>
@@ -10,4 +10,4 @@ Priority: optional
 Homepage: https://github.com/MichaIng/linux
 Vcs-Git: https://github.com/MichaIng/linux.git
 Vcs-Browser: https://github.com/MichaIng/linux
-Description: Linux kernel for RISC-V StarFive VisionFive 2
+Description: Linux kernel for RISC-V PINE64 Star64
