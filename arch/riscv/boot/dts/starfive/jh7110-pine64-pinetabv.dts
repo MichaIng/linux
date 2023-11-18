@@ -226,13 +226,13 @@
 	status = "okay";
 };
 
-&sdio0 {
+&mmc0 {
 	pinctrl-names = "default";
 	pinctrl-0 = <&mmc0_pins>;
 	status = "okay";
 };
 
-&sdio1 {
+&mmc1 {
 	pinctrl-names = "default";
 	pinctrl-0 = <&sdcard1_pins>;
 	//cd-gpios = <&gpio 41 0>;
