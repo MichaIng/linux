@@ -21,7 +21,7 @@ jobs:
         sudo DEBIAN_FRONTEND=noninteractive apt-get --no-install-recommends -qq install make gcc libc6-dev flex bison gcc-riscv64-linux-gnu bc libssl-dev
     - name: Build Linux
       run: |
-        mv dietpi_star64_defconfig arch/riscv/configs/
+        mv -v dietpi_star64_defconfig arch/riscv/configs/
         make dietpi_star64_defconfig
         make -j$(nproc)
         make install INSTALL_PATH='linux-image-star64/boot'
