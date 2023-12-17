@@ -26,7 +26,7 @@ jobs:
         make -j$(nproc)
         make install INSTALL_PATH='linux-image-star64/boot'
         make dtbs_install INSTALL_DTBS_PATH='linux-image-star64/usr/lib/linux-image-star64'
-        find linux-image-star64/usr/lib/linux-image-star64 -mindepth 1 ! -name 'jh7110-pine64-star64.dtb' -exec rm -Rfv {} +
+        find linux-image-star64/usr/lib/linux-image-star64 -mindepth 1 ! \( -name 'starfive' -o 'jh7110-pine64-star64.dtb' \) -exec rm -Rfv {} +
         make modules_install INSTALL_MOD_PATH='linux-image-star64'
         rm linux-image-star64/lib/modules/*/build linux-image-star64/lib/modules/*/source
         # WiFi/BT firmware: https://github.com/starfive-tech/buildroot/blob/JH7110_VisionFive2_devel/package/starfive/starfive-firmware/starfive-firmware.mk
