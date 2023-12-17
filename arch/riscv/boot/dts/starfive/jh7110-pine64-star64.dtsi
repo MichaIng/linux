@@ -87,6 +87,42 @@
 		};
 	};
 
+	thermal-zones {
+		cpu-thermal {
+			polling-delay-passive = <250>;
+			polling-delay = <15000>;
+
+			thermal-sensors = <&sfctemp>;
+
+			trips {
+				cpu_alert0: cpu_alert0 {
+					/* milliCelsius */
+					temperature = <85000>;
+					hysteresis = <2000>;
+					type = "passive";
+				};
+
+				cpu_crit: cpu_crit {
+					/* milliCelsius */
+					temperature = <100000>;
+					hysteresis = <0>;
+					type = "critical";
+				};
+			};
+
+			cooling-maps {
+				map0 {
+					trip = <&cpu_alert0>;
+					cooling-device =
+						<&cpu0 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>,
+						<&cpu1 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>,
+						<&cpu2 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>,
+						<&cpu3 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>;
+				};
+			};
+		};
+	};
+
 	rfkill_bt {
 		compatible = "rfkill-gpio";
 		label = "BlueTooth";
@@ -561,6 +597,21 @@
 	status = "okay";
 	#address-cells = <1>;
 	#size-cells = <0>;
+	clock-names = "gtx",
+		      "tx",
+		      "ptp_ref",
+		      "stmmaceth",
+		      "pclk",
+		      "gtxc",
+		      "rmii_rtx";
+	clocks = <&clkgen JH7110_GMAC0_GTXCLK>,
+		 <&clkgen JH7110_U0_GMAC5_CLK_TX>,
+		 <&clkgen JH7110_GMAC0_PTP>,
+		 <&clkgen JH7110_U0_GMAC5_CLK_AHB>,
+		 <&clkgen JH7110_U0_GMAC5_CLK_AXI>,
+		 <&clkgen JH7110_GMAC0_GTXC>,
+		 <&clkgen JH7110_GMAC0_RMII_RTX>;
+
 	phy0: ethernet-phy@0 {
 		rgmii_sw_dr_2 = <0x0>;
 		rgmii_sw_dr = <0x3>;
@@ -579,6 +630,21 @@
 	#address-cells = <1>;
 	#size-cells = <0>;
 	status = "okay";
+	clock-names = "gtx",
+		      "tx",
+		      "ptp_ref",
+		      "stmmaceth",
+		      "pclk",
+		      "gtxc",
+		      "rmii_rtx";
+	clocks = <&clkgen JH7110_GMAC1_GTXCLK>,
+		 <&clkgen JH7110_GMAC5_CLK_TX>,
+		 <&clkgen JH7110_GMAC5_CLK_PTP>,
+		 <&clkgen JH7110_GMAC5_CLK_AHB>,
+		 <&clkgen JH7110_GMAC5_CLK_AXI>,
+		 <&clkgen JH7110_GMAC1_GTXC>,
+		 <&clkgen JH7110_GMAC1_RMII_RTX>;
+
 	phy1: ethernet-phy@1 {
 		rgmii_sw_dr_2 = <0x0>;
 		rgmii_sw_dr = <0x3>;
@@ -791,4 +857,37 @@
 	pinctrl-names = "default";
 	pinctrl-0 = <&pwm_pins>;
 	status = "okay";
+};
+
+&qspi {
+	nor_flash: nor-flash@0 {
+	compatible = "jedec,spi-nor";
+	reg=<0>;
+	cdns,read-delay = <5>;
+	spi-max-frequency = <100000000>;
+	cdns,tshsl-ns = <1>;
+	cdns,tsd2d-ns = <1>;
+	cdns,tchsh-ns = <1>;
+	cdns,tslch-ns = <1>;
+	status = "okay";
+
+		partitions {
+			compatible = "fixed-partitions";
+			#address-cells = <1>;
+			#size-cells = <1>;
+
+			spl@0 {
+				reg = <0x0 0x40000>;
+			};
+			uboot-env@100000 {
+				reg = <0xf0000 0x10000>;
+			};
+			uboot@100000 {
+				reg = <0x100000 0x300000>;
+			};
+			data@f00000 {
+				reg = <0xf00000 0x100000>;
+			};
+		};
+	};
 };

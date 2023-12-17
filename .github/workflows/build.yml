@@ -21,7 +21,7 @@ jobs:
     - name: Build Linux
       run: |
         > .scmversion # Avoid Git commit version suffix
-        mv dietpi_star64_defconfig arch/riscv/configs/
+        mv -v dietpi_star64_defconfig arch/riscv/configs/
         make dietpi_star64_defconfig
         make -j$(nproc)
         make install INSTALL_PATH='linux-image-star64/boot'
