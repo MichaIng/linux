@@ -34,8 +34,18 @@ jobs:
         find linux-image-visionfive2/usr/lib/linux-image-visionfive2 -mindepth 1 -regextype egrep \( ! -regex '.*/(starfive|vf2-overlay.*|jh7110-visionfive-v2.*\.dtb)' -o -regex '.*/jh7110-visionfive-v2-A1[01].dtb' \) -exec rm -Rf {} +
         make modules_install INSTALL_MOD_PATH='linux-image-visionfive2'
         rm linux-image-visionfive2/lib/modules/*/build linux-image-visionfive2/lib/modules/*/source
+        # https://github.com/starfive-tech/buildroot/blob/JH7110_VisionFive2_devel/package/starfive/starfive-firmware/starfive-firmware.mk
         mkdir -p linux-image-visionfive2/lib/firmware
-        curl -sSfo linux-image-visionfive2/lib/firmware/ECR6600U_transport.bin 'https://raw.githubusercontent.com/starfive-tech/buildroot/JH7110_VisionFive2_devel/package/starfive/usb_wifi/ECR6600U_transport.bin'
+        cd linux-image-visionfive2/lib/firmware
+        curl -sSfO 'https://raw.githubusercontent.com/starfive-tech/buildroot/JH7110_VisionFive2_devel/package/starfive/starfive-firmware/ap6256-bluetooth/BCM4345C5.hcd'
+        curl -sSfO 'https://raw.githubusercontent.com/starfive-tech/buildroot/JH7110_VisionFive2_devel/package/starfive/starfive-firmware/ap6256-sdio-wifi/fw_bcm43456c5_ag.bin'
+        curl -sSfO 'https://raw.githubusercontent.com/starfive-tech/buildroot/JH7110_VisionFive2_devel/package/starfive/starfive-firmware/ap6256-sdio-wifi/nvram_ap6256.txt'
+        curl -sSfO 'https://raw.githubusercontent.com/starfive-tech/buildroot/JH7110_VisionFive2_devel/package/starfive/starfive-firmware/rtl8852bu-bluetooth/rtl8852bu_config'
+        curl -sSfO 'https://raw.githubusercontent.com/starfive-tech/buildroot/JH7110_VisionFive2_devel/package/starfive/starfive-firmware/rtl8852bu-bluetooth/rtl8852bu_fw'
+        curl -sSfO 'https://raw.githubusercontent.com/starfive-tech/buildroot/JH7110_VisionFive2_devel/package/starfive/starfive-firmware/ECR6600U-usb-wifi/ECR6600U_transport.bin'
+        svn export 'https://github.com/starfive-tech/buildroot/branches/JH7110_VisionFive2_devel/package/starfive/starfive-firmware/aic8800-usb-wifi/aic8800'
+        svn export 'https://github.com/starfive-tech/buildroot/branches/JH7110_VisionFive2_devel/package/starfive/starfive-firmware/aic8800-usb-wifi/aic8800DC'
+        cd ../../..
         find linux-image-visionfive2 -type f \( -path linux-image-visionfive2/DEBIAN -prune \) -exec chmod 0644 {} +
         find linux-image-visionfive2 -type d -exec chmod 0755 {} +
     - name: Build package
