@@ -3,6 +3,4 @@ set -e
 export DEB_MAINT_PARAMS=$* INITRD=Yes
 [ -d '/etc/kernel/postinst.d' ] && run-parts --arg='VERSION' --arg='VERSION' /etc/kernel/postinst.d
 sed -Ei '/^[[:blank:]]*(linux|kernel)/c\linux /boot/vmlinuz-VERSION' /boot/extlinux/extlinux.conf
-# Post-6.1.86-dietpi1 extlinux.conf migration, due to changed device tree names: https://github.com/starfive-tech/linux/commit/1cc2b6a
-dpkg --compare-versions "$2" gt '6.1.86-dietpi1' || sed -i -e 's/jh7110-visionfive-v2/jh7110-starfive-visionfive-2/g' -e 's/jh7110-starfive-visionfive-2\.dtb/jh7110-starfive-visionfive-2-v1.3b\.dtb/g' /boot/extlinux/extlinux.conf
 exit 0
