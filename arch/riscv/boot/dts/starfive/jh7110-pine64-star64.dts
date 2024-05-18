@@ -17,7 +17,6 @@
 		gpios = <&gpio 35 GPIO_ACTIVE_HIGH>;
 		priority = <160>;
 	};
-
 };
 
 &gpio {
@@ -65,24 +64,25 @@
 			starfive,pin-gpio-doen = <OEN_LOW>;
 		};
 
-        mmc0-pins-cLK {
-            starfive,pins = <PAD_SD0_CLK>;
-            starfive,pin-ioconfig = <IO(GPIO_IE(1) | (GPIO_PU(1)) | GPIO_DS(2) | GPIO_SLEW(1))>;
-        };
+		mmc0-pins-cLK {
+			starfive,pins = <PAD_SD0_CLK>;
+			starfive,pin-ioconfig = <IO(GPIO_IE(1) | (GPIO_PU(1)) | GPIO_DS(2) | GPIO_SLEW(1))>;
+		};
 
-        mmc0-pins-cmd {
-            starfive,pins = <PAD_SD0_CMD>;
-            starfive,pin-ioconfig = <IO(GPIO_IE(1) | (GPIO_PU(1)) | GPIO_DS(1))>;
-        };
-
-        mmc0-pins-data0 {
-            starfive,pins = <PAD_SD0_DATA0>;
-            starfive,pin-ioconfig = <IO(GPIO_IE(1) | (GPIO_PU(1)) | GPIO_DS(1))>;
-        };
-        mmc0-pins-data1 {
-            starfive,pins = <PAD_SD0_DATA1>;
+		mmc0-pins-cmd {
+			starfive,pins = <PAD_SD0_CMD>;
 			starfive,pin-ioconfig = <IO(GPIO_IE(1) | (GPIO_PU(1)) | GPIO_DS(1))>;
-        };
+		};
+
+		mmc0-pins-data0 {
+			starfive,pins = <PAD_SD0_DATA0>;
+			starfive,pin-ioconfig = <IO(GPIO_IE(1) | (GPIO_PU(1)) | GPIO_DS(1))>;
+		};
+
+		mmc0-pins-data1 {
+			starfive,pins = <PAD_SD0_DATA1>;
+			starfive,pin-ioconfig = <IO(GPIO_IE(1) | (GPIO_PU(1)) | GPIO_DS(1))>;
+		};
 
 		mmc0-pins-data2 {
 			starfive,pins = <PAD_SD0_DATA2>;
@@ -113,7 +113,6 @@
 			starfive,pins = <PAD_SD0_DATA7>;
 			starfive,pin-ioconfig = <IO(GPIO_IE(1) | (GPIO_PU(1)) | GPIO_DS(1))>;
 		};
-
 	};
 
 	sdcard1_pins: sdcard1-pins {
@@ -187,17 +186,17 @@
 			starfive,pin-gpio-doen = <OEN_HDMI0_DDC_SDA_OEN>;
 			starfive,pin-gpio-din =  <GPI_HDMI0_DDC_SDA_IN>;
 		};
+
 		inno_hdmi-cec-pins {
 			starfive,pins = <PAD_GPIO14>;
-			//starfive,pinmux = <PAD_GPIO14_FUNC_SEL 0>;
 			starfive,pin-ioconfig = <IO(GPIO_IE(1) | (GPIO_PU(1)))>;
 			starfive,pin-gpio-doen = <OEN_HDMI0_CEC_SDA_OEN>;
 			starfive,pin-gpio-dout = <GPO_HDMI0_CEC_SDA_OUT>;
 			starfive,pin-gpio-din =  <GPI_HDMI0_CEC_SDA_IN>;
 		};
+
 		inno_hdmi-hpd-pins {
 			starfive,pins = <PAD_GPIO15>;
-			//starfive,pinmux = <PAD_GPIO15_FUNC_SEL 0>;
 			starfive,pin-ioconfig = <IO(GPIO_IE(1))>;
 			starfive,pin-gpio-doen = <OEN_HIGH>;
 			starfive,pin-gpio-din =  <GPI_HDMI0_HPD>;
@@ -235,15 +234,14 @@
 &mmc1 {
 	pinctrl-names = "default";
 	pinctrl-0 = <&sdcard1_pins>;
-	//cd-gpios = <&gpio 41 0>;
 	status = "okay";
 };
 
 &hdmi {
-	status = "okay";
 	pinctrl-names = "default";
 	pinctrl-0 = <&inno_hdmi_pins>;
 	hpd-gpio = <&gpio 15 GPIO_ACTIVE_HIGH>;
+	status = "okay";
 };
 
 &i2stx_4ch0 {
