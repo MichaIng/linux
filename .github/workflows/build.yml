@@ -4,9 +4,6 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 permissions: {}
-defaults:
-  run:
-    shell: sh
 jobs:
   build:
     # https://github.com/actions/virtual-environments
@@ -15,8 +12,6 @@ jobs:
       CROSS_COMPILE: 'riscv64-linux-gnu-'
       ARCH: 'riscv'
     steps:
-    - name: Setup tmpfs
-      run: sudo mount -t tmpfs -o "noatime,lazytime,uid=$(id -u),size=3G" tmpfs "$GITHUB_WORKSPACE"
     - uses: actions/checkout@v4
     - name: Install build dependencies
       run: |
@@ -35,7 +30,7 @@ jobs:
         make modules_install INSTALL_MOD_PATH='linux-image-visionfive2'
         rm linux-image-visionfive2/lib/modules/*/build linux-image-visionfive2/lib/modules/*/source
         # WiFi/BT firmware: https://github.com/starfive-tech/buildroot/blob/JH7110_VisionFive2_devel/package/starfive/starfive-firmware/starfive-firmware.mk
-        curl -fLO https://github.com/starfive-tech/buildroot/archive/JH7110_VisionFive2_devel.tar.gz
+        curl -fLO 'https://github.com/starfive-tech/buildroot/archive/JH7110_VisionFive2_devel.tar.gz'
         tar xf JH7110_VisionFive2_devel.tar.gz
         rm JH7110_VisionFive2_devel.tar.gz
         mkdir -p linux-image-visionfive2/lib/firmware
@@ -49,7 +44,7 @@ jobs:
         cp IMG_GPU-xorg/usr/local/lib/dri/starfive_dri.so linux-image-visionfive2/usr/lib/riscv64-linux-gnu/dri/
         rm -R IMG_GPU-xorg
         # Permissions
-        find linux-image-visionfive2 -type f \( -path linux-image-visionfive2/DEBIAN -prune \) -exec chmod 0644 {} +
+        find linux-image-visionfive2 ! \( -path linux-image-visionfive2/DEBIAN -prune \) -type f -exec chmod 0644 {} +
         find linux-image-visionfive2 -type d -exec chmod 0755 {} +
     - name: Build package
       run: |

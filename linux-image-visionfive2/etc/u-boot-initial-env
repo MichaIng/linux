@@ -13,7 +13,7 @@ boot_prefixes=/ /boot/
 bootenv=uEnv.txt
 boot_scripts=boot.scr.uimg boot.scr
 efi_dtb_prefixes=/ /dtb/ /dtb/current/
-fdtfile=starfive/jh7110-visionfive-v2.dtb
+fdtfile=starfive/jh7110-starfive-visionfive-2-v1.3b.dtb
 ipaddr=192.168.120.230
 
 preboot=run chipa_set_uboot
