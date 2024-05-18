@@ -3,11 +3,8 @@ Version: VERSION
 Architecture: riscv64
 Maintainer: MichaIng <micha@dietpi.com>
 Date: DATE
-Standards-Version: 4.6.2.0
 Installed-Size: SIZE
 Section: kernel
 Priority: optional
 Homepage: https://github.com/MichaIng/linux
-Vcs-Git: https://github.com/MichaIng/linux.git
-Vcs-Browser: https://github.com/MichaIng/linux
 Description: Linux kernel for RISC-V StarFive VisionFive 2
