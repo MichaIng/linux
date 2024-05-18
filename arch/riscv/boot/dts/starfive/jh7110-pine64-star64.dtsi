@@ -8,7 +8,6 @@
 #include <dt-bindings/gpio/gpio.h>
 #include <dt-bindings/leds/common.h>
 #include <dt-bindings/pinctrl/starfive,jh7110-pinfunc.h>
-#include <dt-bindings/phy/phy.h>
 #include "jh7110.dtsi"
 #include "codecs/sf_pwmdac.dtsi"
 
@@ -134,7 +133,6 @@
 		radio-type = "wifi";
 		shutdown-gpios = <&gpioa 42 GPIO_ACTIVE_HIGH>;
 	};
-
 };
 
 &gpio {
@@ -240,7 +238,7 @@
 	};
 
 	pwm_pins: pwm-pins {
-		// pwm_ch0-pins { GPIO46 is used by WIFI WIFI_ON signal
+		//pwm_ch0-pins { GPIO46 is used by WIFI WIFI_ON signal
 		//	starfive,pins = <PAD_GPIO46>;
 		//	starfive,pinmux = <PAD_GPIO46_FUNC_SEL 0>;
 		//	starfive,pin-ioconfig = <IO(GPIO_IE(1))>;
@@ -379,6 +377,40 @@
 			starfive,pin-gpio-doen = <OEN_LOW>;
 		};
 	};
+
+	tdm0_pins: tdm0-pins {
+		tdm0-pins-tx {
+			starfive,pins = <PAD_GPIO44>;
+			starfive,pinmux = <PAD_GPIO44_FUNC_SEL 0>;
+			starfive,pin-ioconfig = <IO(GPIO_IE(1))>;
+			starfive,pin-gpio-dout = <GPO_TDM0_PCM_TXD>;
+			starfive,pin-gpio-doen = <OEN_LOW>;
+		};
+
+		tdm0-pins-rx {
+			starfive,pins = <PAD_GPIO61>;
+			starfive,pinmux = <PAD_GPIO61_FUNC_SEL 0>;
+			starfive,pin-ioconfig = <IO(GPIO_IE(1))>;
+			starfive,pin-gpio-doen = <OEN_HIGH>;
+			starfive,pin-gpio-din =  <GPI_TDM0_PCM_RXD>;
+		};
+
+		tdm0-pins-sync {
+			starfive,pins = <PAD_GPIO63>;
+			starfive,pinmux = <PAD_GPIO63_FUNC_SEL 0>;
+			starfive,pin-ioconfig = <IO(GPIO_IE(1))>;
+			starfive,pin-gpio-doen = <OEN_HIGH>;
+			starfive,pin-gpio-din = <GPI_TDM0_PCM_SYNCIN>;
+		};
+
+		tdm0-pins-pcmclk {
+			starfive,pins = <PAD_GPIO38>;
+			starfive,pinmux = <PAD_GPIO38_FUNC_SEL 0>;
+			starfive,pin-ioconfig = <IO(GPIO_IE(1))>;
+			starfive,pin-gpio-doen = <OEN_HIGH>;
+			starfive,pin-gpio-din = <GPI_TDM0_CLK_SLV>;
+		};
+	};
 	
 	rfkill_wifi_pins: rfkill_wifi_pins {
 		rfkill_wifi_disn {
@@ -397,7 +429,6 @@
 			starfive,pin-gpio-doen = <OEN_HIGH>;
 		};
 	};
-
 };
 
 &uart0 {
@@ -463,58 +494,62 @@
 	};
 
 	pmic: axp15060_reg@36 {
-		compatible = "stf,axp15060-regulator";
+		compatible = "x-powers,axp15060";
 		reg = <0x36>;
 
 		regulators {
 			mipi_0p9: ALDO1 {
 				regulator-boot-on;
-				regulator-compatible = "mipi_0p9";
+				regulator-compatible = "aldo1";
 				regulator-name = "mipi_0p9";
 				regulator-min-microvolt = <900000>;
 				regulator-max-microvolt = <900000>;
 			};
+
 			hdmi_0p9: ALDO5 {
 				regulator-boot-on;
-				regulator-compatible = "hdmi_0p9";
+				regulator-compatible = "aldo5";
 				regulator-name = "hdmi_0p9";
 				regulator-min-microvolt = <900000>;
 				regulator-max-microvolt = <900000>;
 			};
+
 			hdmi_1p8: ALDO3 {
 				regulator-boot-on;
-				regulator-compatible = "hdmi_1p8";
+				regulator-compatible = "aldo3";
 				regulator-name = "hdmi_1p8";
 				regulator-min-microvolt = <1800000>;
 				regulator-max-microvolt = <1800000>;
 			};
+
 			sdio_vdd: ALDO4 {
 				regulator-boot-on;
 				regulator-always-on;
-				regulator-compatible = "sdio_vdd";
+				regulator-compatible = "aldo4";
 				regulator-name = "sdio_vdd";
 				regulator-min-microvolt = <1800000>;
 				regulator-max-microvolt = <1800000>;
 			};
+
 			vcc_3v3: DCDC1 {
 				regulator-boot-on;
 				regulator-always-on;
-				regulator-compatible = "vcc_3v3";
+				regulator-compatible = "dcdc1";
 				regulator-name = "vcc_3v3";
 				regulator-min-microvolt = <3300000>;
 				regulator-max-microvolt = <3300000>;
 			};
+
 			cpu_vdd: DCDC2 {
 				regulator-boot-on;
 				regulator-always-on;
-				regulator-compatible = "cpu_vdd";
+				regulator-compatible = "dcdc2";
 				regulator-name = "cpu_vdd";
 				regulator-min-microvolt = <500000>;
 				regulator-max-microvolt = <1540000>;
 			};
 		};
 	};
-
 };
 
 &i2c6 {
@@ -547,14 +582,14 @@
 
 &mmc1 {
 	max-frequency = <100000000>;
-	assigned-clocks = <&clkgen JH7110_SDIO0_CLK_SDCARD>;
+	assigned-clocks = <&clkgen JH7110_SDIO1_CLK_SDCARD>;
 	assigned-clock-rates = <50000000>;
 	card-detect-delay = <300>;
 	bus-width = <4>;
-	cap-sd-highspeed;
 	no-sdio;
 	no-mmc;
 	broken-cd;
+	cap-sd-highspeed;
 	post-power-on-delay-ms = <200>;
 	status = "okay";
 };
@@ -595,20 +630,20 @@
 	status = "okay";
 	#address-cells = <1>;
 	#size-cells = <0>;
-	clock-names = "gtx",
-		      "tx",
-		      "ptp_ref",
-		      "stmmaceth",
-		      "pclk",
-		      "gtxc",
-		      "rmii_rtx";
-	clocks = <&clkgen JH7110_GMAC0_GTXCLK>,
-		 <&clkgen JH7110_U0_GMAC5_CLK_TX>,
-		 <&clkgen JH7110_GMAC0_PTP>,
-		 <&clkgen JH7110_U0_GMAC5_CLK_AHB>,
-		 <&clkgen JH7110_U0_GMAC5_CLK_AXI>,
-		 <&clkgen JH7110_GMAC0_GTXC>,
-		 <&clkgen JH7110_GMAC0_RMII_RTX>;
+        clock-names = "gtx",
+                      "tx",
+                      "ptp_ref",
+                      "stmmaceth",
+                      "pclk",
+                      "gtxc",
+                      "rmii_rtx";
+        clocks = <&clkgen JH7110_GMAC0_GTXCLK>,
+                 <&clkgen JH7110_U0_GMAC5_CLK_TX>,
+                 <&clkgen JH7110_GMAC0_PTP>,
+                 <&clkgen JH7110_U0_GMAC5_CLK_AHB>,
+                 <&clkgen JH7110_U0_GMAC5_CLK_AXI>,
+                 <&clkgen JH7110_GMAC0_GTXC>,
+                 <&clkgen JH7110_GMAC0_RMII_RTX>;
 
 	phy0: ethernet-phy@0 {
 		rgmii_sw_dr_2 = <0x0>;
@@ -628,20 +663,20 @@
 	#address-cells = <1>;
 	#size-cells = <0>;
 	status = "okay";
-	clock-names = "gtx",
-		      "tx",
-		      "ptp_ref",
-		      "stmmaceth",
-		      "pclk",
-		      "gtxc",
-		      "rmii_rtx";
-	clocks = <&clkgen JH7110_GMAC1_GTXCLK>,
-		 <&clkgen JH7110_GMAC5_CLK_TX>,
-		 <&clkgen JH7110_GMAC5_CLK_PTP>,
-		 <&clkgen JH7110_GMAC5_CLK_AHB>,
-		 <&clkgen JH7110_GMAC5_CLK_AXI>,
-		 <&clkgen JH7110_GMAC1_GTXC>,
-		 <&clkgen JH7110_GMAC1_RMII_RTX>;
+        clock-names = "gtx",
+                      "tx",
+                      "ptp_ref",
+                      "stmmaceth",
+                      "pclk",
+                      "gtxc",
+                      "rmii_rtx";
+        clocks = <&clkgen JH7110_GMAC1_GTXCLK>,
+                 <&clkgen JH7110_GMAC5_CLK_TX>,
+                 <&clkgen JH7110_GMAC5_CLK_PTP>,
+                 <&clkgen JH7110_GMAC5_CLK_AHB>,
+                 <&clkgen JH7110_GMAC5_CLK_AXI>,
+                 <&clkgen JH7110_GMAC1_GTXC>,
+                 <&clkgen JH7110_GMAC1_RMII_RTX>;
 
 	phy1: ethernet-phy@1 {
 		rgmii_sw_dr_2 = <0x0>;
@@ -676,6 +711,12 @@
 &i2stx_4ch1 {
 	pinctrl-names = "default";
 	pinctrl-0 = <&i2stx_pins>;
+	status = "disabled";
+};
+
+&tdm {
+	pinctrl-names = "default";
+	pinctrl-0 = <&tdm0_pins>;
 	status = "disabled";
 };
 
@@ -822,7 +863,7 @@
 };
 
 &co_process {
-	memory-region = <&e24_mem>;	
+	memory-region = <&e24_mem>;
 	status = "okay";
 };
 
@@ -841,9 +882,9 @@
 		 <&rstgen RSTN_U0_CDN_USB_UTMI_APB>;
 	reset-names = "pwrup","apb","axi","utmi";
 	dr_mode = "host"; /*host or peripheral*/
-	status = "okay";
 	pinctrl-names = "default";
 	pinctrl-0 = <&usb_pins>;
+	status = "okay";
 };
 
 &xrp {
@@ -889,3 +930,4 @@
 		};
 	};
 };
+
