@@ -117,7 +117,6 @@ struct axi_dma_chan_config {
 	u8 prior;
 	u8 hs_sel_dst;
 	u8 hs_sel_src;
->>>>>>> 38fb4c350b8a (dmaengine: dw-axi-dmac: Fix the bug that unable to transfer 270KB data)
 };
 
 static inline struct device *dchan2dev(struct dma_chan *dchan)
