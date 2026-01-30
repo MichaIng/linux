@@ -9,8 +9,9 @@ jobs:
     # https://github.com/actions/virtual-environments
     runs-on: ubuntu-24.04
     env:
-      CROSS_COMPILE: 'riscv64-linux-gnu-'
       ARCH: 'riscv'
+      CROSS_COMPILE: 'riscv64-linux-gnu-'
+      LOCALVERSION: '' # Avoid version string suffix
     steps:
     - uses: actions/checkout@v4
     - name: Install build dependencies
@@ -20,7 +21,6 @@ jobs:
         sudo DEBIAN_FRONTEND=noninteractive apt-get --no-install-recommends -qq install make gcc libc6-dev flex bison gcc-riscv64-linux-gnu bc libssl-dev
     - name: Build Linux
       run: |
-        > .scmversion # Avoid Git commit version suffix
         mv dietpi_visionfive2_defconfig arch/riscv/configs/
         make dietpi_visionfive2_defconfig
         make -j$(nproc)
