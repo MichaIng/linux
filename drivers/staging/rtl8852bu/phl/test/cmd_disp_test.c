@@ -786,7 +786,7 @@ void disp_cannot_io_test( void )
 	}
 
 	disp_test_ctx.case_cannot_io.cannot_io = true;
-	phl_disp_eng_notify_dev_io_status(disp_test_ctx.phl, HW_BAND_MAX, 0, false);
+	phl_disp_eng_notify_dev_io_status(disp_test_ctx.phl, 0, false);
 
 	SET_MSG_MDL_ID_FIELD(msg.msg_id, PHL_MDL_PHY_MGNT);
 	SET_MSG_EVT_ID_FIELD(msg.msg_id, 10);
@@ -817,7 +817,7 @@ void disp_cannot_io_test( void )
 		goto test_end;
 
 	disp_test_ctx.case_cannot_io.cannot_io = false;
-	phl_disp_eng_notify_dev_io_status(disp_test_ctx.phl, HW_BAND_MAX, 0, true);
+	phl_disp_eng_notify_dev_io_status(disp_test_ctx.phl, 0, true);
 
 	_os_sleep_ms(d, 100);
 	if (disp_test_ctx.case_cannot_io.last_evt != 20) {

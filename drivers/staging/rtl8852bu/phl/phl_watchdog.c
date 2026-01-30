@@ -52,6 +52,11 @@ static void _phl_watchdog_sw(struct phl_info_t *phl)
 
 static void _phl_watchdog_hw(struct phl_info_t *phl)
 {
+	#ifdef DBG_DUMP_TX_COUNTER
+	if (phl->phl_com->dbg_cfg.dbg_dump_tx)
+		rtw_hal_dump_tx_status(phl->hal, phl->phl_com->dbg_cfg.dbg_dump_tx_bidx);
+	#endif
+
 	#ifdef CONFIG_PHL_THERMAL_PROTECT
 	phl_thermal_protect_watchdog(phl);
 	#endif
@@ -68,23 +73,39 @@ static void _phl_watchdog_hw(struct phl_info_t *phl)
 
 	phl_mr_watchdog(phl);
 	rtw_hal_watchdog(phl->hal, phl->phl_com);
-	phl_bcn_watchdog(phl);
+	phl_bcn_watchdog_hw(phl);
+}
+
+static void _phl_post_wdog(struct phl_info_t *phl, bool is_hw_wdog_exec)
+{
+	/* No I/O, collect diag statistics after hw watchdog (before trigger next watchdog) */
+	return;
 }
 
 #ifdef CONFIG_CMD_DISP
 static void _phl_watchdog_post_action(struct phl_info_t *phl_info)
 {
-#ifdef CONFIG_POWER_SAVE
-	rtw_hal_ps_chk_hw_rf_state(phl_info->phl_com, phl_info->hal);
+#if defined(CONFIG_POWER_SAVE) && defined(CONFIG_HW_RADIO_ONOFF_DETECT)
+	if (!phl_is_mp_mode(phl_info->phl_com))
+		rtw_hal_ps_chk_hw_rf_state(phl_info->phl_com, phl_info->hal);
 #endif /* CONFIG_POWER_SAVE */
 }
 
-static void _phl_trigger_next_watchdog(struct phl_info_t *phl_info)
+static void _phl_trigger_next_watchdog(
+	struct phl_info_t *phl_info, bool is_hw_wdog_exec)
 {
 	struct phl_watchdog *wdog = &(phl_info->wdog);
 
-	if (wdog->state == WD_STATE_STARTED)
+	if (wdog->state == WD_STATE_STARTED) {
+		/*
+		 * post watchdog: notify core with is_hw_wdog_exec information
+		 * if hw wdog cmd ok, is_hw_wdog_exec = true
+		 */
+		_phl_post_wdog(phl_to_drvpriv(phl_info), is_hw_wdog_exec);
+		if (NULL != wdog->core_post_wdog)
+			wdog->core_post_wdog(phl_to_drvpriv(phl_info), is_hw_wdog_exec);
 		_os_set_timer(phl_to_drvpriv(phl_info), &wdog->wdog_timer, wdog->period);
+	}
 }
 
 static void _phl_watchdog_hw_done(void *drv_priv, u8 *cmd, u32 cmd_len, enum rtw_phl_status status)
@@ -92,7 +113,7 @@ static void _phl_watchdog_hw_done(void *drv_priv, u8 *cmd, u32 cmd_len, enum rtw
 	struct phl_info_t *phl_info = (struct phl_info_t *)cmd;
 
 	_phl_watchdog_post_action(phl_info);
-	_phl_trigger_next_watchdog(phl_info);
+	_phl_trigger_next_watchdog(phl_info, !is_cmd_failure(status));
 }
 
 static enum rtw_phl_status
@@ -142,12 +163,15 @@ static void _phl_watchdog_sw_done(void *drv_priv, u8 *cmd, u32 cmd_len, enum rtw
 		if (psts != RTW_PHL_STATUS_FAILURE)
 			set_timer = false;
 	} else {
+		#ifdef CONFIG_POST_CORE_KEEP_ALIVE
+		rtw_phl_set_wdog_state_keep_alive(phl_info, false, NULL);
+		#endif
 		PHL_TRACE(COMP_PHL_DBG, _PHL_DEBUG_, "%s: skip watchdog\n",
 		          __FUNCTION__);
 	}
 
-	if (set_timer)
-		_phl_trigger_next_watchdog(phl_info);
+	if (set_timer) /* fail case, is_hw_wdog_exec = false */
+		_phl_trigger_next_watchdog(phl_info, false);
 }
 
 static enum rtw_phl_status
@@ -198,8 +222,8 @@ static void _phl_watchdog_timer_expired(void *context)
 	if (psts != RTW_PHL_STATUS_FAILURE)
 		set_timer = false;
 
-	if (set_timer)
-		_phl_trigger_next_watchdog(phl_info);
+	if (set_timer) /* fail case, is_hw_wdog_exec = false */
+		_phl_trigger_next_watchdog(phl_info, false);
 #else
 	PHL_TRACE(COMP_PHL_DBG, _PHL_ERR_, "%s: Not support watchdog\n", __FUNCTION__);
 #endif
@@ -226,6 +250,7 @@ phl_watchdog_sw_cmd_hdl(struct phl_info_t *phl_info, enum rtw_phl_status psts)
 	struct phl_watchdog *wdog = &(phl_info->wdog);
 
 	if (false == is_cmd_failure(psts)) {
+		phl_bcn_watchdog_sw(phl_info);
 		if (NULL != wdog->core_sw_wdog)
 			wdog->core_sw_wdog(phl_to_drvpriv(phl_info));
 	}
@@ -233,17 +258,45 @@ phl_watchdog_sw_cmd_hdl(struct phl_info_t *phl_info, enum rtw_phl_status psts)
 	return RTW_PHL_STATUS_SUCCESS;
 }
 
-void rtw_phl_watchdog_init(void *phl,
-                           u16 period,
-                           void (*core_sw_wdog)(void *drv_priv),
-                           void (*core_hw_wdog)(void *drv_priv))
+#ifdef CONFIG_POST_CORE_KEEP_ALIVE
+enum rtw_phl_status
+phl_keep_alive_hdl(struct phl_info_t *phl_info)
+{
+	struct phl_watchdog *wdog = &(phl_info->wdog);
+
+	if (phl_wdog_state_is_keep_alive(phl_info)) {
+		if (NULL != wdog->core_keep_alive)
+			wdog->core_keep_alive(phl_to_drvpriv(phl_info), &wdog->klive_param);
+	}
+
+	return RTW_PHL_STATUS_SUCCESS;
+}
+#endif
+
+void rtw_phl_watchdog_init(
+	void *phl, u16 period,
+	void (*core_sw_wdog)(void *drv_priv),
+#ifdef CONFIG_POST_CORE_KEEP_ALIVE
+	void (*core_keep_alive)(void *drv_priv, struct rtw_keep_alive_param *klive),
+#endif
+	void (*core_hw_wdog)(void *drv_priv),
+	void (*core_post_wdog)(void *drv_priv, bool is_hw_wdog_exec))
 {
 	struct phl_info_t *phl_info = (struct phl_info_t *)phl;
 	struct phl_watchdog *wdog = &(phl_info->wdog);
 
 	wdog->state = WD_STATE_INIT;
 	wdog->core_sw_wdog = core_sw_wdog;
+#ifdef CONFIG_POST_CORE_KEEP_ALIVE
+	wdog->core_keep_alive = core_keep_alive;
+#endif
 	wdog->core_hw_wdog = core_hw_wdog;
+	wdog->core_post_wdog = core_post_wdog;
+
+#ifdef CONFIG_POST_CORE_KEEP_ALIVE
+	/* Initialize keep alive param */
+	_os_mem_set(phl_to_drvpriv(phl_info), &wdog->klive_param, 0, sizeof(struct rtw_keep_alive_param));
+#endif
 
 	if (period > 0)
 		wdog->period = period;
@@ -271,7 +324,7 @@ void rtw_phl_watchdog_start(void *phl)
 	struct phl_watchdog *wdog = &(phl_info->wdog);
 
 	wdog->state = WD_STATE_STARTED;
-	_phl_trigger_next_watchdog(phl_info);
+	_phl_trigger_next_watchdog(phl_info, false); /* initial call, is_hw_wdog_exec = false */
 }
 
 void rtw_phl_watchdog_stop(void *phl)
@@ -285,3 +338,41 @@ void rtw_phl_watchdog_stop(void *phl)
 
 	_os_cancel_timer(phl_to_drvpriv(phl_info), &wdog->wdog_timer);
 }
+
+#ifdef CONFIG_POST_CORE_KEEP_ALIVE
+bool phl_wdog_state_is_keep_alive(struct phl_info_t *phl_info)
+{
+	struct phl_watchdog *wdog = &phl_info->wdog;
+
+	if (wdog->state == WD_STATE_KEEPALIVE)
+		return true;
+	else
+		return false;
+}
+
+enum rtw_phl_status rtw_phl_set_wdog_state_keep_alive(void *phl,
+						      bool enable, struct rtw_keep_alive_param *klive_param)
+{
+	struct phl_info_t *phl_info = (struct phl_info_t *)phl;
+	struct phl_watchdog *wdog = &phl_info->wdog;
+	enum rtw_phl_status psts = RTW_PHL_STATUS_FAILURE;
+
+	if (enable && wdog->state == WD_STATE_STARTED) {
+		if (klive_param == NULL) {
+			psts = RTW_PHL_STATUS_FAILURE;
+		} else {
+			wdog->state = WD_STATE_KEEPALIVE;
+			_os_mem_cpy(phl_to_drvpriv(phl_info), &wdog->klive_param, klive_param, sizeof(struct rtw_keep_alive_param));
+			psts = RTW_PHL_STATUS_SUCCESS;
+		}
+	} else if (!enable) {
+		if (wdog->state == WD_STATE_KEEPALIVE) {
+			_os_mem_set(phl_to_drvpriv(phl_info), &wdog->klive_param, 0, sizeof(struct rtw_keep_alive_param));
+			wdog->state = WD_STATE_STARTED;
+		}
+		psts = RTW_PHL_STATUS_SUCCESS;
+	}
+
+	return psts;
+}
+#endif

@@ -15,7 +15,6 @@
 #define _USB_OPS_LINUX_C_
 
 #include <drv_types.h>
-#include <rtw_sreset.h>
 
 int usbctrl_vendorreq(struct dvobj_priv *pdvobjpriv, u8 request, u16 value, u16 index, void *pdata, u16 len, u8 requesttype)
 {
@@ -289,6 +288,10 @@ static void rtw_usb_write_port_complete(struct urb *purb, struct pt_regs *regs)
 	struct data_urb *xmiturb =  litexmitbuf->dataurb;
 	struct dvobj_priv *pdvobj = litexmitbuf->dvobj;
 	unsigned long sp_flags;
+#ifdef RTW_WKARD_REDUCE_SER
+	struct rtw_phl_com_t *phl_com = pdvobj->phl_com;
+	struct phl_into_t *phl_info = GET_PHL_INFO(pdvobj);
+#endif
 
 	if (RTW_CANNOT_TX(pdvobj)) {
 		RTW_INFO(
@@ -300,12 +303,18 @@ static void rtw_usb_write_port_complete(struct urb *purb, struct pt_regs *regs)
 		goto check_completion;
 	}
 
-
 	if (purb->status == 0) {
-
+#ifdef CONFIG_SELF_DIAG_INFO
+		if (xmiturb->bulk_id < TX_STATS_MAX_NUM)
+			pdvobj->usb_data.trx_stats.tx_complete_cnt[xmiturb->bulk_id]++;
+#endif
 	} else {
 		RTW_INFO("###=> urb_write_port_complete status(%d)\n",
 			purb->status);
+#ifdef CONFIG_SELF_DIAG_INFO
+		if (xmiturb->bulk_id < TX_STATS_MAX_NUM)
+			pdvobj->usb_data.trx_stats.tx_complete_fail[xmiturb->bulk_id]++;
+#endif
 		if ((purb->status == -EPIPE) || (purb->status == -EPROTO)) {
 			/* usb_clear_halt(pusbdev, purb->pipe);	 */
 			/* msleep(10); */
@@ -344,6 +353,14 @@ check_completion:
 	rtw_phl_recycle_tx_buf(pdvobj->phl, litexmitbuf->phl_buf_ptr);
 	rtw_free_litedatabuf(&pdvobj->litexmitbuf_q, litexmitbuf);
 	rtw_free_dataurb(&pdvobj->xmit_urb_q, xmiturb);
+
+#ifdef RTW_WKARD_REDUCE_SER
+	if(dev_is_hw_start(pdvobj)) {
+		ATOMIC_SET(&phl_com->usb_write_port_complete, 1);
+		ATOMIC_DEC(&phl_com->usb_write_port_cnt);
+		//RTW_INFO("%s usb_write_port_cnt = %d\n", __func__, ATOMIC_READ(&phl_com->usb_write_port_cnt));
+	}
+#endif
 	rtw_phl_tx_req_notify(pdvobj->phl);
 
 }
@@ -355,12 +372,23 @@ u32 rtw_usb_write_port(void *d, u8 *phl_tx_buf_ptr,
 
 	int status;
 	unsigned int pipe;
-	u32 ret = _FAIL;
+	u32 ret = RTW_PHL_STATUS_FAILURE;
 	struct dvobj_priv *pdvobj = (struct dvobj_priv *)d;
 	struct usb_device *pusbd = dvobj_to_usb(pdvobj)->pusbdev;
 	struct lite_data_buf *litexmitbuf = NULL;
 	struct data_urb *xmiturb = NULL;
+#ifdef RTW_WKARD_REDUCE_SER
+	u32 flush_mode = 0;
+	void *phl = pdvobj->phl;
+	struct rtw_phl_com_t *phl_com = pdvobj->phl_com;
 
+	if(dev_is_hw_start(pdvobj)) {
+		if (ATOMIC_INC_RETURN(&phl_com->usb_write_port_cnt) == 1) {
+			rtw_phl_cmd_usb_toggle_flush_for_ser(phl, 0, &flush_mode, HW_BAND_0, PHL_CMD_DIRECTLY, 0);
+		}
+		//RTW_INFO("%s usb_write_port_cnt = %d\n", __func__, ATOMIC_READ(&phl_com->usb_write_port_cnt));
+	}
+#endif
 
 	litexmitbuf = rtw_alloc_litedatabuf(&pdvobj->litexmitbuf_q);
 	if (litexmitbuf == NULL) {
@@ -390,6 +418,7 @@ u32 rtw_usb_write_port(void *d, u8 *phl_tx_buf_ptr,
 	litexmitbuf->pbuf = pkt_data_buf;
 	litexmitbuf->dataurb = xmiturb;
 	litexmitbuf->phl_buf_ptr = phl_tx_buf_ptr;
+	xmiturb->bulk_id = bulk_id;
 
 	pipe = bulkid2pipe(pdvobj, bulk_id, _TRUE);
 
@@ -401,8 +430,15 @@ u32 rtw_usb_write_port(void *d, u8 *phl_tx_buf_ptr,
 	xmiturb->urb->transfer_flags |= URB_ZERO_PACKET;
 	status = usb_submit_urb(xmiturb->urb, GFP_ATOMIC);
 	if (!status) {
-
+#ifdef CONFIG_SELF_DIAG_INFO
+		if (bulk_id < TX_STATS_MAX_NUM)
+			pdvobj->usb_data.trx_stats.tx_submit_cnt[bulk_id]++;
+#endif
 	} else {
+#ifdef CONFIG_SELF_DIAG_INFO
+		if (bulk_id < TX_STATS_MAX_NUM)
+			pdvobj->usb_data.trx_stats.tx_submit_fail[bulk_id]++;
+#endif
 		rtw_sctx_done_err(&litexmitbuf->sctx,
 			RTW_SCTX_DONE_WRITE_PORT_ERR);
 		RTW_INFO("%s, status=%d\n", __func__, status);
@@ -417,18 +453,13 @@ u32 rtw_usb_write_port(void *d, u8 *phl_tx_buf_ptr,
 		goto exit;
 	}
 
-	ret = _SUCCESS;
+	ret = RTW_PHL_STATUS_SUCCESS;
 
 exit:
-	if (ret != _SUCCESS) {
+	if (ret != RTW_PHL_STATUS_SUCCESS) {
 		rtw_free_litedatabuf(&pdvobj->litexmitbuf_q, litexmitbuf);
 		rtw_free_dataurb(&pdvobj->xmit_urb_q, xmiturb);
 	}
-
-	if (ret == _SUCCESS)
-		ret = RTW_PHL_STATUS_SUCCESS;
-	else
-		ret = RTW_PHL_STATUS_FAILURE;
 
 	return ret;
 
@@ -439,24 +470,21 @@ void rtw_usb_write_port_cancel(void *d)
 {
 	int i, j;
 	struct dvobj_priv *dvobj = (struct dvobj_priv *)d;
-	struct data_urb *xmiturb = (struct data_urb *)dvobj->xmit_urb_q.urb_buf;
+	struct data_urb *xmiturb = NULL;
 	u32 xmiturb_nr = RTW_XMITURB_NR;
-
 
 	if (dvobj == NULL) {
 		RTW_ERR("%s dvobj is NULL\n", __func__);
 		rtw_warn_on(1);
 		return;
 	}
-
 	RTW_INFO("%s\n", __func__);
+	xmiturb = (struct data_urb *)dvobj->xmit_urb_q.urb_buf;
 
 	for (i = 0; i < xmiturb_nr; i++) {
 		usb_kill_urb(xmiturb->urb);
 		xmiturb++;
 	}
-
-
 }
 
 static void rtw_usb_read_port_complete(struct urb *urb, struct pt_regs *regs)
@@ -472,8 +500,13 @@ static void rtw_usb_read_port_complete(struct urb *urb, struct pt_regs *regs)
 	u8 bulk_id = recvurb->bulk_id;
 	u8 minlen = recvurb->minlen;
 	unsigned long sp_flags;
-	u8 status = _SUCCESS;
-
+	u8 status = RTW_PHL_STATUS_SUCCESS;
+#ifdef RTW_DETECT_HANG
+	struct debug_priv *pdbgpriv = &dvobj->drv_dbg;
+	struct hang_info *phang_info = &pdbgpriv->dbg_hang_info;
+	struct rxff_hang_info *prxff_hang_info = &phang_info->dbg_rxff_hang_info;
+#endif
+	u8* phl_buf_ptr = NULL;
 
 	if (bulk_id == REALTEK_USB_BULK_IN_EP_IDX) {
 		rx_data_buf_q = &dvobj->literecvbuf_q;
@@ -492,31 +525,45 @@ static void rtw_usb_read_port_complete(struct urb *urb, struct pt_regs *regs)
 			, dev_is_drv_stopped(dvobj) ? "True" : "False"
 			, dev_is_surprise_removed(dvobj) ? "True" : "False");
 
-		status = _FAIL;
+		status = RTW_PHL_STATUS_FAILURE;
 		goto exit;
 	}
 
 	if (urb->status == 0) {
+#ifdef CONFIG_SELF_DIAG_INFO
+		if (recvurb->bulk_id < RX_STATS_MAX_NUM)
+			dvobj->usb_data.trx_stats.rx_complete_cnt[recvurb->bulk_id]++;
+#endif
 		if ((actual_length > transfer_buffer_length) || (actual_length < minlen)) {
 			RTW_INFO("%s()-%d: actual_length:%u, transfer_buffer_length:%u, minlen:%u\n"
 				, __FUNCTION__, __LINE__, actual_length, transfer_buffer_length, minlen);
 
-			status = _FAIL;
+			status = RTW_PHL_STATUS_INVALID_PARAM;
 			goto exit;
 		} else {
+#ifdef RTW_DETECT_HANG
+			prxff_hang_info->rx_cnt++;
+#endif
 			rtw_reset_continual_io_error(dvobj);
-			status = _SUCCESS;
+			status = RTW_PHL_STATUS_SUCCESS;
 			goto exit;
 		}
 	} if (urb->status == -ENOENT) {
 		/*use usb_kill_urb urb status code = -ENOENT*/
-		status = _FAIL;
+#ifdef CONFIG_SELF_DIAG_INFO
+		if (recvurb->bulk_id < RX_STATS_MAX_NUM)
+			dvobj->usb_data.trx_stats.rx_complete_cnt[recvurb->bulk_id]++;
+#endif
+		status = RTW_PHL_STATUS_FAILURE;
 		goto exit;
 	} else {
 
 		RTW_INFO("###=> %s => urb.status(%d)\n", __func__, urb->status);
-		status = _FAIL;
-
+		status = RTW_PHL_STATUS_FAILURE;
+#ifdef CONFIG_SELF_DIAG_INFO
+		if (recvurb->bulk_id < RX_STATS_MAX_NUM)
+			dvobj->usb_data.trx_stats.rx_complete_fail[recvurb->bulk_id]++;
+#endif
 		if (rtw_inc_and_chk_continual_io_error(dvobj) == _TRUE)
 			dev_set_surprise_removed(dvobj);
 
@@ -532,6 +579,7 @@ static void rtw_usb_read_port_complete(struct urb *urb, struct pt_regs *regs)
 		case -ETIME:
 		case -ECOMM:
 		case -EOVERFLOW:
+			status = RTW_PHL_STATUS_INVALID_PARAM;
 			break;
 		case -EINPROGRESS:
 			RTW_INFO("ERROR: URB IS IN PROGRESS!/n");
@@ -544,14 +592,10 @@ static void rtw_usb_read_port_complete(struct urb *urb, struct pt_regs *regs)
 
 exit:
 
-	if (status == _SUCCESS)
-		status = RTW_PHL_STATUS_SUCCESS;
-	else
-		status = RTW_PHL_STATUS_FAILURE;
-
-	rtw_phl_post_in_complete(dvobj->phl, literecvbuf->phl_buf_ptr, actual_length, status);
+	phl_buf_ptr = literecvbuf->phl_buf_ptr;
 	rtw_free_litedatabuf(rx_data_buf_q, literecvbuf);
 	rtw_free_dataurb(rx_urb_q, recvurb);
+	rtw_phl_post_in_complete(dvobj->phl, phl_buf_ptr, actual_length, status);
 }
 
 u32 rtw_usb_read_port(void *d, void *rxobj,
@@ -559,7 +603,7 @@ u32 rtw_usb_read_port(void *d, void *rxobj,
 {
 	int err;
 	unsigned int pipe;
-	u32 ret = _FAIL;
+	u32 ret = RTW_PHL_STATUS_FAILURE;
 	struct dvobj_priv *dvobj = (struct dvobj_priv *)d;
 	struct usb_device *usbd = dvobj_to_usb(dvobj)->pusbdev;
 	struct lite_data_buf *literecvbuf = NULL;
@@ -585,7 +629,7 @@ u32 rtw_usb_read_port(void *d, void *rxobj,
 	} else {
 		RTW_INFO("%s,%d Unkown bulk id:%d\n",
 			__func__, __LINE__, bulk_id);
-		ret = _FAIL;
+		ret = RTW_PHL_STATUS_FAILURE;
 		goto exit;
 	}
 
@@ -638,25 +682,28 @@ u32 rtw_usb_read_port(void *d, void *rxobj,
 	err = usb_submit_urb(recvurb->urb, GFP_ATOMIC);
 	if ((err) && (err != (-EPERM))) {
 		RTW_INFO("cannot submit rx in-token(err = 0x%08x),urb_status = %d\n", err, recvurb->urb->status);
-		ret = _FAIL;
+#ifdef CONFIG_SELF_DIAG_INFO
+		if (bulk_id < RX_STATS_MAX_NUM)
+			dvobj->usb_data.trx_stats.rx_submit_fail[bulk_id]++;
+#endif
+		ret = RTW_PHL_STATUS_FAILURE;
 		goto exit;
 	}
+#ifdef CONFIG_SELF_DIAG_INFO
+	if (bulk_id < RX_STATS_MAX_NUM)
+		dvobj->usb_data.trx_stats.rx_submit_cnt[bulk_id]++;
+#endif
 
 	/* record usb bulk in */
 	if (bulk_id == REALTEK_USB_BULK_IN_EP_IDX)
 		ATOMIC_INC(&(dvobj->rx_pending_cnt));
 
-	ret = _SUCCESS;
+	ret = RTW_PHL_STATUS_SUCCESS;
 exit:
-	if (ret != _SUCCESS) {
+	if (ret != RTW_PHL_STATUS_SUCCESS) {
 		rtw_free_litedatabuf(rx_data_buf_q, literecvbuf);
 		rtw_free_dataurb(rx_urb_q, recvurb);
 	}
-
-	if (ret == _SUCCESS)
-		ret = RTW_PHL_STATUS_SUCCESS;
-	else
-		ret = RTW_PHL_STATUS_FAILURE;
 
 	return ret;
 }
@@ -665,11 +712,11 @@ void rtw_usb_read_port_cancel(void *d)
 {
 	int i;
 	struct dvobj_priv *dvobj = (struct dvobj_priv *)d;
-	struct data_urb *recvurb = (struct data_urb *)dvobj->recv_urb_q.urb_buf;
+	struct data_urb *recvurb = NULL;
 	/*Elwin_todo need use correct literecvbuf_nr recvurb_nr */
 	u32 recvurb_nr = RTW_RECVURB_NR;
 #ifdef CONFIG_USB_INTERRUPT_IN_PIPE
-	u32 initinurb_nr = RTW_INTINURB_NR;
+	u32 initinurb_nr = RTW_INTINURB_NR(dvobj);
 #endif
 
 	if (dvobj == NULL) {
@@ -678,13 +725,12 @@ void rtw_usb_read_port_cancel(void *d)
 		return;
 	}
 	RTW_INFO("%s\n", __func__);
+        recvurb = (struct data_urb *)dvobj->recv_urb_q.urb_buf;
 
-	
 	for (i = 0; i < recvurb_nr; i++) {
 		usb_kill_urb(recvurb->urb);
 		recvurb++;
 	}
-
 
 #ifdef CONFIG_USB_INTERRUPT_IN_PIPE
 	recvurb = (struct data_urb *)dvobj->intin_urb_q.urb_buf;

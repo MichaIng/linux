@@ -190,7 +190,7 @@ struct mstat_sniff_rule {
 };
 
 struct mstat_sniff_rule mstat_sniff_rules[] = {
-	{MSTAT_TYPE_VIR, 32, 32},
+	/*{MSTAT_TYPE_VIR, 32, 32},*/
 };
 
 int mstat_sniff_rule_num = sizeof(mstat_sniff_rules) / sizeof(struct mstat_sniff_rule);
@@ -1002,6 +1002,7 @@ void dump_blacklist(void *sel, _queue *blist, const char *title)
 {
 	struct blacklist_ent *ent = NULL;
 	_list *list, *head;
+	char mac_addr_str[MAC_FMT_LEN];
 
 	_rtw_spinlock_bh(&blist->lock);
 	head = &blist->queue;
@@ -1014,11 +1015,10 @@ void dump_blacklist(void *sel, _queue *blist, const char *title)
 		while (rtw_end_of_queue_search(head, list) == _FALSE) {
 			ent = LIST_CONTAINOR(list, struct blacklist_ent, list);
 			list = get_next(list);
-
 			if (rtw_time_after(rtw_get_current_time(), ent->exp_time))
-				RTW_PRINT_SEL(sel, MAC_FMT" expired\n", MAC_ARG(ent->addr));
+				RTW_PRINT_SEL(sel, "%s expired\n", get_macaddr_str(mac_addr_str, sel, ent->addr));
 			else
-				RTW_PRINT_SEL(sel, MAC_FMT" %u\n", MAC_ARG(ent->addr)
+				RTW_PRINT_SEL(sel, "%s %u\n", get_macaddr_str(mac_addr_str, sel, ent->addr)
 					, rtw_get_remaining_time_ms(ent->exp_time));
 		}
 
@@ -1040,7 +1040,7 @@ inline BOOLEAN is_null(char c)
 		return _FALSE;
 }
 
-inline BOOLEAN is_all_null(char *c, int len)
+inline BOOLEAN is_all_null(const char *c, int len)
 {
 	for (; len > 0; len--)
 		if (c[len - 1] != '\0')
@@ -1167,5 +1167,48 @@ int hexstr2bin(const char *hex, u8 *buf, size_t len)
 		ipos += 2;
 	}
 	return 0;
+}
+
+void ustrs_add(char **ustrs, int *ustrs_len, const char *str)
+{
+	char *tmp_ustrs;
+	int tmp_ustrs_len;
+
+	if (!str || !strlen(str))
+		return;
+
+	tmp_ustrs = *ustrs;
+	tmp_ustrs_len = *ustrs_len;
+	if (tmp_ustrs) {
+		const char *pos;
+
+		/* search for same string */
+		for (pos = tmp_ustrs; pos < tmp_ustrs + tmp_ustrs_len; pos += strlen(pos) + 1) {
+			if (strcmp(pos, str) == 0)
+				return;
+		}
+
+		/* no match, realloc and add */
+		tmp_ustrs = rtw_malloc(tmp_ustrs_len + strlen(str) + 1);
+		if (!tmp_ustrs) {
+			rtw_warn_on(1);
+			return;
+		}
+		_rtw_memcpy((void *)tmp_ustrs, *ustrs, tmp_ustrs_len);
+		_rtw_memcpy((void *)(tmp_ustrs + tmp_ustrs_len), str, strlen(str) + 1);
+		rtw_mfree((void *)*ustrs, tmp_ustrs_len);
+		*ustrs = tmp_ustrs;
+		*ustrs_len += strlen(str) + 1;
+
+	} else {
+		tmp_ustrs = rtw_malloc(strlen(str) + 1);
+		if (!tmp_ustrs) {
+			rtw_warn_on(1);
+			return;
+		}
+		_rtw_memcpy((void *)tmp_ustrs, str, strlen(str) + 1);
+		*ustrs = tmp_ustrs;
+		*ustrs_len = strlen(str) + 1;
+	}
 }
 

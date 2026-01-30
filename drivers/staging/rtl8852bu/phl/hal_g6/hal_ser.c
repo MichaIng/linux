@@ -15,12 +15,12 @@
 #define _HAL_SER_C_
 #include "hal_headers.h"
 
-enum rtw_hal_status rtw_hal_ser_ctrl(void *hal, bool en)
+enum rtw_hal_status rtw_hal_ser_ctrl(void *hal, enum rtw_hal_ser_rsn rsn, bool en)
 {
 	enum rtw_hal_status hstatus = RTW_HAL_STATUS_FAILURE;
 	struct hal_info_t *hal_info = (struct hal_info_t *)hal;
 
-	hstatus = rtw_hal_mac_ser_ctrl(hal_info, en);
+	hstatus = rtw_hal_mac_ser_ctrl(hal_info, rsn, en);
 
 	return hstatus;
 }
@@ -33,7 +33,9 @@ rtw_hal_ser_get_error_status(void *hal, u32 *err)
 
 	rtw_hal_mac_ser_get_error_status(hal_info, err);
 
-	if ((*err == MAC_AX_ERR_L1_ERR_DMAC) || (*err == MAC_AX_ERR_L0_PROMOTE_TO_L1)) {
+	if (*err == MAC_AX_ERR_L1_PREERR_DMAC) {
+		notify = RTW_PHL_SER_PREPARE_DMAC;
+	} else if ((*err == MAC_AX_ERR_L1_ERR_DMAC) || (*err == MAC_AX_ERR_L0_PROMOTE_TO_L1)) {
 		notify = RTW_PHL_SER_PAUSE_TRX;
 	} else if (*err == MAC_AX_ERR_L1_RESET_DISABLE_DMAC_DONE) {
 		notify = RTW_PHL_SER_DO_RECOVERY;
@@ -58,6 +60,13 @@ enum rtw_hal_status rtw_hal_ser_set_error_status(void *hal, u32 err)
 	struct hal_info_t *hal_info = (struct hal_info_t *)hal;
 
 	return rtw_hal_mac_ser_set_error_status(hal_info, err);
+}
+
+bool rtw_hal_ser_chk_ser_l1(void *hal)
+{
+	struct hal_info_t *hal_info = (struct hal_info_t *)hal;
+
+	return rtw_hal_mac_ser_chk_ser_l1(hal_info);
 }
 
 enum rtw_hal_status rtw_hal_trigger_cmac_err(void *hal)
@@ -100,4 +109,62 @@ rtw_hal_ser_reset_wdt_intr(void *hal)
 	u32 mac_err;
 	mac_err = rtw_hal_mac_ser_reset_wdt_intr(hal_info);
 	PHL_TRACE(COMP_PHL_DBG, _PHL_INFO_, "rtw_hal_ser_reset_wdt_intr status 0x%x\n",mac_err);
+}
+
+void rtw_hal_ser_int_cfg(void *hal, struct rtw_phl_com_t *phl_com,
+						 enum RTW_PHL_SER_CFG_STEP step)
+{
+	struct hal_info_t *hal_info = (struct hal_info_t *)hal;
+	struct hal_ops_t *hal_ops = hal_get_ops(hal_info);
+	struct hal_spec_t *hal_spec = phl_get_ic_spec(phl_com);
+
+	/* check whether to config imr during ser */
+	if (!hal_spec->ser_cfg_int)
+		return;
+
+	switch (step) {
+	case RTW_PHL_SER_M1_PRE_CFG:
+		/**
+		 * 1. disable imr
+		 * 2. set imr used during ser
+		 */
+		rtw_phl_disable_interrupt_sync(phl_com);
+		if (hal_ops->init_int_default_value)
+			hal_ops->init_int_default_value(hal, INT_SET_OPT_SER_START);
+		break;
+	case RTW_PHL_SER_M1_POST_CFG:
+		/**
+		 * 1. enable interrupt
+		 */
+		rtw_phl_enable_interrupt_sync(phl_com);
+		break;
+	case RTW_PHL_SER_M5_CFG:
+		/**
+		 * 1. disable interrupt
+		 * 2. set imr used after ser
+		 * 3. enable interrupt
+		 */
+		rtw_phl_disable_interrupt_sync(phl_com);
+		if (hal_ops->init_int_default_value)
+			hal_ops->init_int_default_value(hal, INT_SET_OPT_SER_DONE);
+
+		rtw_phl_enable_interrupt_sync(phl_com);
+		break;
+	default:
+		PHL_ERR("%s(): unknown step!\n", __func__);
+	}
+}
+
+enum rtw_hal_status
+rtw_hal_lv2rst_stop_dma(void *hal)
+{
+	enum rtw_hal_status sts = RTW_HAL_STATUS_FAILURE;
+	struct hal_info_t *hal_info = (struct hal_info_t *)hal;
+
+	sts = rtw_hal_mac_lv2rst_stop_dma(hal_info);
+
+	if (sts != RTW_HAL_STATUS_SUCCESS)
+		PHL_ERR("%s: fail!\n", __func__);
+
+	return sts;
 }

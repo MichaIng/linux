@@ -9,6 +9,7 @@ _OS_INTFS_FILES :=	os_dep/osdep_service.o \
 			os_dep/linux/recv_linux.o \
 			os_dep/linux/ioctl_cfg80211.o \
 			os_dep/linux/rtw_cfgvendor.o \
+			os_dep/linux/os_ch_utils.o \
 			os_dep/linux/wifi_regd.o \
 			os_dep/linux/rtw_android.o \
 			os_dep/linux/rtw_proc.o \
@@ -45,7 +46,11 @@ _OS_INTFS_FILES += os_dep/linux/custom_gpio_linux.o
 endif
 
 ########### CORE PATH  #################################
-_CORE_FILES :=	core/rtw_cmd.o \
+_CORE_FILES :=	core/rtw_fsm.o \
+		core/rtw_fsm_xxx.o \
+		core/rtw_fsm_rrm.o \
+		core/rtw_fsm_wnm.o \
+		core/rtw_cmd.o \
 		core/rtw_security.o \
 		core/rtw_debug.o \
 		core/rtw_io.o \
@@ -59,9 +64,17 @@ _CORE_FILES :=	core/rtw_cmd.o \
 		core/rtw_wlan_util.o \
 		core/rtw_vht.o \
 		core/rtw_he.o \
+		core/rtw_eht.o \
 		core/rtw_pwrctrl.o \
 		core/rtw_rf.o \
+		core/rtw_ch_utils.o \
 		core/rtw_chplan.o \
+		core/regdb/rtw_regdb_$(CONFIG_RTW_REGDB).o \
+		core/rtw_chset.o \
+		core/rtw_opc_utils.o \
+		core/rtw_opc_pref.o \
+		core/rtw_dfs.o \
+		core/rtw_txpwr.o \
 		core/monitor/rtw_radiotap.o \
 		core/rtw_recv.o \
 		core/rtw_recv_shortcut.o \
@@ -77,19 +90,22 @@ _CORE_FILES :=	core/rtw_cmd.o \
 		core/rtw_p2p.o \
 		core/rtw_tdls.o \
 		core/rtw_br_ext.o \
-		core/rtw_sreset.o \
 		core/rtw_rm.o \
 		core/rtw_rm_fsm.o \
 		core/rtw_rm_util.o \
 		core/rtw_trx.o \
 		core/rtw_beamforming.o \
-		core/rtw_scan.o
+		core/rtw_scan.o \
+		core/rtw_twt.o \
+		core/rtw_smeofld.o \
+		core/rtw_nan.o \
 		#core/efuse/rtw_efuse.o
 
 _CORE_FILES +=	core/rtw_phl.o \
+		core/rtw_phl_rate.o \
 		core/rtw_phl_cmd.o
 
-EXTRA_CFLAGS += -I$(srctree)/$(src)/core/crypto
+EXTRA_CFLAGS += -I$(src)/core/crypto
 _CORE_FILES += core/crypto/aes-internal.o \
 		core/crypto/aes-internal-enc.o \
 		core/crypto/aes-gcm.o \
@@ -103,7 +119,8 @@ _CORE_FILES += core/crypto/aes-internal.o \
 		core/crypto/sha256.o \
 		core/crypto/sha256-prf.o \
 		core/crypto/rtw_crypto_wrap.o \
-		core/rtw_swcrypto.o		
+		core/rtw_swcrypto.o \
+		core/rtw_csi.o
 
 ifeq ($(CONFIG_WOWLAN), y)
 _CORE_FILES += core/rtw_wow.o
@@ -119,7 +136,10 @@ endif
 
 ifeq ($(CONFIG_SDIO_HCI), y)
 _CORE_FILES += core/rtw_sdio.o
-_CORE_FILES += core/rtw_trx_sdio.o
+endif
+
+ifeq ($(CONFIG_FPGA_INCLUDED), y)
+_CORE_FILES += core/rtw_fpga.o
 endif
 
 ifeq ($(CONFIG_MP_INCLUDED), y)

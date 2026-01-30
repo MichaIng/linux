@@ -32,6 +32,7 @@
 /*[Driver] provide the type mutex*/
 /* Mutex type */
 #define mac_ax_mutex _os_mutex
+#define mac_ax_raw_time _os_raw_time
 
 #ifndef ARRAY_SIZE
 #define ARRAY_SIZE(arr)		(sizeof(arr) / sizeof((arr)[0]))
@@ -44,11 +45,11 @@
 #define MAC_AX_DBG_MSG_EN	1
 
 /* Set debug message level */
-#define MAC_AX_MSG_LEVEL_TRACE		3
-#define MAC_AX_MSG_LEVEL_WARNING	2
-#define MAC_AX_MSG_LEVEL_ERR		1
-#define MAC_AX_MSG_LEVEL_ALWAYS		0
-#define MAC_AX_MSG_LEVEL		MAC_AX_MSG_LEVEL_TRACE
+#define MAC_AX_MSG_LEVEL_TRACE		5
+#define MAC_AX_MSG_LEVEL_WARNING	3
+#define MAC_AX_MSG_LEVEL_ERR		2
+#define MAC_AX_MSG_LEVEL_ALWAYS		1
+#define MAC_AX_MSG_LEVEL		PHL_LOG_LEVEL
 
 #define SET_CLR_WORD(_w, _v, _f)                                               \
 				(((_w) & ~((_f##_MSK) << (_f##_SH))) |         \
@@ -58,6 +59,9 @@
 
 #define SET_CLR_WOR2(_w, _v, _sh, _msk) (((_w) & ~(_msk << _sh)) |             \
 					(((_v) & _msk) << _sh))
+
+#define SET_CLR_WOR3(_w, _v, _msk) (((_w) & ~(_msk)) | ((_v) & (_msk)))
+
 #define SET_WOR2(_v, _sh, _msk)         (((_v) & _msk) << _sh)
 #define GET_FIEL2(_w, _sh, _msk)        (((_w) >> _sh) & _msk)
 
@@ -83,6 +87,9 @@ typedef char		s8;
 typedef int16_t		s16;
 typedef int32_t		s32;
 
+#define _os_va_list va_list
+
+#include "mac_exp_def.h"
 #include "../hal_headers_le.h"
 
 typedef u16 __le16;
@@ -91,6 +98,7 @@ typedef u16 __be16;
 typedef u32 __be32;
 
 typedef	CRITICAL_SECTION	mac_ax_mutex;
+#define mac_ax_raw_time u32
 
 #define ARRAY_SIZE(arr)		(sizeof(arr) / sizeof((arr)[0]))
 
@@ -117,6 +125,9 @@ typedef	CRITICAL_SECTION	mac_ax_mutex;
 
 #define SET_CLR_WOR2(_w, _v, _sh, _msk) (((_w) & ~(_msk << _sh)) |             \
 					(((_v) & _msk) << _sh))
+
+#define SET_CLR_WOR3(_w, _v, _msk) (((_w) & ~(_msk)) | ((_v) & (_msk)))
+
 #define SET_WOR2(_v, _sh, _msk)         (((_v) & _msk) << _sh)
 #define GET_FIEL2(_w, _sh, _msk)        (((_w) >> _sh) & _msk)
 
@@ -154,6 +165,20 @@ typedef	CRITICAL_SECTION	mac_ax_mutex;
 
 #ifndef __func__
 #define __func__ __FUNCTION__
+#endif
+
+#ifndef fallthrough
+	#if __GNUC__ >= 5 || defined(__clang__)
+		#ifndef __has_attribute
+			#define __has_attribute(x) 0
+		#endif
+		#if __has_attribute(__fallthrough__)
+			#define fallthrough __attribute__((__fallthrough__))
+		#endif
+	#endif
+	#ifndef fallthrough
+		#define fallthrough do {} while (0) /* fallthrough */
+	#endif
 #endif
 
 #endif // end of #else /* for WD1 test program */

@@ -28,20 +28,8 @@
 
 #include "../halbb_pmac_setting_ex.h"
 
-#define BB_DYN_DTR
-
-struct bb_8852b_info {
-#ifdef BB_DYN_DTR
-	bool			dyn_dtr_en;
-	u8				dyn_dtr_rssi_th;
-#endif
-};
-
 struct bb_info;
 
-void halbb_dyn_dtr_en_8852b(struct bb_info *bb, bool en);
-void halbb_dyn_dtr_init_8852b(struct bb_info *bb);
-void halbb_dyn_dtr_8852b(struct bb_info *bb);
 bool halbb_chk_pkg_valid_8852b(struct bb_info *bb, u8 bb_ver, u8 rf_ver);
 void halbb_set_pmac_tx_8852b(struct bb_info *bb, struct halbb_pmac_info *tx_info,
 			     enum phl_phy_idx phy_idx);
@@ -60,5 +48,7 @@ u8 halbb_querry_pd_lower_bound_8852b(struct bb_info *bb, bool get_en_info,
 				       enum phl_phy_idx phy_idx);
 void halbb_pop_en_8852b(struct bb_info *bb, bool en, enum phl_phy_idx phy_idx);
 bool halbb_querry_pop_en_8852b(struct bb_info *bb, enum phl_phy_idx phy_idx);
+void halbb_dyn_mu_bypass_vht_sigb_8852b(struct bb_info *bb);
+bool halbb_chk_tx_idle_8852b(struct bb_info *bb, enum phl_phy_idx phy_idx);
 #endif
 #endif /*  __HALBB_8852b_H__ */

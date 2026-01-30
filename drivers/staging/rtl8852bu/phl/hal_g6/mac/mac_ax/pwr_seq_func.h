@@ -21,8 +21,4 @@
 
 u32 pwr_poll_u32(struct mac_ax_adapter *adapter, u32 offset,
 		 u32 mask, u32 pwr_val);
-u32 pwr_poll_u16(struct mac_ax_adapter *adapter, u32 offset,
-		 u16 mask, u16 pwr_val);
-u32 pwr_poll_u8(struct mac_ax_adapter *adapter, u32 offset,
-		u8 mask, u8 pwr_val);
 #endif

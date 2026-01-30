@@ -14,7 +14,8 @@
  *****************************************************************************/
 #define _PHL_PS_DBG_CMD_C_
 #include "../phl_headers.h"
-#ifdef CONFIG_POWER_SAVE
+
+#if defined(CONFIG_PHL_TEST_SUITE) && defined (CONFIG_POWER_SAVE)
 struct phl_ps_cmd_info {
 	char name[16];
 	u8 id;
@@ -128,8 +129,7 @@ void phl_ps_cmd_parser(struct phl_info_t *phl_info, char input[][MAX_ARGV],
 	default:
 		PS_CNSL(out_len, used, output + used, out_len - used,
 			 "command not supported !!\n");
-
-		/* fall through */
+		fallthrough;
 	case PHL_PS_HELP:
 		PS_CNSL(out_len, used, output + used, out_len - used,
 			 "PS cmd ==>\n");
@@ -165,12 +165,17 @@ void phl_ps_dbg_dump(struct phl_info_t *phl_info, u32 *used,
 		phl_ps_ps_mode_to_str(info.ps_mode), phl_ps_pwr_lvl_to_str(info.cur_pwr_lvl),
 		(info.ap_active == true ? "yes" : "no"), (info.gc_active == true ? "yes" : "no"),
 		phl_tfc_lvl_to_str(phl_info->phl_com->phl_stats.tx_traffic.lvl), phl_tfc_lvl_to_str(phl_info->phl_com->phl_stats.rx_traffic.lvl));
-
+	PS_CNSL(out_len, *used, output + *used, out_len - *used,
+		"Cur BcnTimeout: %d, cand BcnTimeout: %d\n",
+		info.bcn_tracking_i.cur_tracking.bcn_timeout,
+		info.bcn_tracking_i.cand_tracking.bcn_timeout);
 	if (info.sta != NULL) {
 		PS_CNSL(out_len, *used, output + *used, out_len - *used,
 				"chnl: %d, rssi: %d, rssi_bcn: %d\n",
 				info.sta->chandef.chan, rtw_hal_get_sta_rssi(info.sta), phl_get_min_rssi_bcn(phl_info));
 	}
+
+	ps_cap = _get_ps_cap(phl_info);
 
 	PS_CNSL(out_len, *used, output + *used, out_len - *used,
 		"========== Advanced Info ==========\n");
@@ -179,30 +184,49 @@ void phl_ps_dbg_dump(struct phl_info_t *phl_info, u32 *used,
 		"last enter reason: %s\
 		\nlast leave reason: %s\
 		\nreject all pwr req: %s\
-		\nbtc req pwr: %s\
-		\nruntime stop reason: %d\n",
+		\nhal req pwr: 0x%x\
+		\nruntime stop reason: %d\
+		\nrecovery count: %d\n",
 		info.enter_rson,
 		info.leave_rson,
 		(info.rej_pwr_req == true ? "yes" : "no"),
-		(info.btc_req_pwr == true ? "yes" : "no"),
-		info.rt_stop_rson);
+		info.hal_req_pwr,
+		info.rt_stop_rson,
+		info.recy_cnt);
+
+	if (ps_cap->defer_para.defer_rson & PS_DEFER_PING_PKT) {
+		PS_CNSL(out_len, *used, output + *used, out_len - *used,
+		        "tx ping pass time(ms): %d\n", (int)phl_get_passing_time_ms(info.last_tx_ping_time));
+	}
+	if (ps_cap->defer_para.defer_rson & PS_DEFER_DHCP_PKT) {
+		PS_CNSL(out_len, *used, output + *used, out_len - *used,
+		        "tx dhcp pass time(ms): %d\n", (int)phl_get_passing_time_ms(info.last_tx_dhcp_time));
+	}
 
 	PS_CNSL(out_len, *used, output + *used, out_len - *used,
 		"========== Capability ==========\n");
 
-	ps_cap = _get_ps_cap(phl_info);
-
 	PS_CNSL(out_len, *used, output + *used, out_len - *used,
 		"init_rf_state: %s, init_rt_stop_rson: 0x%x, leave_fail_act: 0x%x\
-		\nlps: %s, lps_cap: %s, lps_pause_tx: %d\
-		\nawake_interval: %d, listen_bcn_mode: %d, smart_ps_mode: %d\
+		\nlps: %s, lps_cap: %s, ps_pause_tx: %d\
+		\nawake_interval: %d, listen_bcn_mode: %d, smart_ps_mode: %d, bcnnohit: %d\
 		\nrssi_enter_threshold: %d, rssi_leave_threshold: %d, rssi_diff_threshold: %d\
-		\nips: %s, ips_cap: %s\n",
+		\ndefer_rson: 0x%x, lps_ping_defer_time: %d(ms), lps_dhcp_defer_time: %d(ms)\
+		\nlps_adv_cap: pvb_wait_rx (%s)\
+		\nips: %s, ips_cap: %s\
+		\nwowlan lps: %s, wowlan lps_cap: %s\
+		\nwowlan lps awake_interval: %d, wowlan lps listen_bcn_mode: %d, wowlan lps smart_ps_mode: %d\
+		\nwowlan ips: %s, wowlan ips_cap: %s\n",
 		(ps_cap->init_rf_state ? "off" : "on"), ps_cap->init_rt_stop_rson, ps_cap->leave_fail_act,
-		phl_ps_op_mode_to_str(ps_cap->lps_en), phl_ps_pwr_lvl_to_str(phl_ps_judge_pwr_lvl(ps_cap->lps_cap, PS_MODE_LPS, true)), ps_cap->lps_pause_tx,
-		ps_cap->lps_awake_interval, ps_cap->lps_listen_bcn_mode, ps_cap->lps_smart_ps_mode,
+		phl_ps_op_mode_to_str(ps_cap->lps_en), phl_ps_pwr_lvl_to_str(phl_ps_judge_pwr_lvl(ps_cap->lps_cap, PS_MODE_LPS, true)), ps_cap->ps_pause_tx,
+		ps_cap->lps_awake_interval, ps_cap->lps_listen_bcn_mode, ps_cap->lps_smart_ps_mode, ps_cap->lps_bcnnohit_en,
 		ps_cap->lps_rssi_enter_threshold, ps_cap->lps_rssi_leave_threshold, ps_cap->lps_rssi_diff_threshold,
-		phl_ps_op_mode_to_str(ps_cap->ips_en), phl_ps_pwr_lvl_to_str(phl_ps_judge_pwr_lvl(ps_cap->ips_cap, PS_MODE_IPS, true)));
+		ps_cap->defer_para.defer_rson, (int)ps_cap->defer_para.lps_ping_defer_time, (int)ps_cap->defer_para.lps_dhcp_defer_time,
+	        ((ps_cap->lps_adv_cap & RTW_LPS_ADV_PVB_W_RX) ? "on" : "off"),
+		phl_ps_op_mode_to_str(ps_cap->ips_en), phl_ps_pwr_lvl_to_str(phl_ps_judge_pwr_lvl(ps_cap->ips_cap, PS_MODE_IPS, true)),
+		phl_ps_op_mode_to_str(ps_cap->lps_wow_en), phl_ps_pwr_lvl_to_str(phl_ps_judge_pwr_lvl(ps_cap->lps_wow_cap, PS_MODE_LPS, true)),
+		ps_cap->lps_wow_awake_interval, ps_cap->lps_wow_listen_bcn_mode, ps_cap->lps_wow_smart_ps_mode,
+		phl_ps_op_mode_to_str(ps_cap->ips_wow_en), phl_ps_pwr_lvl_to_str(phl_ps_judge_pwr_lvl(ps_cap->ips_wow_cap, PS_MODE_IPS, true)));
 
 #else
 	PS_CNSL(out_len, *used, output + *used, out_len - *used,
@@ -244,26 +268,24 @@ void phl_ps_dbg_stop_ps(struct phl_info_t *phl_info, u32 *used,
 	} while (0);
 }
 
-static void _ps_dbg_cmd_done(void *priv, struct phl_msg *msg)
+static void _ps_dbg_cmd_done(void *drv_priv, u8 *cmd, u32 cmd_len, enum rtw_phl_status status)
 {
-	struct phl_info_t *phl_info = (struct phl_info_t *)priv;
-
-	if (msg->inbuf && msg->inlen) {
-		_os_mem_free(phl_to_drvpriv(phl_info),
-			msg->inbuf, msg->inlen);
+	if (cmd) {
+		_os_mem_free(drv_priv, cmd, cmd_len);
+		cmd = NULL;
+		PHL_INFO("%s.....\n", __func__);
 	}
-
 }
 
-void rtw_phl_dbg_ps_op_mode(void *phl, u8 band_idx, u8 ps_mode, u8 ps_op_mode)
+void rtw_phl_dbg_ps_op_mode(void *phl, u8 band_idx, u8 ps_mode, u8 ps_op_mode,
+			     enum phl_cmd_type cmd_type, u32 cmd_timeout)
 {
 	struct phl_info_t *phl_info = (struct phl_info_t *)phl;
-	struct phl_msg msg = {0};
-	struct phl_msg_attribute attr = {0};
 	struct ps_mdl_dbg_info *dbg_info = NULL;
+	enum rtw_phl_status psts = RTW_PHL_STATUS_FAILURE;
 
 	dbg_info = (struct ps_mdl_dbg_info *)_os_mem_alloc(phl_to_drvpriv(phl_info),
-				sizeof(struct ps_mdl_dbg_info));
+		    sizeof(struct ps_mdl_dbg_info));
 	if (dbg_info == NULL) {
 		PHL_TRACE(COMP_PHL_PS, _PHL_ERR_, "[PS_CMD], %s(): fail to alloc memory.\n", __func__);
 		return;
@@ -278,24 +300,27 @@ void rtw_phl_dbg_ps_op_mode(void *phl, u8 band_idx, u8 ps_mode, u8 ps_op_mode)
 
 	dbg_info->val = ps_op_mode;
 
-	SET_MSG_MDL_ID_FIELD(msg.msg_id, PHL_MDL_POWER_MGNT);
-	SET_MSG_EVT_ID_FIELD(msg.msg_id, MSG_EVT_PS_DBG_CMD);
-	msg.band_idx = band_idx;
-	msg.inbuf = (u8*)dbg_info;
-	msg.inlen = sizeof(*dbg_info);
-	attr.completion.completion = _ps_dbg_cmd_done;
-	attr.completion.priv = phl_info;
-
-	if (phl_disp_eng_send_msg(phl_info, &msg, &attr, NULL) !=
-				RTW_PHL_STATUS_SUCCESS) {
-		PHL_TRACE(COMP_PHL_PS, _PHL_ERR_, "[PS_CMD], %s(): fail to notify batter change.\n", __func__);
+	psts = phl_cmd_enqueue(phl_info,
+			       band_idx,
+			       MSG_EVT_PS_DBG_CMD,
+			       (u8 *)dbg_info,
+			       sizeof(struct ps_mdl_dbg_info),
+			       _ps_dbg_cmd_done,
+			       cmd_type, cmd_timeout);
+	if (is_cmd_failure(psts)) {
+		/* Send cmd success, but wait cmd fail*/
+		PHL_TRACE(COMP_PHL_PS, _PHL_WARNING_, "[PS_CMD], %s(): wait cmd fail rsn = %d.\n",
+			  __func__, psts);
+	} else if (psts != RTW_PHL_STATUS_SUCCESS) {
+		/* Send cmd fail */
+		PHL_TRACE(COMP_PHL_PS, _PHL_ERR_, "[PS_CMD], %s(): send cmd fail rsn = %d.\n",
+			  __func__, psts);
 		goto cmd_fail;
 	}
-
 	return;
 
 cmd_fail:
-	_os_mem_free(phl_to_drvpriv(phl_info), dbg_info, sizeof(dbg_info));
+	_os_mem_free(phl_to_drvpriv(phl_info), dbg_info, sizeof(struct ps_mdl_dbg_info));
 }
 
 void phl_ps_dbg_ps_op_mode(struct phl_info_t *phl_info, u32 *used,
@@ -321,20 +346,20 @@ void phl_ps_dbg_ps_op_mode(struct phl_info_t *phl_info, u32 *used,
 		if (!_get_hex_from_string(input[3], &op_mode))
 			break;
 
-		rtw_phl_dbg_ps_op_mode((void*)phl_info, HW_BAND_0, ps_mode, (u8)op_mode);
+		rtw_phl_dbg_ps_op_mode((void*)phl_info, HW_BAND_0, ps_mode, (u8)op_mode, PHL_CMD_NO_WAIT, 0);
 
 	} while (0);
 }
 
-void rtw_phl_dbg_ps_cap(void *phl, u8 band_idx, u8 ps_mode, u8 ps_cap)
+void rtw_phl_dbg_ps_cap(void *phl, u8 band_idx, u8 ps_mode, u8 ps_cap,
+			 enum phl_cmd_type cmd_type, u32 cmd_timeout)
 {
 	struct phl_info_t *phl_info = (struct phl_info_t *)phl;
-	struct phl_msg msg = {0};
-	struct phl_msg_attribute attr = {0};
 	struct ps_mdl_dbg_info *dbg_info = NULL;
+	enum rtw_phl_status psts = RTW_PHL_STATUS_FAILURE;
 
 	dbg_info = (struct ps_mdl_dbg_info *)_os_mem_alloc(phl_to_drvpriv(phl_info),
-				sizeof(struct ps_mdl_dbg_info));
+		    sizeof(struct ps_mdl_dbg_info));
 	if (dbg_info == NULL) {
 		PHL_TRACE(COMP_PHL_PS, _PHL_ERR_, "[PS_CMD], %s(): fail to alloc memory.\n", __func__);
 		return;
@@ -347,24 +372,27 @@ void rtw_phl_dbg_ps_cap(void *phl, u8 band_idx, u8 ps_mode, u8 ps_cap)
 
 	dbg_info->val = ps_cap;
 
-	SET_MSG_MDL_ID_FIELD(msg.msg_id, PHL_MDL_POWER_MGNT);
-	SET_MSG_EVT_ID_FIELD(msg.msg_id, MSG_EVT_PS_DBG_CMD);
-	msg.band_idx = band_idx;
-	msg.inbuf = (u8*)dbg_info;
-	msg.inlen = sizeof(*dbg_info);
-	attr.completion.completion = _ps_dbg_cmd_done;
-	attr.completion.priv = phl_info;
-
-	if (phl_disp_eng_send_msg(phl_info, &msg, &attr, NULL) !=
-				RTW_PHL_STATUS_SUCCESS) {
-		PHL_TRACE(COMP_PHL_PS, _PHL_ERR_, "[PS_CMD], %s(): fail to notify batter change.\n", __func__);
+	psts = phl_cmd_enqueue(phl_info,
+			       band_idx,
+			       MSG_EVT_PS_DBG_CMD,
+			       (u8 *)dbg_info,
+			       sizeof(struct ps_mdl_dbg_info),
+			       _ps_dbg_cmd_done,
+			       cmd_type, cmd_timeout);
+	if (is_cmd_failure(psts)) {
+		/* Send cmd success, but wait cmd fail*/
+		PHL_TRACE(COMP_PHL_PS, _PHL_WARNING_, "[PS_CMD], %s(): wait cmd fail rsn = %d.\n",
+			  __func__, psts);
+	} else if (psts != RTW_PHL_STATUS_SUCCESS) {
+		/* Send cmd fail */
+		PHL_TRACE(COMP_PHL_PS, _PHL_ERR_, "[PS_CMD], %s(): send cmd fail rsn = %d.\n",
+			  __func__, psts);
 		goto cmd_fail;
 	}
-
 	return;
 
 cmd_fail:
-	_os_mem_free(phl_to_drvpriv(phl_info), dbg_info, sizeof(dbg_info));
+	_os_mem_free(phl_to_drvpriv(phl_info), dbg_info, sizeof(struct ps_mdl_dbg_info));
 }
 
 void phl_ps_dbg_ps_cap(struct phl_info_t *phl_info, u32 *used,
@@ -394,7 +422,7 @@ void phl_ps_dbg_ps_cap(struct phl_info_t *phl_info, u32 *used,
 		else
 			break;
 
-		rtw_phl_dbg_ps_cap((void*)phl_info, HW_BAND_0, ps_mode, ps_cap);
+		rtw_phl_dbg_ps_cap((void*)phl_info, HW_BAND_0, ps_mode, ps_cap, PHL_CMD_NO_WAIT, 0);
 
 	} while (0);
 }
@@ -402,12 +430,12 @@ void phl_ps_dbg_ps_cap(struct phl_info_t *phl_info, u32 *used,
 static void
 _ps_dbg_force_ps(struct phl_info_t *phl_info, u8 ps_mode, bool enter)
 {
-	struct phl_msg msg = {0};
-	struct phl_msg_attribute attr = {0};
 	struct ps_mdl_dbg_info *dbg_info = NULL;
+	enum rtw_phl_status psts = RTW_PHL_STATUS_FAILURE;
 
 	dbg_info = (struct ps_mdl_dbg_info *)_os_mem_alloc(phl_to_drvpriv(phl_info),
-				sizeof(struct ps_mdl_dbg_info));
+		    sizeof(struct ps_mdl_dbg_info));
+
 	if (dbg_info == NULL) {
 		PHL_TRACE(COMP_PHL_PS, _PHL_ERR_, "[PS_CMD], %s(): fail to alloc memory.\n", __func__);
 		return;
@@ -418,28 +446,31 @@ _ps_dbg_force_ps(struct phl_info_t *phl_info, u8 ps_mode, bool enter)
 	else if (ps_mode == PS_MODE_IPS)
 		dbg_info->op = (enter ? FORCE_IPS_ENTER : FORCE_IPS_LEAVE);
 	else
-		goto end;
+		goto cmd_fail;
 
 	PHL_TRACE(COMP_PHL_PS, _PHL_INFO_, "[PS_CMD], %s(): set %s %s\n", __func__,
 			phl_ps_ps_mode_to_str(ps_mode), (enter ? "enter" : "leave"));
 
-	SET_MSG_MDL_ID_FIELD(msg.msg_id, PHL_MDL_POWER_MGNT);
-	SET_MSG_EVT_ID_FIELD(msg.msg_id, MSG_EVT_PS_DBG_CMD);
-	msg.band_idx = HW_BAND_0;
-	msg.inbuf = (u8*)dbg_info;
-	msg.inlen = sizeof(struct ps_mdl_dbg_info);
-	attr.completion.completion = _ps_dbg_cmd_done;
-	attr.completion.priv = phl_info;
-
-	if (phl_disp_eng_send_msg(phl_info, &msg, &attr, NULL) !=
-				RTW_PHL_STATUS_SUCCESS) {
-		PHL_TRACE(COMP_PHL_PS, _PHL_ERR_, "[PS_CMD], %s(): fail to send ps dbg cmd.\n", __func__);
-		goto end;
+	psts = phl_cmd_enqueue(phl_info,
+			       HW_BAND_0,
+			       MSG_EVT_PS_DBG_CMD,
+			       (u8 *)dbg_info,
+			       sizeof(struct ps_mdl_dbg_info),
+			       _ps_dbg_cmd_done,
+			       PHL_CMD_NO_WAIT, 0);
+	if (is_cmd_failure(psts)) {
+		/* Send cmd success, but wait cmd fail*/
+		PHL_TRACE(COMP_PHL_PS, _PHL_WARNING_, "[PS_CMD], %s(): wait cmd fail rsn = %d.\n",
+			  __func__, psts);
+	} else if (psts != RTW_PHL_STATUS_SUCCESS) {
+		/* Send cmd fail */
+		PHL_TRACE(COMP_PHL_PS, _PHL_ERR_, "[PS_CMD], %s(): send cmd fail rsn = %d.\n",
+			  __func__, psts);
+		goto cmd_fail;
 	}
-
 	return;
 
-end:
+cmd_fail:
 	_os_mem_free(phl_to_drvpriv(phl_info), dbg_info, sizeof(struct ps_mdl_dbg_info));
 }
 
@@ -472,4 +503,16 @@ void phl_ps_dbg_force_ps(struct phl_info_t *phl_info, u32 *used,
 	} while (0);
 }
 
-#endif /* CONFIG_POWER_SAVE */
+#else
+void rtw_phl_dbg_ps_op_mode(void *phl, u8 band_idx, u8 ps_mode, u8 ps_op_mode,
+			 enum phl_cmd_type cmd_type, u32 cmd_timeout)
+{
+
+}
+
+void rtw_phl_dbg_ps_cap(void *phl, u8 band_idx, u8 ps_mode, u8 ps_cap,
+			 enum phl_cmd_type cmd_type, u32 cmd_timeout)
+{
+
+}
+#endif /* CONFIG_PHL_TEST_SUITE && CONFIG_POWER_SAVE */

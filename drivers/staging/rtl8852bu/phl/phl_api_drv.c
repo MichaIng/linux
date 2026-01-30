@@ -54,7 +54,24 @@ enum rtw_phl_status rtw_phl_pltfm_tx(struct rtw_phl_com_t *phl_com,
 	hci_trx_ops->recycle_busy_h2c(phl_info);
 	#endif
 
+	#ifdef CONFIG_RTW_MIRROR_DUMP
+	phl_mirror_dump_h2c(phl_com->phl_priv, pkt);
+	#endif
+
 	pstatus = phl_info->hci_trx_ops->pltfm_tx(phl_info, pkt);
+
+	return pstatus;
+}
+
+enum rtw_phl_status rtw_phl_recycle_busy_h2c(struct rtw_phl_com_t *phl_com)
+{
+	enum rtw_phl_status pstatus = RTW_PHL_STATUS_SUCCESS;
+
+	#ifdef CONFIG_PCI_HCI
+	struct phl_info_t *phl_info = (struct phl_info_t *)phl_com->phl_priv;
+	struct phl_hci_trx_ops *hci_trx_ops = phl_info->hci_trx_ops;
+	pstatus = hci_trx_ops->recycle_busy_h2c(phl_info);
+	#endif
 
 	return pstatus;
 }
@@ -65,6 +82,15 @@ void rtw_phl_proc_cmd(void *phl, char proc_cmd,
 {
 	struct phl_info_t *phl_info = (struct phl_info_t *)phl;
 	struct hal_info_t *hal_info = (struct hal_info_t *)phl_info->hal;
+
+	/* Avoid string comparison mismatch since extra char '\n' was appended to buf */
+	if (incmd->in_type == RTW_ARG_TYPE_BUF
+		&& incmd->in_cnt_len
+		&& incmd->in.buf[incmd->in_cnt_len -1] == '\n'
+		) {
+		incmd->in_cnt_len--;
+		incmd->in.buf[incmd->in_cnt_len] = '\0';
+	}
 
 	if (RTW_PROC_CMD_PHL == proc_cmd)
 		rtw_phl_dbg_proc_cmd(phl_info, incmd, output, out_len);
@@ -81,11 +107,20 @@ void rtw_phl_get_fw_ver(void *phl, char *ver_str, u16 len)
 	rtw_hal_get_fw_ver(phl_info->hal, ver_str, len);
 }
 
+#ifndef CONFIG_CORE_DBG_NONE
 enum rtw_fw_status rtw_phl_get_fw_status(void *phl)
 {
 	struct phl_info_t *phl_info = (struct phl_info_t *)phl;
 
 	return rtw_hal_get_fw_status(phl_info->hal);
+}
+#endif
+
+enum rf_path rtw_phl_get_path_from_ant_num(void *phl, u8 antnum)
+{
+	struct phl_info_t *phl_info = (struct phl_info_t *)phl;
+
+	return rtw_hal_get_path_from_ant_num(phl_info->hal, antnum);
 }
 
 enum rtw_phl_status rtw_phl_msg_hub_hal_send(struct rtw_phl_com_t *phl_com,
@@ -93,6 +128,7 @@ enum rtw_phl_status rtw_phl_msg_hub_hal_send(struct rtw_phl_com_t *phl_com,
 {
 	return phl_msg_hub_send((struct phl_info_t*)phl_com->phl_priv, attr, msg);
 }
+
 void rtw_phl_test_txtb_cfg(struct rtw_phl_com_t* phl_com,
 	void *buf, u32 buf_len, u8 *cfg_bssid, u16 cfg_aid, u8 cfg_bsscolor)
 {
@@ -103,59 +139,77 @@ void rtw_phl_test_txtb_cfg(struct rtw_phl_com_t* phl_com,
 	u8 cfg;
 	struct phl_info_t *phl_info = (struct phl_info_t *)phl_com->phl_priv;
 	struct rtw_wifi_role_t *role = &phl_com->wifi_roles[0];
+	struct rtw_wifi_role_link_t *rlink = get_rlink(role,
+	                                               RTW_RLINK_PRIMARY);
 	struct rtw_phl_stainfo_t *sta = rtw_phl_get_stainfo_self(
-		phl_com->phl_priv, role);
+		phl_com->phl_priv, rlink);
 
 	cfg = (u8)*((u8 *)buf);
 	switch (cfg) {
 		case 0:
 			/* disable */
 			role->mstate = MLME_NO_LINK;
+			rlink->mstate = MLME_NO_LINK;
+
 			_os_mem_cpy(phlcom_to_drvpriv(phl_com), sta->mac_addr,
 				role->mac_addr, MAC_ALEN);
-			rtw_hal_update_sta_entry(phl_info->hal, sta, false);
-			rtw_hal_role_cfg(phl_info->hal, role);
+			rtw_hal_update_sta_entry(phl_com, phl_info->hal, sta, false);
+			rtw_hal_role_cfg(phl_info->hal, role, rlink);
 		break;
 
 		case 1:
 			role->mstate = MLME_LINKED;
+			rlink->mstate = MLME_LINKED;
+
 			_os_mem_cpy(phlcom_to_drvpriv(phl_com), sta->mac_addr,
 				cfg_bssid, MAC_ALEN);
 			sta->wmode = WLAN_MD_MAX;
 			sta->aid = cfg_aid;
 			sta->asoc_cap.bsscolor = cfg_bsscolor;
 			sta->asoc_cap.pkt_padding = 2;
-			rtw_hal_update_sta_entry(phl_info->hal, sta, false);
-			rtw_hal_role_cfg(phl_info->hal, role);
+			rtw_hal_update_sta_entry(phl_com, phl_info->hal, sta, false);
+			rtw_hal_role_cfg(phl_info->hal, role, rlink);
 		break;
 
 		case 2:
 			role->mstate = MLME_LINKED;
+			rlink->mstate = MLME_LINKED;
+
 			_os_mem_cpy(phlcom_to_drvpriv(phl_com), sta->mac_addr,
 				ui_bssid, MAC_ALEN);
 			sta->wmode = WLAN_MD_MAX;
 			sta->aid = ui_aid;
 			sta->asoc_cap.bsscolor = ui_bsscolor;
 			sta->asoc_cap.pkt_padding = 2;
-			rtw_hal_update_sta_entry(phl_info->hal, sta, false);
-			rtw_hal_role_cfg(phl_info->hal, role);
-		break;		default:
+			rtw_hal_update_sta_entry(phl_com, phl_info->hal, sta, false);
+			rtw_hal_role_cfg(phl_info->hal, role, rlink);
+		break;
+
+		default:
 		break;
 	}
 }
 
-void rtw_phl_pkt_ofld_reset_all_entry(struct rtw_phl_com_t* phl_com)
+#ifdef CONFIG_PHL_PKTOFLD
+void rtw_phl_pkt_ofld_del_all_entry_req(struct rtw_phl_com_t* phl_com)
 {
 	struct phl_info_t *phl_info = (struct phl_info_t *)phl_com->phl_priv;
 
-	phl_pkt_ofld_reset_all_entry(phl_info);
+	phl_pkt_ofld_del_all_entry_req(phl_info);
 }
+#endif
 
 void rtw_phl_dbg_dump_rx(void *phl, struct rtw_wifi_role_t *wrole)
 {
 	struct phl_info_t *phl_info = (struct phl_info_t *)phl;
+	struct rtw_wifi_role_link_t *rlink = NULL;
+	u8 idx = 0;
 
-	phl_rx_dbg_dump(phl_info, wrole->hw_band);
+	for (idx = 0; idx < wrole->rlink_num; idx++) {
+		rlink = get_rlink(wrole, idx);
+
+		phl_rx_dbg_dump(phl_info, rlink->hw_band);
+	}
 }
 
 u32 rtw_phl_get_phy_stat_info(void *phl, enum phl_band_idx hw_band,
@@ -165,3 +219,114 @@ u32 rtw_phl_get_phy_stat_info(void *phl, enum phl_band_idx hw_band,
 
 	return rtw_hal_get_phy_stat_info(phl_info->hal, hw_band, phy_stat);
 }
+
+#ifdef CONFIG_PHL_DRV_HAS_NVM
+enum rtw_phl_status
+rtw_phl_extract_efuse_info(void *phl, u8 *efuse_map,
+                           u32 info_type,
+                           void *value,
+                           u8 size, u8 map_valid)
+{
+	struct phl_info_t *phl_info = (struct phl_info_t *)phl;
+
+	return rtw_hal_extract_efuse_info(phl_info->hal, efuse_map,
+	                                  (enum rtw_efuse_info)info_type,
+					  value,
+	                                  size, map_valid);
+}
+
+enum rtw_phl_status
+rtw_phl_get_efuse_size(void *phl, u32 *log_efuse_size, u32 *limit_efuse_size,
+                       u32 *mask_size, u32 *limit_mask_size)
+{
+	struct phl_info_t *phl_info = (struct phl_info_t *)phl;
+
+	return rtw_hal_get_efuse_size(phl_info->hal, log_efuse_size,
+	                              limit_efuse_size, mask_size,
+	                              limit_mask_size);
+}
+
+enum rtw_phl_status
+rtw_phl_nvm_apply_dev_cap(void *phl)
+{
+	struct phl_info_t *phl_info = (struct phl_info_t *)phl;
+	return rtw_hal_nvm_apply_dev_cap(phl_info->hal, phl_info->phl_com);
+}
+
+void rtw_phl_dump_tpu(void * phl)
+{
+	struct phl_info_t *phl_info = (struct phl_info_t *)phl;
+	struct hal_info_t *hal_info = (struct hal_info_t *)(phl_info->hal);
+
+	rtw_hal_bb_dump_tpu_info(hal_info);
+}
+
+#endif /* CONFIG_PHL_DRV_HAS_NVM */
+
+void rtw_phl_enable_interrupt_sync(struct rtw_phl_com_t* phl_com)
+{
+#ifdef CONFIG_SYNC_INTERRUPT
+	struct rtw_phl_evt_ops *evt_ops = &phl_com->evt_ops;
+
+	evt_ops->set_interrupt_caps(phl_com->drv_priv, true);
+#else
+	struct phl_info_t *phl_info = (struct phl_info_t *)phl_com->phl_priv;
+	#if defined(CONFIG_PCI_HCI)
+	void *drv = phl_to_drvpriv(phl_info);
+	struct hci_info_t *hci_info = (struct hci_info_t *)phl_info->hci;
+	_os_spinlockfg sp_flags;
+
+	_os_spinlock(drv, &hci_info->int_hdl_lock, _irq, &sp_flags);
+	#endif
+
+	rtw_hal_enable_interrupt(phl_com, phl_info->hal);
+
+	#if defined(CONFIG_PCI_HCI)
+	hci_info->int_disabled = false;
+	_os_spinunlock(drv, &hci_info->int_hdl_lock, _irq, &sp_flags);
+	#endif
+#endif /* CONFIG_SYNC_INTERRUPT */
+}
+
+void rtw_phl_disable_interrupt_sync(struct rtw_phl_com_t* phl_com)
+{
+#ifdef CONFIG_SYNC_INTERRUPT
+	struct rtw_phl_evt_ops *evt_ops = &phl_com->evt_ops;
+
+	evt_ops->set_interrupt_caps(phl_com->drv_priv, false);
+#else
+	struct phl_info_t *phl_info = (struct phl_info_t *)phl_com->phl_priv;
+	#if defined(CONFIG_PCI_HCI)
+	void *drv = phl_to_drvpriv(phl_info);
+	struct hci_info_t *hci_info = (struct hci_info_t *)phl_info->hci;
+	_os_spinlockfg sp_flags;
+
+	_os_spinlock(drv, &hci_info->int_hdl_lock, _irq, &sp_flags);
+	hci_info->int_disabled = true;
+	#endif
+
+	rtw_hal_disable_interrupt(phl_com, phl_info->hal);
+	#if defined(CONFIG_PCI_HCI)
+	_os_spinunlock(drv, &hci_info->int_hdl_lock, _irq, &sp_flags);
+	#endif
+#endif /* CONFIG_SYNC_INTERRUPT */
+}
+
+
+#ifdef CONFIG_PHL_FW_DUMP_EFUSE
+void rtw_phl_fw_dump_efuse_precfg(struct rtw_phl_com_t* phl_com)
+{
+	struct phl_info_t *phl_info = (struct phl_info_t *)phl_com->phl_priv;
+
+	phl_datapath_start_hw(phl_info);
+	rtw_phl_enable_interrupt_sync(phl_com);
+}
+
+void rtw_phl_fw_dump_efuse_postcfg(struct rtw_phl_com_t* phl_com)
+{
+	struct phl_info_t *phl_info = (struct phl_info_t *)phl_com->phl_priv;
+
+	rtw_phl_disable_interrupt_sync(phl_com);
+	phl_datapath_stop_hw(phl_info);
+}
+#endif

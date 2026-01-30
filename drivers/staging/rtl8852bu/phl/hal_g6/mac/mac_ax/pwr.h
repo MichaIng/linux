@@ -67,6 +67,9 @@
 #define PWR_PRE_SWITCH		1
 #define PWR_END_SWITCH		2
 
+#define RFE_TYPE_05		0x05
+#define RFE_TYPE_05_SPS_ANA_VAL		0x4A82
+
 /**
  * @struct mac_pwr_cfg
  * @brief mac_pwr_cfg
@@ -116,5 +119,14 @@ u32 pwr_seq_start(struct mac_ax_adapter *adapter, struct mac_pwr_cfg **seq);
  */
 
 u32 mac_pwr_switch(struct mac_ax_adapter *adapter, u8 on);
+
+/**
+ * @brief mac_pwr_sps_ana_setting
+ *
+ * @param *adapter
+ * @return Please Place Description here.
+ * @retval u32
+ */
+u32 mac_pwr_sps_ana_setting(struct mac_ax_adapter *adapter);
 
 #endif

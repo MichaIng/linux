@@ -228,8 +228,14 @@ void halrf_get_efuse_trim_8852b(struct rf_info *rf,
 					enum phl_phy_idx phy)
 {
 	_halrf_get_total_efuse_8852b(rf, phy);
+
+	halrf_write_fwofld_start(rf);	/*FW Offload Start*/
+
 	_halrf_set_thermal_trim_8852b(rf, phy);
 	_halrf_set_pa_bias_trim_8852b(rf, phy);
+
+	halrf_write_fwofld_end(rf);	/*FW Offload End*/
+	
 	_halrf_get_tssi_trim_8852b(rf, phy);
 }
 

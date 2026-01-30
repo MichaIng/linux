@@ -26,8 +26,8 @@
 #define __HALBB_UL_TB_CTRL_H__
 
 /*@--------------------------[Define] ---------------------------------------*/
-#define		TF_CNT_L2H_TH	100
-#define		TF_CNT_H2L_TH	70
+#define		TF_CNT_L2H_TH	90
+#define		TF_CNT_H2L_TH	60
 /*@--------------------------[Enum]------------------------------------------*/
 
 /*@--------------------------[Structure]-------------------------------------*/
@@ -38,7 +38,6 @@ struct bb_ul_tb_cr_info {
 };
 
 struct bb_ul_tb_info {
-	struct bb_ul_tb_cr_info bb_ul_tb_cr_i;
 	bool	dyn_tb_bedge_en;
 	bool	dyn_tb_tri_en;
 	u8	def_if_bandedge;

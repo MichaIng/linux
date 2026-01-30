@@ -20,6 +20,8 @@
 #include "../type.h"
 #include "fwcmd.h"
 
+#if MAC_FEAT_P2P
+
 /*--------------------Define -------------------------------------------*/
 #define P2P_MAX_NUM 2
 #define NOA_MAX_NUM 2
@@ -114,5 +116,7 @@ u32 mac_p2p_macid_ctrl_h2c(struct mac_ax_adapter *adapter,
  * @retval u32
  */
 u32 mac_get_p2p_stat(struct mac_ax_adapter *adapter);
+
+#endif
 
 #endif

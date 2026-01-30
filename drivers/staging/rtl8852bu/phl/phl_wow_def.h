@@ -23,57 +23,46 @@ enum rtw_wow_op_mode {
 	RTW_WOW_OP_MAX = 0xF
 };
 
-enum rtw_wow_wake_reason {
-	RTW_WOW_RSN_UNKNOWN = 0,
-	RTW_WOW_RSN_RX_PAIRWISEKEY,
-	RTW_WOW_RSN_RX_GTK,
-	RTW_WOW_RSN_RX_FOURWAY_HANDSHAKE,
-	RTW_WOW_RSN_RX_DISASSOC,
-	RTW_WOW_RSN_RX_DEAUTH, /* 5 */
-	RTW_WOW_RSN_RX_ARP_REQUEST,
-	RTW_WOW_RSN_RX_NS,
-	RTW_WOW_RSN_RX_EAPREQ_IDENTIFY,
-	RTW_WOW_RSN_FW_DECISION_DISCONNECT,
-	RTW_WOW_RSN_RX_MAGIC_PKT, /* 10 */
-	RTW_WOW_RSN_RX_UNICAST_PKT,
-	RTW_WOW_RSN_RX_PATTERN_PKT,
-	RTW_WOW_RSN_RTD3_SSID_MATCH,
-	RTW_WOW_RSN_RX_DATA_PKT,
-	RTW_WOW_RSN_RX_SSDP_MATCH, /* 15 */
-	RTW_WOW_RSN_RX_WSD_MATCH,
-	RTW_WOW_RSN_RX_SLP_MATCH,
-	RTW_WOW_RSN_RX_LLTD_MATCH,
-	RTW_WOW_RSN_RX_MDNS_MATCH,
-	RTW_WOW_RSN_RX_REALWOW_V2_WAKEUP_PKT, /* 20 */
-	RTW_WOW_RSN_RX_REALWOW_V2_ACK_LOST,
-	RTW_WOW_RSN_RX_REALWOW_V2_TX_KAPKT,
-	RTW_WOW_RSN_ENABLE_FAIL_DMA_IDLE,
-	RTW_WOW_RSN_ENABLE_FAIL_DMA_PAUSE,
-	RTW_WOW_RSN_RTIME_FAIL_DMA_IDLE, /* 25 */
-	RTW_WOW_RSN_RTIME_FAIL_DMA_PAUSE,
-	RTW_WOW_RSN_RX_SNMP_MISMATCHED_PKT,
-	RTW_WOW_RSN_RX_DESIGNATED_MAC_PKT,
-	RTW_WOW_RSN_NLO_SSID_MACH,
-	RTW_WOW_RSN_AP_OFFLOAD_WAKEUP, /* 30 */
-	RTW_WOW_RSN_DMAC_ERROR_OCCURRED,
-	RTW_WOW_RSN_EXCEPTION_OCCURRED,
-	RTW_WOW_RSN_L0_TO_L1_ERROR_OCCURRED,
-	RTW_WOW_RSN_ASSERT_OCCURRED,
-	RTW_WOW_RSN_L2_ERROR_OCCURRED, /* 35 */
-	RTW_WOW_RSN_WDT_TIMEOUT_WAKE,
-	RTW_WOW_RSN_RX_ACTION,
-	RTW_WOW_RSN_CLK_32K_UNLOCK,
-	RTW_WOW_RSN_CLK_32K_LOCK,
-	RTW_WOW_RSN_MAX = 0xFF
+enum rtw_wow_cfg_step {
+	/* suspend */
+	WOW_INIT_PRECONFIG = BIT0,
+	WOW_INIT = BIT1,
+	WOW_FUNC_EN = BIT2,
+	WOW_FUNC_START = BIT3,
+	WOW_INIT_POSTCONFIG = BIT4,
+	/* resume */
+	WOW_PHL_START = BIT5,
+	WOW_GET_PWR_STATE = BIT6,
+	WOW_HANDLE_WAKE_RSN = BIT7,
+	WOW_MODULE_START = BIT8,
+	WOW_HANDLE_AOAC_RPT_PHASE0 = BIT9,
+	WOW_HANDLE_AOAC_RPT_PHASE1 = BIT10,
+	WOW_FUNC_DIS = BIT11,
+	WOW_FUNC_STOP = BIT12,
+	WOW_DEINIT = BIT13,
+	/* both */
+	WOW_PS_PWR_CFG = BIT14,
+	WOW_SER_CTRL = BIT15,
+	WOW_SET_WOWLAN = BIT16,
+	WOW_CFG_WOW_SLEEP = BIT17,
+	WOW_PS_PROTO_CFG = BIT18,
+	WOW_PPDU_STS_CFG = BIT19,
+	WOW_DBG_DUMP = BIT20
 };
 
+#define SET_WOW_INIT_ERR(_wow_info, _flags) \
+	(_wow_info)->err.init |= (_flags)
+
+#define SET_WOW_DEINIT_ERR(_wow_info, _flags) \
+	(_wow_info)->err.deinit |= (_flags)
 
 struct rtw_keep_alive_info {
 	/* core */
 	u8 keep_alive_en;
 	u8 keep_alive_period;
+	u8 keep_alive_pkt_type;
 	/* phl/hal */
-	u8 null_pkt_id;
+	u8 keep_alive_pkt_id;
 };
 
 struct rtw_disc_det_info {
@@ -97,6 +86,7 @@ struct rtw_nlo_info {
 	u8 ssid[MAX_NLO_NUM][MAX_SSID_LEN];
 	u8 ssidlen[MAX_NLO_NUM];
 	u8 chipertype[MAX_NLO_NUM];
+	u8 compare_cipher_type;
 	u8 probe_req_id;
 	struct scan_ofld_ch_info channel_list[MAX_NLO_CHANNEL];
 	u8 channel_num;
@@ -109,9 +99,10 @@ struct rtw_nlo_info {
 
 struct rtw_arp_ofld_content {
 	u8 arp_en;
+	u8 a3[MAC_ADDRESS_LENGTH];
 	u8 remote_ipv4_addr[IPV4_ADDRESS_LENGTH];
 	u8 host_ipv4_addr[IPV4_ADDRESS_LENGTH];
-	u8 mac_addr[MAC_ADDRESS_LENGTH];
+	u8 remote_mac_addr[MAC_ADDRESS_LENGTH];
 };
 
 struct rtw_arp_ofld_info {
@@ -221,54 +212,17 @@ struct rtw_realwow_info {
 	struct rtw_realwow_ofld_content realwow_ofld_content;
 };
 
-struct rtw_dev2hst_gpio_info {
-	/* dword0 */
-	u32 dev2hst_gpio_en:1;
-	u32 disable_inband:1;
-	u32 gpio_output_input:1;
-	u32 gpio_active:1;
-	u32 toggle_pulse:1;
-	u32 data_pin_wakeup:1;
-	u32 gpio_pulse_nonstop:1;
-	u32 gpio_time_unit:1;
-	u32 gpio_num:8;
-	u32 gpio_pulse_dura:8;
-	u32 gpio_pulse_period:8;
-	/* dword1 */
-	u32 gpio_pulse_count:8;
-	u32 rsvd0:24;
-	/* dword2 */
-	u32 customer_id:8;
-	u32 rsvd1:24;
-	/* dword3 */
-	u32 rsn_a_en:1;
-	u32 rsn_a_toggle_pulse:1;
-	u32 rsn_a_pulse_nonstop:1;
-	u32 rsn_a_time_unit:1;
-	u32 rsvd2:28;
-	/* dword4 */
-	u32 rsn_a:8;
-	u32 rsn_a_pulse_duration:8;
-	u32 rsn_a_pulse_period:8;
-	u32 rsn_a_pulse_count:8;
-	/* dword5 */
-	u32 rsn_b_en:1;
-	u32 rsn_b_toggle_pulse:1;
-	u32 rsn_b_pulse_nonstop:1;
-	u32 rsn_b_time_unit:1;
-	u32 rsvd3:28;
-	/* dword6 */
-	u32 rsn_b:8;
-	u32 rsn_b_pulse_duration:8;
-	u32 rsn_b_pulse_period:8;
-	u32 rsn_b_pulse_count:8;
-};
-
 struct rtw_wow_gpio_info {
 	struct rtw_dev2hst_gpio_info d2h_gpio_info;
 	enum rtw_gpio_mode dev2hst_gpio_mode;
 	u8 dev2hst_gpio;
 	u8 dev2hst_high;
+};
+
+struct rtw_periodic_wake_info {
+	u8 periodic_wake_en;
+	u32 wake_period;
+	u32 wake_duration;
 };
 
 struct rtw_remote_wake_ctrl_info {
@@ -283,6 +237,71 @@ struct rtw_remote_wake_ctrl_info {
 	u8 gtk_rx_iv_idx2[IV_LENGTH];
 	u8 gtk_rx_iv_idx3[IV_LENGTH];
 };
+
+
+#ifdef CONFIG_PHL_MDNS_OFFLOAD
+#define MAX_MDNS_RESP_NUM 8
+#define MAX_MDNS_RESP_LEN 512
+#define MAX_MDNS_MATCH_CRITERIA_NUM 8
+#define MAX_MDNS_PASSTHRU_NAME_NUM 8
+#define MAX_MDNS_DOMAIN_NAME_LEN 255
+#define PASSTHRU_FORWARD_ALL 0
+#define PASSTHRU_DROP_ALL 1
+#define PASSTHRU_LIST 2
+
+struct rtw_mdns_ipv4_header {
+	u8 src_ipv4_addr[IPV4_ADDRESS_LENGTH];
+	u8 dst_ipv4_addr[IPV4_ADDRESS_LENGTH];
+	u8 remote_mac_addr[MAC_ADDRESS_LENGTH];
+	u8 protect_bit;
+	u8 sec_hdr_len;
+	u8 ipv4_pktid;
+};
+
+struct rtw_mdns_ipv6_header {
+	u8 src_ipv6_addr[IPV6_ADDRESS_LENGTH];
+	u8 dst_ipv6_addr[IPV6_ADDRESS_LENGTH];
+	u8 remote_mac_addr[MAC_ADDRESS_LENGTH];
+	u8 protect_bit;
+	u8 sec_hdr_len;
+	u8 ipv6_pktid;
+};
+
+struct rtw_mdns_match_criteria {
+	u16 name_offset;
+	u16 type;
+	u8 name_len;
+};
+
+struct rtw_mdns_resp_entry {
+	u16 content_len;
+	u8 data_pktid;
+	u8 match_ct_num;
+	u8 content[MAX_MDNS_RESP_LEN];
+	struct rtw_mdns_match_criteria match_ct[MAX_MDNS_MATCH_CRITERIA_NUM];
+};
+
+struct rtw_mdns_passthru_name {
+	u8 name[MAX_MDNS_DOMAIN_NAME_LEN];
+	u8 name_len;
+	u8 pass_pktid;
+};
+
+struct rtw_mdns_passthru_list {
+	u8 passthru_behavior;
+	u8 passthru_name_num;
+	struct rtw_mdns_passthru_name passthru_name[MAX_MDNS_PASSTHRU_NAME_NUM];
+};
+
+struct rtw_mdns_ofld_info {
+	u8 mdns_en;
+	u8 offload_state;
+	struct rtw_mdns_resp_entry resp_entry[MAX_MDNS_RESP_NUM];
+	struct rtw_mdns_passthru_list passthru_list;
+	struct rtw_mdns_ipv4_header mdns_ipv4_header;
+	struct rtw_mdns_ipv6_header mdns_ipv6_header;
+};
+#endif /* CONFIG_PHL_MDNS_OFFLOAD */
 
 struct rtw_wow_wake_info {
 	/* core */
@@ -329,17 +348,23 @@ struct rtw_aoac_report {
 enum rtw_phl_status rtw_phl_cfg_keep_alive_info(void *phl, struct rtw_keep_alive_info *info);
 enum rtw_phl_status rtw_phl_cfg_disc_det_info(void *phl, struct rtw_disc_det_info *info);
 void rtw_phl_cfg_nlo_info(void *phl, struct rtw_nlo_info *info);
+void rtw_phl_cfg_periodic_wake_info(void *phl, struct rtw_periodic_wake_info *info);
 void rtw_phl_cfg_arp_ofld_info(void *phl, struct rtw_arp_ofld_info *info);
 void rtw_phl_cfg_ndp_ofld_info(void *phl, struct rtw_ndp_ofld_info *info);
+#ifdef CONFIG_PHL_MDNS_OFFLOAD
+void rtw_phl_cfg_mdns_ofld_info(void *phl, struct rtw_mdns_ofld_info *info);
+#endif
 enum rtw_phl_status rtw_phl_remove_wow_ptrn_info(void *phl, u8 phl_ptrn_id);
 enum rtw_phl_status rtw_phl_add_wow_ptrn_info(void *phl, struct rtw_wowcam_upd_info *info, u8 *phl_ptrn_id);
 enum rtw_phl_status rtw_phl_cfg_gtk_ofld_info(void *phl, struct rtw_gtk_ofld_info *info);
 enum rtw_phl_status rtw_phl_cfg_realwow_info(void *phl, struct rtw_realwow_info *info);
 enum rtw_phl_status rtw_phl_cfg_wow_wake(void *phl, struct rtw_wow_wake_info *info);
 enum rtw_phl_status rtw_phl_cfg_gpio_wake_pulse(void *phl, struct rtw_wow_gpio_info *info);
-const char *rtw_phl_get_wow_rsn_str(void *phl, enum rtw_wow_wake_reason wake_rsn);
+const char *rtw_phl_get_wow_rsn_str(void *phl, u8 wake_rsn);
 enum rtw_phl_status rtw_phl_cfg_wow_set_sw_gpio_mode(void *phl, struct rtw_wow_gpio_info *info);
 enum rtw_phl_status rtw_phl_cfg_wow_sw_gpio_ctrl(void *phl, struct rtw_wow_gpio_info *info);
+void rtw_phl_wow_set_no_link_mode(void *phl, u8 no_link_mode);
+u32 rtw_phl_get_wow_fail_stat(void *phl);
 #endif /* CONFIG_WOWLAN */
 
 #endif /* _PHL_WOW_DEF_H_ */

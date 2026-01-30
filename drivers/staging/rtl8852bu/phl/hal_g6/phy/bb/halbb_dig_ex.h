@@ -43,8 +43,17 @@ enum dig_pause_case {
 	PAUSE_OFDM_CCK = 1
 };
 /*@--------------------------[Structure]-------------------------------------*/
+struct bb_bkp_dig_info {
+	u8 h_pd_low_th;
+	u8 l_pd_low_th;
+	s8 h_rssi_nocca_low_th;
+	s8 l_rssi_nocca_low_th;
+};
 struct bb_info;
 
 /*@--------------------------[Prptotype]-------------------------------------*/
-void halbb_dig_mode_update(struct bb_info *bb, enum dig_op_mode mode);
+void halbb_dig_mode_update(struct bb_info *bb, enum dig_op_mode mode, enum phl_phy_idx phy_idx);
+void halbb_dig_simple(struct bb_info *bb, u8 rssi_ofst);
+u8 halbb_get_dig_igi(struct bb_info *bb);
+void halbb_query_dig_info(struct bb_info *bb_0, struct bb_bkp_dig_info *dig_i, enum phl_phy_idx phy_idx);
 #endif

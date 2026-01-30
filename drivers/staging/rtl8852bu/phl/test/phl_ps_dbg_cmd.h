@@ -31,10 +31,12 @@ void phl_ps_dbg_stop_ps(struct phl_info_t *phl_info, u32 *used,
 		char input[][MAX_ARGV], u32 input_num, char *output, u32 out_len);
 void phl_ps_dbg_force_ps(struct phl_info_t *phl_info, u32 *used,
 		char input[][MAX_ARGV], u32 input_num, char *output, u32 out_len);
-void rtw_phl_dbg_ps_op_mode(void *phl, u8 band_idx, u8 ps_mode, u8 ps_op_mode);
+void rtw_phl_dbg_ps_op_mode(void *phl, u8 band_idx, u8 ps_mode, u8 ps_op_mode,
+		enum phl_cmd_type cmd_type, u32 cmd_timeout);
 void phl_ps_dbg_ps_op_mode(struct phl_info_t *phl_info, u32 *used,
 		char input[][MAX_ARGV], u32 input_num, char *output, u32 out_len);
-void rtw_phl_dbg_ps_cap(void *phl, u8 band_idx, u8 ps_mode, u8 ps_cap);
+void rtw_phl_dbg_ps_cap(void *phl, u8 band_idx, u8 ps_mode, u8 ps_cap,
+		enum phl_cmd_type cmd_type, u32 cmd_timeout);
 void phl_ps_dbg_ps_cap(struct phl_info_t *phl_info, u32 *used,
 		char input[][MAX_ARGV], u32 input_num, char *output, u32 out_len);
 #endif

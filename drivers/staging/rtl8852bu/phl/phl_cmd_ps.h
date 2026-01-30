@@ -19,8 +19,10 @@ enum ps_mdl_op {
 	PS_MDL_OP_NONE = 0,
 	PS_MDL_OP_CANCEL_PWR_REQ,
 	PS_MDL_OP_CUR_PWR_LVL,
+	PS_MDL_OP_CUR_PS_MODE,
+	PS_MDL_OP_CUR_ADV_CFG,
 	PS_MDL_OP_BASIC_INFO,
-	PS_MDL_OP_BTC_PWR_REQ
+	PS_MDL_OP_HAL_PWR_REQ
 };
 
 enum ps_mdl_dbg_op {
@@ -33,9 +35,20 @@ enum ps_mdl_dbg_op {
 	SET_LPS_CAP
 };
 
+struct bcn_tracking_info {
+	struct rtw_bcn_tracking_cfg cur_tracking;
+	struct rtw_bcn_tracking_cfg cand_tracking; /* candidate setting for next config */
+};
+
 struct ps_mdl_dbg_info {
 	enum ps_mdl_dbg_op op;
 	u8 val;
+};
+
+struct ps_hal_pwr_req_info {
+	u8 src; /* enum rtw_hal_ps_pwr_req_src */
+	bool pwr_req;
+	bool leave_immediately;
 };
 
 #define MAX_CMD_PS_RSON_LENGTH 30
@@ -43,17 +56,23 @@ struct phl_cmd_ps_basic_info {
 	u8 ps_mode;
 	u8 cur_pwr_lvl;
 	bool rej_pwr_req;
-	bool btc_req_pwr;
+	u8 hal_req_pwr;
 	enum phl_ps_rt_rson rt_stop_rson;
 	bool ap_active;
 	bool gc_active;
 	struct rtw_phl_stainfo_t *sta;
 	char enter_rson[MAX_CMD_PS_RSON_LENGTH];
 	char leave_rson[MAX_CMD_PS_RSON_LENGTH];
+	u8 recy_cnt;
+	u32 last_tx_ping_time;
+	u32 last_tx_dhcp_time;
+	struct bcn_tracking_info bcn_tracking_i;
 };
 
 enum rtw_phl_status phl_register_ps_module(struct phl_info_t *phl_info);
 u8 phl_ps_get_cur_pwr_lvl(struct phl_info_t *phl_info);
+u8 phl_ps_get_cur_ps_mode(struct phl_info_t *phl);
+struct rtw_phl_lps_adv_cfg phl_ps_get_cur_adv_cfg(struct phl_info_t *phl);
 bool phl_ps_is_datapath_allowed(struct phl_info_t *phl_info);
 void phl_ps_tx_pkt_ntfy(struct phl_info_t *phl_info);
 void rtw_phl_ps_set_rt_cap(void *phl, u8 band_idx, bool ps_allow, enum phl_ps_rt_rson rt_rson);

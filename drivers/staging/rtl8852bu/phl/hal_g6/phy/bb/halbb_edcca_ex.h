@@ -32,6 +32,9 @@ enum bb_edcca_mode {
 	EDCCA_NORMAL_MODE = 0,
 	EDCCA_ADAPT_MODE = 1,
 	EDCCA_CARRIER_SENSE_MODE = 2,
+	EDCCA_CBP_MODE = 3,
+	EDCCA_UK_MODE = 4,
+	EDCCA_SRRC_MODE = 5,
 };
 /*@--------------------------[Structure]-------------------------------------*/
 

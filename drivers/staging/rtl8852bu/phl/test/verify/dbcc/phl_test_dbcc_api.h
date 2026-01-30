@@ -16,8 +16,8 @@
 #define _PHL_TEST_DBCC_API_H_
 
 #ifdef CONFIG_PHL_TEST_VERIFY
-
+#ifdef CONFIG_DBCC_SUPPORT
 enum rtw_phl_status rtw_test_dbcc_cmd_process(void *priv);
-
+#endif /* CONFIG_DBCC_SUPPORT */
 #endif /* CONFIG_PHL_TEST_VERIFY */
 #endif /* _PHL_TEST_DBCC_API_H_ */

@@ -20,120 +20,48 @@
 #include "mac_def.h"
 #include "mac_reg.h"
 #include "mac_hw_info.h"
+#include "include/mac_top.h"
 #include "txdesc.h"
 #include "rxdesc.h"
+#include "chip_cfg.h"
+#include "mac_ax.h"
 
 #include "mac_ax/mac_ax_dfs.h"
 #include "mac_ax/mac_ax_mac_info.h"
-#include "mac_ax/mac_txccxrpt.h"
-#include "mac_ax/mac_ftmrpt.h"
-#include "mac_ax/mac_ftmackrpt.h"
+#include "mac_ax/eco_patch_check.h"
 
 #if MAC_AX_FEATURE_DBGPKG
 #include "mac_ax/dbgpkg.h"
+#if MAC_AX_8852A_SUPPORT
+#include "mac_ax/mac_8852a/dbgpkg_8852a.h"
 #endif
-
+#if MAC_AX_8852B_SUPPORT
+#include "mac_ax/mac_8852b/dbgpkg_8852b.h"
+#endif
+#if MAC_AX_8852C_SUPPORT
+#include "mac_ax/mac_8852c/dbgpkg_8852c.h"
+#endif
+#if MAC_AX_8192XB_SUPPORT
+#include "mac_ax/mac_8192xb/dbgpkg_8192xb.h"
+#endif
+#if MAC_AX_8851B_SUPPORT
+#include "mac_ax/mac_8851b/dbgpkg_8851b.h"
+#endif
+#if MAC_AX_8852D_SUPPORT
+#include "mac_ax/mac_8852d/dbgpkg_8852d.h"
+#endif
+#if MAC_AX_8852BT_SUPPORT
+#include "mac_ax/mac_8852bt/dbgpkg_8852bt.h"
+#endif
+#if MAC_AX_1115E_SUPPORT
+#include "mac_ax/mac_1115e/dbgpkg_1115e.h"
+#endif
+#endif
 #if MAC_AX_FEATURE_HV
 #include "hv_type.h"
 #endif
 
 /*--------------------Define -------------------------------------------*/
-
-#ifdef CONFIG_NEW_HALMAC_INTERFACE
-#define PLTFM_SDIO_CMD52_R8(addr)                                              \
-	hal_sdio_cmd52_r8(adapter->drv_adapter, addr)
-#define PLTFM_SDIO_CMD53_R8(addr)                                              \
-	hal_sdio_cmd53_r8(adapter->drv_adapter, addr)
-#define PLTFM_SDIO_CMD53_R16(addr)                                             \
-	hal_sdio_cmd53_r16(adapter->drv_adapter, addr)
-#define PLTFM_SDIO_CMD53_R32(addr)                                             \
-	hal_sdio_cmd53_r32(adapter->drv_adapter, addr)
-#define PLTFM_SDIO_CMD53_RN(addr, size, val)                                   \
-	hal_sdio_cmd53_rn(adapter->drv_adapter, addr, size, val)
-#define PLTFM_SDIO_CMD52_W8(addr, val)                                         \
-	hal_sdio_cmd52_w8(adapter->drv_adapter, addr, val)
-#define PLTFM_SDIO_CMD53_W8(addr, val)                                         \
-	hal_sdio_cmd53_w8(adapter->drv_adapter, addr, val)
-#define PLTFM_SDIO_CMD53_WN(addr, size, val)                                   \
-	hal_sdio_cmd53_wn(adapter->drv_adapter, addr, size, val)
-#define PLTFM_SDIO_CMD53_W16(addr, val)                                        \
-	hal_sdio_cmd53_w16(adapter->drv_adapter, addr, val)
-#define PLTFM_SDIO_CMD53_W32(addr, val)                                        \
-	hal_sdio_cmd53_w32(adapter->drv_adapter, addr, val)
-#define PLTFM_SDIO_CMD52_CIA_R8(addr)                                          \
-	hal_sdio_read_cia_r8(adapter->drv_adapter, addr)
-
-#define PLTFM_TX(buf, len)                                                     \
-	hal_tx(adapter->drv_adapter, buf, len)
-
-#define PLTFM_FREE(buf, size)                                                  \
-	hal_mem_free(adapter->drv_adapter, buf, size)
-#define PLTFM_MALLOC(size)                                                     \
-	hal_mem_alloc(adapter->drv_adapter, size)
-#define PLTFM_MEMCPY(dest, src, size)                                          \
-	hal_mem_cpy(adapter->drv_adapter, dest, src, size)
-#define PLTFM_MEMSET(addr, value, size)                                        \
-	hal_mem_set(adapter->drv_adapter, addr, value, size)
-#define PLTFM_MEMCMP(ptr1, ptr2, num)                                          \
-	hal_mem_cmp(adapter->drv_adapter, ptr1, ptr2, num)
-
-#define PLTFM_DELAY_US(us)                                                     \
-	hal_udelay(adapter->drv_adapter, us)
-#define PLTFM_DELAY_MS(ms)                                                     \
-	hal_mdelay(adapter->drv_adapter, ms)
-#define PLTFM_MUTEX_INIT(mutex)                                                \
-	hal_mutex_init(adapter->drv_adapter, mutex)
-#define PLTFM_MUTEX_DEINIT(mutex)                                              \
-	hal_mutex_deinit(adapter->drv_adapter, mutex)
-#define PLTFM_MUTEX_LOCK(mutex)                                                \
-	hal_mutex_lock(adapter->drv_adapter, mutex)
-#define PLTFM_MUTEX_UNLOCK(mutex)                                              \
-	hal_mutex_unlock(adapter->drv_adapter, mutex)
-
-#define PLTFM_MSG_PRINT(...)	\
-	hal_mac_msg_print(drv_adapter, __VA_ARGS__)
-
-#define adapter_to_mac_ops(adapter) ((struct mac_ax_ops *)((adapter)->ops))
-#define adapter_to_intf_ops(adapter)                                           \
-	((struct mac_ax_intf_ops *)((adapter)->ops->intf_ops))
-
-#define PLTFM_REG_R8(addr)                                                     \
-	hal_read8(adapter->drv_adapter, addr)
-#define PLTFM_REG_R16(addr)                                                    \
-	hal_read16(adapter->drv_adapter, addr)
-#define PLTFM_REG_R32(addr)                                                    \
-	hal_read32(adapter->drv_adapter, addr)
-#define PLTFM_REG_W8(addr, val)                                                \
-	hal_write8(adapter->drv_adapter, addr, val)
-#define PLTFM_REG_W16(addr, val)                                               \
-	hal_write16(adapter->drv_adapter, addr, val)
-#define PLTFM_REG_W32(addr, val)                                               \
-	hal_write32(adapter->drv_adapter, addr, val)
-
-#define MAC_REG_R8(addr) hal_read8(adapter->drv_adapter, addr)
-#define MAC_REG_R16(addr) hal_read16(adapter->drv_adapter, addr)
-#define MAC_REG_R32(addr) hal_read32(adapter->drv_adapter, addr)
-#define MAC_REG_W8(addr, val) hal_write8(adapter->drv_adapter, addr, val)
-#define MAC_REG_W16(addr, val) hal_write16(adapter->drv_adapter, addr, val)
-#define MAC_REG_W32(addr, val) hal_write32(adapter->drv_adapter, addr, val)
-
-#if MAC_AX_FEATURE_DBGCMD
-#define PLTFM_SNPRINTF(s, sz, fmt, ...)                                               \
-	hal_sprintf(adapter->drv_adapter, s, sz, fmt, ##__VA_ARGS__)
-#define PLTFM_STRCMP(s1, s2)                                               \
-	hal_strcmp(adapter->drv_adapter, s1, s2)
-#define PLTFM_STRSEP(s, ct)                                               \
-	hal_strsep(adapter->drv_adapter, s, ct)
-#define PLTFM_STRLEN(s)                                               \
-	hal_strlen(adapter->drv_adapter, s)
-#define PLTFM_STRCPY(dest, src)                                               \
-	hal_strcpy(adapter->drv_adapter, dest, src)
-#define PLTFM_STRPBRK(cs, ct)                                               \
-	hal_strpbrk(adapter->drv_adapter, cs, ct)
-#define PLTFM_STRTOUL(buf, base)                                               \
-	hal_strtoul(adapter->drv_adapter, buf, base)
-#endif
-#else
 
 /* platform callback */
 #define PLTFM_SDIO_CMD52_R8(addr)                                              \
@@ -192,11 +120,25 @@
 	adapter->pltfm_cb->rtl_memset(adapter->drv_adapter, addr, value, size)
 #define PLTFM_MEMCMP(ptr1, ptr2, num)                                          \
 	adapter->pltfm_cb->rtl_memcmp(adapter->drv_adapter, ptr1, ptr2, num)
+#ifdef PHL_FEATURE_AP
 #define PLTFM_DELAY_US(us)                                                     \
 	adapter->pltfm_cb->rtl_delay_us(adapter->drv_adapter, us)
 #define PLTFM_DELAY_MS(ms)                                                     \
 	adapter->pltfm_cb->rtl_delay_ms(adapter->drv_adapter, ms)
-
+#define PLTFM_SLEEP_US(us)                                                     \
+	adapter->pltfm_cb->rtl_delay_us(adapter->drv_adapter, us)
+#define PLTFM_SLEEP_MS(ms)                                                     \
+	adapter->pltfm_cb->rtl_delay_ms(adapter->drv_adapter, ms)
+#else
+#define PLTFM_DELAY_US(us)                                                     \
+	adapter->pltfm_cb->rtl_sleep_us(adapter->drv_adapter, us)
+#define PLTFM_DELAY_MS(ms)                                                     \
+	adapter->pltfm_cb->rtl_sleep_ms(adapter->drv_adapter, ms)
+#define PLTFM_SLEEP_US(us)                                                     \
+	adapter->pltfm_cb->rtl_sleep_us(adapter->drv_adapter, us)
+#define PLTFM_SLEEP_MS(ms)                                                     \
+	adapter->pltfm_cb->rtl_sleep_ms(adapter->drv_adapter, ms)
+#endif
 #define PLTFM_MUTEX_INIT(mutex)                                                \
 	adapter->pltfm_cb->rtl_mutex_init(adapter->drv_adapter, mutex)
 #define PLTFM_MUTEX_DEINIT(mutex)                                              \
@@ -226,9 +168,10 @@
 #define MAC_REG_W16(addr, val) ops->reg_write16(adapter, addr, val)
 #define MAC_REG_W32(addr, val) ops->reg_write32(adapter, addr, val)
 
-#if MAC_AX_FEATURE_DBGCMD
 #define PLTFM_SNPRINTF(s, sz, fmt, ...)                                               \
 	adapter->pltfm_cb->rtl_sprintf(adapter->drv_adapter, s, sz, fmt, ##__VA_ARGS__)
+#define PLTFM_VSNPRINTF(s, sz, fmt, args)                                               \
+	adapter->pltfm_cb->rtl_vsprintf(adapter->drv_adapter, s, sz, fmt, args)
 #define PLTFM_STRCMP(s1, s2)                                               \
 	adapter->pltfm_cb->rtl_strcmp(adapter->drv_adapter, s1, s2)
 #define PLTFM_STRSEP(s, ct)                                               \
@@ -241,8 +184,6 @@
 	adapter->pltfm_cb->rtl_strpbrk(adapter->drv_adapter, cs, ct)
 #define PLTFM_STRTOUL(buf, base)                                               \
 	adapter->pltfm_cb->rtl_strtoul(adapter->drv_adapter, buf, base)
-#endif
-#endif /*CONFIG_NEW_HALMAC_INTERFACE*/
 
 #define MAC_AX_WMM0_SEL		0
 #define MAC_AX_WMM1_SEL		1
@@ -255,7 +196,6 @@
 #define MAC_AX_MG1_SEL		26
 
 #define MAC_AX_HFC_CH_NUM	12
-#define MAC_AX_IECAM_NUM	12
 
 #define MAC_AX_R32_EA		0xEAEAEAEA
 #define MAC_AX_R32_DEAD		0xDEADBEEF
@@ -291,6 +231,15 @@
 #define	BCN_IE_CAM1_BASE_ADDR		0x188A0000
 #define	TXD_FIFO_0_BASE_ADDR		0x18856200
 #define	TXD_FIFO_1_BASE_ADDR		0x188A1080
+#define	RXD_FIFO_0_BASE_ADDR		0x18857000
+#define	RXD_FIFO_1_BASE_ADDR		0x18877000
+#define	DMA_TXFIFO_0_BASE_ADDR		0x18859000
+#define	DMA_TXFIFO_1_BASE_ADDR		0x188A4000
+#define	DMA_RXFIFO_0_BASE_ADDR		0x1885B000
+#define	DMA_RXFIFO_1_BASE_ADDR		0x188A5000
+#define WD_PAGE_BASE_ADDR		0x0
+#define	WCPU_DATA_BASE_ADDR			0x18E00000
+#define PCIE_CFG_SPC_BASE_ADDR		0x0
 
 #define CCTL_INFO_SIZE		32
 #define DCTL_INFO_SIZE		16
@@ -301,6 +250,15 @@
 #define BCN_IE_CAM_SIZE		8
 #define BCN_IE_CAM_NUM		12
 #define AXIDMA_REG_SIZE		0x1000
+#define PCIE_CFG_SPC_SIZE	0x1000
+
+#define WD_BODY_LEN	(sizeof(struct wd_body_t))
+#define WD_INFO_LEN	(sizeof(struct wd_info_t))
+
+#define WD_BODY_LEN_V1	(sizeof(struct wd_body_t_v1))
+
+#define RXD_SHORT_LEN	(sizeof(struct rxd_short_t))
+#define RXD_LONG_LEN	(sizeof(struct rxd_long_t))
 
 /*--------------------Define Enum---------------------------------------*/
 
@@ -368,24 +326,6 @@ enum mac_ax_data_ch {
 	MAC_AX_DATA_CH9 = 9,
 	MAC_AX_DATA_CH10 = 10,
 	MAC_AX_DATA_CH11 = 11,
-};
-
-/**
- * @enum mac_ax_pcie_phy
- *
- * @brief mac_ax_pcie_phy
- *
- * @var mac_ax_pcie_phy::MAC_AX_PCIE_PHY_GEN1
- * Please Place Description here.
- * @var mac_ax_pcie_phy::MAC_AX_PCIE_PHY_GEN2
- * Please Place Description here.
- * @var mac_ax_pcie_phy::MAC_AX_PCIE_PHY_GEN1_UNDEFINE
- * Please Place Description here.
- */
-enum mac_ax_pcie_phy {
-	MAC_AX_PCIE_PHY_GEN1,
-	MAC_AX_PCIE_PHY_GEN2,
-	MAC_AX_PCIE_PHY_GEN1_UNDEFINE = 0x7F,
 };
 
 /**
@@ -794,180 +734,6 @@ enum mac_ax_data_rate {
 };
 
 /**
- * @struct wd_body_t
- * @brief wd_body_t
- *
- * @var wd_body_t::dword0
- * Please Place Description here.
- * @var wd_body_t::dword1
- * Please Place Description here.
- * @var wd_body_t::dword2
- * Please Place Description here.
- * @var wd_body_t::dword3
- * Please Place Description here.
- * @var wd_body_t::dword4
- * Please Place Description here.
- * @var wd_body_t::dword5
- * Please Place Description here.
- */
-struct wd_body_t {
-	u32 dword0;
-	u32 dword1;
-	u32 dword2;
-	u32 dword3;
-	u32 dword4;
-	u32 dword5;
-};
-
-/**
- * @struct wd_info_t
- * @brief wd_info_t
- *
- * @var wd_info_t::dword0
- * Please Place Description here.
- * @var wd_info_t::dword1
- * Please Place Description here.
- * @var wd_info_t::dword2
- * Please Place Description here.
- * @var wd_info_t::dword3
- * Please Place Description here.
- * @var wd_info_t::dword4
- * Please Place Description here.
- * @var wd_info_t::dword5
- * Please Place Description here.
- */
-struct wd_info_t {
-	u32 dword0;
-	u32 dword1;
-	u32 dword2;
-	u32 dword3;
-	u32 dword4;
-	u32 dword5;
-};
-
-#define WD_BODY_LEN	(sizeof(struct wd_body_t))
-#define WD_INFO_LEN	(sizeof(struct wd_info_t))
-
-/**
- * @struct wd_body_t_v1
- * @brief wd_body_t_v1
- *
- * @var wd_body_t::dword0
- * Please Place Description here.
- * @var wd_body_t::dword1
- * Please Place Description here.
- * @var wd_body_t::dword2
- * Please Place Description here.
- * @var wd_body_t::dword3
- * Please Place Description here.
- * @var wd_body_t::dword4
- * Please Place Description here.
- * @var wd_body_t::dword5
- * Please Place Description here.
- * @var wd_body_t::dword6
- * Please Place Description here.
- * @var wd_body_t::dword7
- * Please Place Description here.
- */
-struct wd_body_t_v1 {
-	u32 dword0;
-	u32 dword1;
-	u32 dword2;
-	u32 dword3;
-	u32 dword4;
-	u32 dword5;
-	u32 dword6;
-	u32 dword7;
-};
-
-#define WD_BODY_LEN_V1	(sizeof(struct wd_body_t_v1))
-
-/**
- * @struct rxd_short_t
- * @brief rxd_short_t
- *
- * @var rxd_short_t::dword0
- * Please Place Description here.
- * @var rxd_short_t::dword1
- * Please Place Description here.
- * @var rxd_short_t::dword2
- * Please Place Description here.
- * @var rxd_short_t::dword3
- * Please Place Description here.
- */
-struct rxd_short_t {
-	u32 dword0;
-	u32 dword1;
-	u32 dword2;
-	u32 dword3;
-};
-
-/**
- * @struct rxd_long_t
- * @brief rxd_long_t
- *
- * @var rxd_long_t::dword0
- * Please Place Description here.
- * @var rxd_long_t::dword1
- * Please Place Description here.
- * @var rxd_long_t::dword2
- * Please Place Description here.
- * @var rxd_long_t::dword3
- * Please Place Description here.
- * @var rxd_long_t::dword4
- * Please Place Description here.
- * @var rxd_long_t::dword5
- * Please Place Description here.
- * @var rxd_long_t::dword6
- * Please Place Description here.
- * @var rxd_long_t::dword7
- * Please Place Description here.
- */
-struct rxd_long_t {
-	u32 dword0;
-	u32 dword1;
-	u32 dword2;
-	u32 dword3;
-	u32 dword4;
-	u32 dword5;
-	u32 dword6;
-	u32 dword7;
-};
-
-#define RXD_SHORT_LEN	(sizeof(struct rxd_short_t))
-#define RXD_LONG_LEN	(sizeof(struct rxd_long_t))
-
-/**
- * @struct txd_proc_type
- * @brief txd_proc_type
- *
- * @var txd_proc_type::type
- * Please Place Description here.
- * @var txd_proc_type::handler
- * Please Place Description here.
- */
-struct txd_proc_type {
-	enum rtw_packet_type type;
-	u32 (*handler)(struct mac_ax_adapter *adapter,
-		       struct rtw_t_meta_data *info, u8 *buf, u32 len);
-};
-
-/**
- * @struct rxd_parse_type
- * @brief rxd_parse_type
- *
- * @var rxd_parse_type::type
- * Please Place Description here.
- * @var rxd_parse_type::handler
- * Please Place Description here.
- */
-struct rxd_parse_type {
-	u8 type;
-	u32 (*handler)(struct mac_ax_adapter *adapter,
-		       struct mac_ax_rxpkt_info *info, u8 *buf, u32 len);
-};
-
-/**
  * @enum mac_ax_bw
  *
  * @brief mac_ax_bw
@@ -1050,12 +816,6 @@ enum mac_ax_stbc {
  * @var mac_ax_delay_tx_en::MAC_AX_DELAY_TX_BOTH
  * Please Place Description here.
  */
-enum mac_ax_delay_tx_en {
-	MAC_AX_DELAY_TX_DIS = 0,
-	MAC_AX_DELAY_TX_B0 = 1,
-	MAC_AX_DELAY_TX_B1 = 2,
-	MAC_AX_DELAY_TX_BOTH = 3,
-};
 
 /**
  * @enum mac_ax_hcifc_mode
@@ -1384,14 +1144,19 @@ enum mac_ax_rxcnt_sel {
 	MAC_AX_RXCNT_FULLDRP = 0x20,
 	MAC_AX_RXCNT_FULLDRP_PKT = 0x21,
 	MAC_AX_RXCNT_RXDMA = 0x22,
-	MAC_AX_RXCNT_USER0 = 0x23,
-	MAC_AX_RXCNT_USER1 = 0x24,
-	MAC_AX_RXCNT_USER2 = 0x25,
-	MAC_AX_RXCNT_USER3 = 0x26,
+	MAC_AX_RXCNT_PKTFLTR_DRP = 0x23,
+	MAC_AX_RXCNT_CSIPKT_DMA_OK = 0x24,
+	MAC_AX_RXCNT_CSIPKT_DMA_DROP = 0x25,
+	MAC_AX_RXCNT_NDP_PPDU = 0x26,
 	MAC_AX_RXCNT_CONT_FCS = 0x27,
-	MAC_AX_RXCNT_PKTFLTR_DRP = 0x28,
-	MAC_AX_RXCNT_CSIPKT_DMA_OK = 0x29,
-	MAC_AX_RXCNT_CSIPKT_DMA_DROP = 0x2A
+	MAC_AX_RXCNT_USER0 = 0x28,
+	MAC_AX_RXCNT_USER1 = 0x29,
+	MAC_AX_RXCNT_USER2 = 0x2A,
+	MAC_AX_RXCNT_USER3 = 0x2B,
+	MAC_AX_RXCNT_USER4 = 0x2C,
+	MAC_AX_RXCNT_USER5 = 0x2D,
+	MAC_AX_RXCNT_USER6 = 0x2E,
+	MAC_AX_RXCNT_USER7 = 0x2F,
 };
 
 /**
@@ -1589,43 +1354,172 @@ enum RW_OFLD_BLOCK_ID {
 };
 
 /**
- * @enum mac_ax_cca
+ * @struct wd_body_t
+ * @brief wd_body_t
  *
- * @brief mac_ax_cca
- *
- * @var mac_ax_cca::MAC_AX_CCA
+ * @var wd_body_t::dword0
  * Please Place Description here.
- * @var mac_ax_cca::MAC_AX_SEC20_CCA
+ * @var wd_body_t::dword1
  * Please Place Description here.
- * @var mac_ax_cca::MAC_AX_SEC40_CCA
+ * @var wd_body_t::dword2
  * Please Place Description here.
- * @var mac_ax_cca::MAC_AX_SEC80_CCA
+ * @var wd_body_t::dword3
  * Please Place Description here.
- * @var mac_ax_cca::MAC_AX_EDCCA
+ * @var wd_body_t::dword4
  * Please Place Description here.
- * @var mac_ax_cca::MAC_AX_BTCCA
- * Please Place Description here.
- * @var mac_ax_cca::MAC_AX_CCA_LAST
- * Please Place Description here.
- * @var mac_ax_cca::MAC_AX_CCA_MAX
- * Please Place Description here.
- * @var mac_ax_cca::MAC_AX_CCA_INVALID
+ * @var wd_body_t::dword5
  * Please Place Description here.
  */
-enum mac_ax_block_tx_sel {
-	MAC_AX_CCA,
-	MAC_AX_SEC20_CCA,
-	MAC_AX_SEC40_CCA,
-	MAC_AX_SEC80_CCA,
-	MAC_AX_EDCCA,
-	MAC_AX_BTCCA,
-	MAC_AX_TX_NAV,
-
-	/* keep last */
-	MAC_AX_CCA_LAST,
-	MAC_AX_CCA_MAX = MAC_AX_CCA_LAST,
-	MAC_AX_CCA_INVALID = MAC_AX_CCA_LAST,
+struct wd_body_t {
+	u32 dword0;
+	u32 dword1;
+	u32 dword2;
+	u32 dword3;
+	u32 dword4;
+	u32 dword5;
 };
+
+/**
+ * @struct wd_info_t
+ * @brief wd_info_t
+ *
+ * @var wd_info_t::dword0
+ * Please Place Description here.
+ * @var wd_info_t::dword1
+ * Please Place Description here.
+ * @var wd_info_t::dword2
+ * Please Place Description here.
+ * @var wd_info_t::dword3
+ * Please Place Description here.
+ * @var wd_info_t::dword4
+ * Please Place Description here.
+ * @var wd_info_t::dword5
+ * Please Place Description here.
+ */
+struct wd_info_t {
+	u32 dword0;
+	u32 dword1;
+	u32 dword2;
+	u32 dword3;
+	u32 dword4;
+	u32 dword5;
+};
+
+/**
+ * @struct wd_body_t_v1
+ * @brief wd_body_t_v1
+ *
+ * @var wd_body_t::dword0
+ * Please Place Description here.
+ * @var wd_body_t::dword1
+ * Please Place Description here.
+ * @var wd_body_t::dword2
+ * Please Place Description here.
+ * @var wd_body_t::dword3
+ * Please Place Description here.
+ * @var wd_body_t::dword4
+ * Please Place Description here.
+ * @var wd_body_t::dword5
+ * Please Place Description here.
+ * @var wd_body_t::dword6
+ * Please Place Description here.
+ * @var wd_body_t::dword7
+ * Please Place Description here.
+ */
+struct wd_body_t_v1 {
+	u32 dword0;
+	u32 dword1;
+	u32 dword2;
+	u32 dword3;
+	u32 dword4;
+	u32 dword5;
+	u32 dword6;
+	u32 dword7;
+};
+
+/**
+ * @struct rxd_short_t
+ * @brief rxd_short_t
+ *
+ * @var rxd_short_t::dword0
+ * Please Place Description here.
+ * @var rxd_short_t::dword1
+ * Please Place Description here.
+ * @var rxd_short_t::dword2
+ * Please Place Description here.
+ * @var rxd_short_t::dword3
+ * Please Place Description here.
+ */
+struct rxd_short_t {
+	u32 dword0;
+	u32 dword1;
+	u32 dword2;
+	u32 dword3;
+};
+
+/**
+ * @struct rxd_long_t
+ * @brief rxd_long_t
+ *
+ * @var rxd_long_t::dword0
+ * Please Place Description here.
+ * @var rxd_long_t::dword1
+ * Please Place Description here.
+ * @var rxd_long_t::dword2
+ * Please Place Description here.
+ * @var rxd_long_t::dword3
+ * Please Place Description here.
+ * @var rxd_long_t::dword4
+ * Please Place Description here.
+ * @var rxd_long_t::dword5
+ * Please Place Description here.
+ * @var rxd_long_t::dword6
+ * Please Place Description here.
+ * @var rxd_long_t::dword7
+ * Please Place Description here.
+ */
+struct rxd_long_t {
+	u32 dword0;
+	u32 dword1;
+	u32 dword2;
+	u32 dword3;
+	u32 dword4;
+	u32 dword5;
+	u32 dword6;
+	u32 dword7;
+};
+
+/**
+ * @struct txd_proc_type
+ * @brief txd_proc_type
+ *
+ * @var txd_proc_type::type
+ * Please Place Description here.
+ * @var txd_proc_type::handler
+ * Please Place Description here.
+ */
+struct txd_proc_type {
+	enum rtw_packet_type type;
+	u32 (*handler)(struct mac_ax_adapter *adapter,
+		       struct rtw_t_meta_data *info, u8 *buf, u32 len);
+};
+
+/**
+ * @struct rxd_parse_type
+ * @brief rxd_parse_type
+ *
+ * @var rxd_parse_type::type
+ * Please Place Description here.
+ * @var rxd_parse_type::handler
+ * Please Place Description here.
+ */
+struct rxd_parse_type {
+	u32 (*handler)(struct mac_ax_adapter *adapter,
+		       struct mac_ax_rxpkt_info *info, u8 *buf, u32 len);
+	u8 type;
+};
+
+/*--------------------Define Struct-------------------------------------*/
 
 /**
  * struct mac_ax_pkt_data - packet information of data type
@@ -1652,7 +1546,6 @@ enum mac_ax_block_tx_sel {
  * @ch: Channel index, MAC_AX_CH_DMA_CH0~MAC_AX_CH_DMA_CH11.
  * @macid: MAC ID.
  */
-/*--------------------Define Struct-------------------------------------*/
 
 /**
  * @struct sec_checker
@@ -1694,17 +1587,6 @@ struct sec_checker {
  * @var mac_ax_delay_tx_cfg::bebk_len_b1
  * Please Place Description here.
  */
-struct mac_ax_delay_tx_cfg {
-	enum mac_ax_delay_tx_en en;
-	u8 vovi_to_b0;
-	u8 bebk_to_b0;
-	u8 vovi_to_b1;
-	u8 bebk_to_b1;
-	u8 vovi_len_b0;
-	u8 bebk_len_b0;
-	u8 vovi_len_b1;
-	u8 bebk_len_b1;
-};
 
 /**
  * @struct mac_ax_ofld_hdr
@@ -1746,6 +1628,10 @@ struct mac_ax_ofld_hdr {
  * @struct mac_ax_outsrc_h2c_hdr
  * @brief mac_ax_outsrc_h2c_hdr
  *
+ * @var mac_ax_outsrc_h2c_hdr::content_len
+ * Please Place Description here.
+ * @var mac_ax_outsrc_h2c_hdr::rsvd2
+ * Please Place Description here.
  * @var mac_ax_outsrc_h2c_hdr::h2c_class
  * Please Place Description here.
  * @var mac_ax_outsrc_h2c_hdr::h2c_func
@@ -1762,12 +1648,10 @@ struct mac_ax_ofld_hdr {
  * Please Place Description here.
  * @var mac_ax_outsrc_h2c_hdr::rsvd1
  * Please Place Description here.
- * @var mac_ax_outsrc_h2c_hdr::content_len
- * Please Place Description here.
- * @var mac_ax_outsrc_h2c_hdr::rsvd2
- * Please Place Description here.
  */
 struct mac_ax_outsrc_h2c_hdr {
+	u16 content_len:12;
+	u16 rsvd2:4;
 	u8 h2c_class; //0x0~0x7: Phydm; 0x8~0xF: RF; 0x10~0x17: BTC
 	u8 h2c_func;
 	u8 seq_valid:1;
@@ -1776,8 +1660,6 @@ struct mac_ax_outsrc_h2c_hdr {
 	u8 rec_ack:1; //Ack when receive H2C
 	u8 done_ack:1; //Ack when FW execute H2C cmd done
 	u8 rsvd1:1;
-	u16 content_len:12;
-	u16 rsvd2:4;
 };
 
 /**

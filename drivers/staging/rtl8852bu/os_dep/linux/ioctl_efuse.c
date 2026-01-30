@@ -28,19 +28,24 @@ static u8 rtw_efuse_cmd(_adapter *padapter,
 
 	rtw_mp_set_phl_cmd(padapter, (void*)pefuse_arg, sizeof(struct rtw_efuse_phl_arg));
 
-	while (i <= 50) {
+	while (i <= 500) {
 		rtw_msleep_os(10);
 		rtw_mp_get_phl_cmd(padapter, (void*)pefuse_arg, sizeof(struct rtw_efuse_phl_arg));
 		if (pefuse_arg->cmd_ok && pefuse_arg->status == RTW_PHL_STATUS_SUCCESS) {
 			RTW_INFO("%s,eFuse GET CMD OK !!!\n", __func__);
 			ret = _SUCCESS;
 			break;
+		} else if (pefuse_arg->cmd_ok && pefuse_arg->status == RTW_PHL_STATUS_FAILURE) { 
+			RTW_INFO("%s,eFuse GET CMD FAIL !!!\n", __func__);
+			ret = _FAIL;
+			break;
 		} else {
 			rtw_msleep_os(10);
 			if (i > 50) {
-				RTW_INFO("%s, eFuse GET CMD FAIL !!!\n", __func__);
+				RTW_INFO("%s, timeout eFuse GET CMD FAIL !!!\n", __func__);
 				break;
 			}
+			RTW_INFO("%s, wait for eFuse GET CMD !!!\n", __func__);
 			i++;
 		}
 	}
@@ -125,7 +130,7 @@ static u8 rtw_efuse_fake2map(_adapter *padapter, u8 efuse_type)
 	return res;
 }
 
-static u8 rtw_efuse_read_map2shadow(_adapter *padapter, u8 efuse_type)
+u8 rtw_efuse_read_map2shadow(_adapter *padapter, u8 efuse_type)
 {
 	struct rtw_efuse_phl_arg *efuse_arg = NULL;
 	u8 res = _SUCCESS;
@@ -137,6 +142,9 @@ static u8 rtw_efuse_read_map2shadow(_adapter *padapter, u8 efuse_type)
 		    rtw_efuse_cmd(padapter, efuse_arg, RTW_EFUSE_CMD_WIFI_UPDATE_MAP);
 		else if (efuse_type == RTW_EFUSE_BT)
 			rtw_efuse_cmd(padapter, efuse_arg, RTW_EFUSE_CMD_BT_UPDATE_MAP);
+		else
+			RTW_INFO("%s,efuse_type unknow :%d!!!\n", __func__, efuse_type);
+
 		if (efuse_arg->cmd_ok && efuse_arg->status == RTW_PHL_STATUS_SUCCESS)
 				res = _SUCCESS;
 		else
@@ -344,6 +352,11 @@ u8 rtw_efuse_map_write(_adapter * adapter, u16 addr, u16 cnts, u8 *data, u8 efus
 
 	efuse_arg = rtw_zmalloc(sizeof(struct rtw_efuse_phl_arg));
 
+	if (efuse_arg == NULL) {
+		status = _FAIL;
+		goto exit;
+	}
+
 	if (efuse_type == RTW_EFUSE_WIFI)
 		err = rtw_efuse_get_map_size(adapter, &size, RTW_EFUSE_CMD_WIFI_GET_LOG_SIZE);
 	else if (efuse_type == RTW_EFUSE_BT)
@@ -422,19 +435,22 @@ static u8 rtw_efuse_map_file_load(_adapter *padapter, u8 *filepath, u8 efuse_typ
 		RTW_INFO("efuse file path %s len %zu", filepath, strlen(filepath));
 
 		efuse_arg = _rtw_malloc(sizeof(struct rtw_efuse_phl_arg));
+
 		if (efuse_arg) {
+			efuse_arg->status = RTW_PHL_STATUS_FAILURE;
 			_rtw_memset((void *)efuse_arg, 0, sizeof(struct rtw_efuse_phl_arg));
 			_rtw_memcpy(efuse_arg->pfile_path, filepath, strlen(filepath));
 			if (efuse_type == RTW_EFUSE_WIFI)
 				rtw_efuse_cmd(padapter, efuse_arg, RTW_EFUSE_CMD_FILE_MAP_LOAD);
 			else
 				rtw_efuse_cmd(padapter, efuse_arg, RTW_EFUSE_CMD_BT_FILE_MAP_LOAD);
+
+			if (efuse_arg->cmd_ok && efuse_arg->status == RTW_PHL_STATUS_SUCCESS)
+				res = _SUCCESS;
+			else
+				res = _FAIL;
 		}
 	}
-	if (efuse_arg->cmd_ok && efuse_arg->status == RTW_PHL_STATUS_SUCCESS)
-			res = _SUCCESS;
-	else
-			res = _FAIL;
 
 	if (efuse_arg)
 		_rtw_mfree(efuse_arg, sizeof(struct rtw_efuse_phl_arg));
@@ -450,7 +466,7 @@ static u8 rtw_efuse_mask_file_load(_adapter *padapter, u8 *filepath, u8 efuse_ty
 	if (filepath) {
 		RTW_INFO("efuse file path %s len %zu", filepath, strlen(filepath));
 		efuse_arg = _rtw_malloc(sizeof(struct rtw_efuse_phl_arg));
-		efuse_arg->status == RTW_PHL_STATUS_FAILURE;
+		efuse_arg->status = RTW_PHL_STATUS_FAILURE;
 
 		if (efuse_arg) {
 			_rtw_memset((void *)efuse_arg, 0, sizeof(struct rtw_efuse_phl_arg));
@@ -459,13 +475,13 @@ static u8 rtw_efuse_mask_file_load(_adapter *padapter, u8 *filepath, u8 efuse_ty
 				rtw_efuse_cmd(padapter, efuse_arg, RTW_EFUSE_CMD_FILE_MASK_LOAD);
 			else
 				rtw_efuse_cmd(padapter, efuse_arg, RTW_EFUSE_CMD_BT_FILE_MASK_LOAD);
+
+			if (efuse_arg->cmd_ok && efuse_arg->status == RTW_PHL_STATUS_SUCCESS)
+					res = _SUCCESS;
+			else
+					res = _FAIL;
 		}
 	}
-
-	if (efuse_arg->cmd_ok && efuse_arg->status == RTW_PHL_STATUS_SUCCESS)
-			res = _SUCCESS;
-	else
-			res = _FAIL;
 
 	if (efuse_arg)
 		_rtw_mfree(efuse_arg, sizeof(struct rtw_efuse_phl_arg));
@@ -491,7 +507,8 @@ int rtw_ioctl_efuse_get(struct net_device *dev,
 		goto exit;
 	}
 
-	*(extra +  wrqu->data.length) = '\0';
+	*(extra + wrqu->data.length) = '\0';
+
 	pch = extra;
 	RTW_INFO("%s: in=%s\n", __FUNCTION__, extra);
 
@@ -936,6 +953,8 @@ exit:
 		rtw_mfree(pre_efuse_map, RTW_MAX_EFUSE_MAP_LEN);
 	if (!err)
 		wrqu->data.length = strlen(extra);
+
+	*(extra +  wrqu->data.length) = '\0';
 	RTW_INFO("%s: strlen(extra) =%zu\n", __FUNCTION__, strlen(extra));
 	if (copy_to_user(wrqu->data.pointer, extra, wrqu->data.length))
 		err = -EFAULT;
@@ -953,19 +972,17 @@ int rtw_ioctl_efuse_set(struct net_device *dev,
 	_adapter *padapter = (_adapter *)rtw_netdev_priv(dev);
 	struct dvobj_priv *dvobj = adapter_to_dvobj(padapter);
 
-	u8 ips_mode = IPS_NUM; /* init invalid value */
-	u8 lps_mode = PM_PS_MODE_NUM; /* init invalid value */
 	u32 i = 0, j = 0, jj = 0, kk = 0;
 	u8 *setdata = NULL;
 	u8 *shadowmap = NULL;
 	u8 *setrawdata = NULL;
 	char *pch, *ptmp, *token, *tmp[3] = {0x00, 0x00, 0x00};
 	u16 addr = 0xFF, cnts = 0, max_available_len = 0;
-	u16 wifimaplen;
+	u16 wifimaplen = 0;
 	int err = 0;
 	boolean bcmpchk = _TRUE;
 	u8 status = _SUCCESS;
-	u16 size;
+	u16 size = 0;
 	u8 bpg = true;
 
 	wrqu = (struct iw_point *)wdata;
@@ -981,16 +998,6 @@ int rtw_ioctl_efuse_set(struct net_device *dev,
 		err = -ENOMEM;
 		goto exit;
 	}
-
-#ifdef CONFIG_LPS
-	lps_mode = pwrctrlpriv->power_mgnt;/* keep org value */
-	rtw_pm_set_lps(padapter, PM_PS_MODE_ACTIVE);
-#endif
-
-#ifdef CONFIG_IPS
-	ips_mode = pwrctrlpriv->ips_mode;/* keep org value */
-	rtw_pm_set_ips(padapter, IPS_NONE);
-#endif
 
 	pch = extra;
 	RTW_INFO("%s: in=%s\n", __FUNCTION__, extra);
@@ -1320,7 +1327,7 @@ int rtw_ioctl_efuse_set(struct net_device *dev,
 
 		err = 0;
 		goto exit;
-	} else if (strcmp(tmp[0], "update") == 0) {
+	} else if (strncmp(tmp[0], "update", 6) == 0) {
 		if (rtw_efuse_renew_update(padapter, RTW_EFUSE_WIFI) == _FAIL) {
 			RTW_INFO("%s: rtw_efuse_renew_update error!!\n", __FUNCTION__);
 			sprintf(extra, "WIFI update FAIL\n");
@@ -1338,16 +1345,6 @@ exit:
 
 	wrqu->length = strlen(extra);
 
-	if (padapter->registrypriv.mp_mode == 0) {
-#ifdef CONFIG_IPS
-		rtw_pm_set_ips(padapter, ips_mode);
-#endif /* CONFIG_IPS */
-
-#ifdef CONFIG_LPS
-		rtw_pm_set_lps(padapter, lps_mode);
-#endif /* CONFIG_LPS */
-	}
-
 	return err;
 }
 
@@ -1360,8 +1357,12 @@ int rtw_ioctl_efuse_file_map_load(struct net_device *dev,
 	_adapter *padapter= rtw_netdev_priv(dev);
 	struct mp_priv *pmp_priv = &padapter->mppriv;
 
+	if (rtw_do_mp_iwdata_len_chk(__func__, ( wrqu->data.length + 1)))
+		return -EFAULT;
+
 	if (copy_from_user(extra, wrqu->data.pointer, wrqu->data.length))
 		return -EFAULT;
+	extra[wrqu->data.length] = '\0';
 
 	rtw_efuse_file_map_path = extra;
 	if (rtw_is_file_readable(rtw_efuse_file_map_path) == _TRUE) {
@@ -1392,8 +1393,13 @@ int rtw_ioctl_efuse_file_mask_load(struct net_device *dev,
 	_adapter *padapter= rtw_netdev_priv(dev);
 	struct mp_priv *pmp_priv = &padapter->mppriv;
 
+
+	if (rtw_do_mp_iwdata_len_chk(__func__, ( wrqu->data.length + 1)))
+		return -EFAULT;
+
 	if (copy_from_user(extra, wrqu->data.pointer, wrqu->data.length))
 		return -EFAULT;
+	extra[wrqu->data.length] = '\0';
 
 	rtw_efuse_file_map_path = extra;
 	if (rtw_is_file_readable(rtw_efuse_file_map_path) == _TRUE) {
@@ -1425,8 +1431,12 @@ int rtw_ioctl_efuse_bt_file_map_load(struct net_device *dev,
 	_adapter *padapter= rtw_netdev_priv(dev);
 	struct mp_priv *pmp_priv = &padapter->mppriv;
 
+	if (rtw_do_mp_iwdata_len_chk(__func__, ( wrqu->data.length + 1)))
+		return -EFAULT;
+
 	if (copy_from_user(extra, wrqu->data.pointer, wrqu->data.length))
 		return -EFAULT;
+	extra[wrqu->data.length] = '\0';
 
 	rtw_efuse_file_map_path = extra;
 	if (rtw_is_file_readable(rtw_efuse_file_map_path) == _TRUE) {
@@ -1459,8 +1469,13 @@ int rtw_ioctl_efuse_bt_file_mask_load(struct net_device *dev,
 	_adapter *padapter= rtw_netdev_priv(dev);
 	struct mp_priv *pmp_priv = &padapter->mppriv;
 
+	if (rtw_do_mp_iwdata_len_chk(__func__, ( wrqu->data.length + 1)))
+		return -EFAULT;
+
 	if (copy_from_user(extra, wrqu->data.pointer, wrqu->data.length))
 		return -EFAULT;
+
+	extra[wrqu->data.length] = '\0';
 
 	rtw_efuse_file_map_path = extra;
 	if (rtw_is_file_readable(rtw_efuse_file_map_path) == _TRUE) {
@@ -1594,28 +1609,27 @@ exit:
 
 u8 rtw_efuse_bt_write_raw_hidden(_adapter * adapter, u16 addr, u16 cnts, u8 *data)
 {
-	u8 status = _SUCCESS;
+	u8 status = _FAIL;
 	struct rtw_efuse_phl_arg *efuse_arg = NULL;
 	u16 i = 0;
 
 	efuse_arg = _rtw_zmalloc(sizeof(struct rtw_efuse_phl_arg));
-
-	while (i < cnts) {
-		efuse_arg->io_type = 1;
-		efuse_arg->io_offset = addr + i;
-		efuse_arg->io_value = data[i];
-		rtw_efuse_cmd(adapter, efuse_arg, RTW_EFUSE_CMD_BT_WRITE_HIDDEN);
-		if (efuse_arg->cmd_ok && efuse_arg->status == RTW_PHL_STATUS_SUCCESS)
-			status = _SUCCESS;
-		else{
-			status = _FAIL;
-			break;
-		}
-		i++;
-	}
-exit :
-	if (efuse_arg)
+    if (efuse_arg) {
+	    while (i < cnts) {
+		    efuse_arg->io_type = 1;
+		    efuse_arg->io_offset = addr + i;
+		    efuse_arg->io_value = data[i];
+		    rtw_efuse_cmd(adapter, efuse_arg, RTW_EFUSE_CMD_BT_WRITE_HIDDEN);
+		    if (efuse_arg->cmd_ok && efuse_arg->status == RTW_PHL_STATUS_SUCCESS)
+			    status = _SUCCESS;
+		    else{
+			    status = _FAIL;
+			    break;
+		    }
+		    i++;
+	    }
 		_rtw_mfree(efuse_arg, sizeof(struct rtw_efuse_phl_arg));
+    }
 
 	return status;
 }

@@ -53,7 +53,7 @@ struct phl_cmd_obj {
 };
 
 
-#define DBG_CMD_SYNC
+/*#define DBG_CMD_SYNC*/
 
 #ifdef DBG_CMD_SYNC
 static void _phl_cmd_sync_dump(struct phl_cmd_sync *cmd_sync, const char *caller)
@@ -179,6 +179,10 @@ _phl_cmd_general_pre_phase_msg_hdlr(struct phl_info_t *phl_info, void *dispr,
 		/* Do Nothing */
 		psts = RTW_PHL_STATUS_SUCCESS;
 	break;
+	case MSG_EVT_DBG_TX_DUMP:
+		/* Do Nothing */
+		psts = RTW_PHL_STATUS_SUCCESS;
+	break;
 	case MSG_EVT_NONE:
 		/* fall through */
 	default:
@@ -187,6 +191,19 @@ _phl_cmd_general_pre_phase_msg_hdlr(struct phl_info_t *phl_info, void *dispr,
 	}
 
 	return psts;
+}
+
+static u8 _skip_normal_hw_watchdog(struct phl_info_t *phl_info)
+{
+#ifdef CONFIG_PHL_CHSWOFLD
+	struct rtw_phl_com_t *phl_com = phl_info->phl_com;
+	struct chsw_ofld_info_t *chsw_ofld_info = &phl_com->chsw_ofld_info;
+
+	if (chsw_ofld_info->chsw_ofld_en && chsw_ofld_info->skip_normal_watchdog)
+		return true;
+#endif
+
+	return false;
 }
 
 static enum rtw_phl_status
@@ -200,6 +217,19 @@ _phl_cmd_general_post_phase_msg_hdlr(struct phl_info_t *phl_info, void *dispr,
 	phl_cmd = (struct phl_cmd_obj *)msg->inbuf;
 
 	switch (evt_id) {
+#ifdef CONFIG_PHL_P2PPS
+	case MSG_EVT_NOA_UP:
+		PHL_TRACE(COMP_PHL_P2PPS, _PHL_INFO_, "[NOA]_phl_cmd_general_post_phase_msg_hdlr: MSG_EVT_NOA_UP\n");
+		psts = phl_noa_update(phl_info,
+				(struct rtw_phl_noa_desc *)phl_cmd->buf);
+	break;
+
+	case MSG_EVT_NOA_DISABLE:
+		PHL_TRACE(COMP_PHL_P2PPS, _PHL_INFO_, "[NOA]_phl_cmd_general_post_phase_msg_hdlr: MSG_EVT_NOA_DISABLE\n");
+		psts = phl_cmd_noa_disable_hdl(phl_info, phl_cmd->buf);
+	break;
+#endif /* CONFIG_PHL_P2PPS */
+
 	case MSG_EVT_CHG_OP_CH_DEF_START:
 		psts = phl_cmd_chg_op_chdef_start_hdl(phl_info, phl_cmd->buf);
 	break;
@@ -213,34 +243,40 @@ _phl_cmd_general_post_phase_msg_hdlr(struct phl_info_t *phl_info, void *dispr,
 		psts = phl_evt_pcie_trx_mit_hdlr(phl_info, phl_cmd->buf);
 	break;
 	#endif
+	case MSG_EVT_DBG_TX_DUMP:
+	{
+		struct hal_mac_dbg_dump_cfg cfg = {0};
+
+		PHL_TRACE(COMP_PHL_DBG, _PHL_INFO_, "===> %s : MSG_EVT_DBG_TX_DUMP\n", __func__);
+		RTW_DUMP_HAL_CR(phl_info, MSG_EVT_DBG_TX_DUMP, msg->band_idx);
+		cfg.tx_flow_dbg = 1;
+		rtw_hal_dbg_status_dump(phl_info->hal, &cfg);
+		PHL_TRACE(COMP_PHL_DBG, _PHL_INFO_, "<=== %s : MSG_EVT_DBG_TX_DUMP\n", __func__);
+		psts = RTW_PHL_STATUS_SUCCESS;
+	}
+	break;
 	case MSG_EVT_DBG_RX_DUMP:
 	{
 		PHL_TRACE(COMP_PHL_DBG, _PHL_INFO_, "===> %s : MSG_EVT_DBG_RX_DUMP\n", __func__);
-		rtw_hal_notification(phl_info->hal, MSG_EVT_DBG_RX_DUMP, HW_PHY_0);
+		RTW_DUMP_HAL_CR(phl_info, MSG_EVT_DBG_RX_DUMP, msg->band_idx);
 		PHL_TRACE(COMP_PHL_DBG, _PHL_INFO_, "<=== %s : MSG_EVT_DBG_RX_DUMP\n", __func__);
 		psts = RTW_PHL_STATUS_SUCCESS;
 	}
 	break;
 	case MSG_EVT_SW_WATCHDOG:
-		if (IS_MSG_FAIL(msg->msg_id))
-			psts = RTW_PHL_STATUS_FAILURE;
-		else if (IS_MSG_CANCEL(msg->msg_id))
-			psts = RTW_PHL_STATUS_FAILURE;
-		else
-			psts = RTW_PHL_STATUS_SUCCESS;
 		psts = phl_watchdog_sw_cmd_hdl(phl_info, psts);
 	break;
 	case MSG_EVT_HW_WATCHDOG:
 	{
-		if (IS_MSG_CANNOT_IO(msg->msg_id))
-			psts = RTW_PHL_STATUS_CANNOT_IO;
-		else if (IS_MSG_FAIL(msg->msg_id))
-			psts = RTW_PHL_STATUS_FAILURE;
-		else if (IS_MSG_CANCEL(msg->msg_id))
-			psts = RTW_PHL_STATUS_FAILURE;
-		else
+		if (_skip_normal_hw_watchdog(phl_info)) {
+			rtw_hal_simple_watchdog(phl_info->hal, false);
 			psts = RTW_PHL_STATUS_SUCCESS;
-		psts = phl_watchdog_hw_cmd_hdl(phl_info, psts);
+		} else {
+#ifdef CONFIG_POST_CORE_KEEP_ALIVE
+			psts = phl_keep_alive_hdl(phl_info);
+#endif
+			psts = phl_watchdog_hw_cmd_hdl(phl_info, psts);
+		}
 	}
 	break;
 
@@ -254,11 +290,38 @@ _phl_cmd_general_post_phase_msg_hdlr(struct phl_info_t *phl_info, void *dispr,
 	case MSG_EVT_GET_USB_SW_ABILITY:
 		psts = phl_get_usb_support_ability(phl_info, (u32*)(phl_cmd->buf));
 	break;
+#ifdef CONFIG_PHL_CUSTOM_FEATURE_USB
+	case MSG_EVT_SET_USB_SW_ABILITY:
+		psts = phl_cmd_set_usb_support_ability(phl_info, *(u32*)(phl_cmd->buf));
+	break;
 #endif
+	case MSG_EVT_GET_USB_MODE_STATUS:
+		psts = phl_cmd_get_usb_mode_status(phl_info, (u32*)(phl_cmd->buf));
+	break;
+	case MSG_EVT_GET_U3_PERF_MODE:
+		psts = phl_cmd_get_u3_perf_mode(phl_info, (u32*)(phl_cmd->buf));
+	break;
+#ifdef RTW_WKARD_REDUCE_SER
+	case MSG_EVT_USB_TOGGLE:
+		psts = phl_usb_toggle_flush_for_ser_hdl(phl_info, (u8*)(phl_cmd->buf));
+	break;
+#endif
+#endif
+	case MSG_EVT_HWSEQ_GET_HW_SEQUENCE:
+		psts = phl_cmd_get_hwseq_hdl(phl_info, phl_cmd->buf);
+	break;
 	case MSG_EVT_CFG_AMPDU:
 		psts = phl_cmd_cfg_ampdu_hdl(phl_info, phl_cmd->buf);
 	break;
-
+	case MSG_EVT_CFG_AMSDU_TX:
+		psts = phl_cmd_cfg_amsdu_tx_hdl(phl_info, phl_cmd->buf);
+	break;
+	case MSG_EVT_UPDT_EXT_TXPWR_LMT:
+		psts = phl_cmd_updt_ext_txpwr_lmt(phl_info, phl_cmd->buf);
+	break;
+	case MSG_EVT_SET_TAS_EN:
+		psts = phl_cmd_set_tas_en(phl_info, phl_cmd->buf);
+	break;
 	case MSG_EVT_DFS_PAUSE_TX:
 		psts = phl_cmd_dfs_tx_pause_hdl(phl_info, phl_cmd->buf);
 	break;
@@ -266,27 +329,24 @@ _phl_cmd_general_post_phase_msg_hdlr(struct phl_info_t *phl_info, void *dispr,
 	case MSG_EVT_ROLE_RECOVER:
 		psts = phl_role_recover(phl_info);
 	break;
+
 	case MSG_EVT_ROLE_SUSPEND:
-		psts = phl_role_suspend(phl_info);
+	{
+		enum phl_role_susp_rsn *rsn = (enum phl_role_susp_rsn *)phl_cmd->buf;
+
+		psts = phl_role_suspend(phl_info, *rsn);
+	}
 	break;
 
-#if defined(CONFIG_PCI_HCI)
-	case MSG_EVT_HAL_SET_L2_LEAVE:
-		if (rtw_hal_set_l2_leave(phl_info->hal) == RTW_HAL_STATUS_SUCCESS)
-			psts = RTW_PHL_STATUS_SUCCESS;
+	#ifdef CONFIG_WOWLAN
+	case MSG_EVT_HAL_SET_WOWLAN:
+		psts = phl_cmd_set_wowlan_hdl(phl_info, phl_cmd->buf);
 	break;
-#endif
+	#endif
 
 	case MSG_EVT_GET_TX_PWR_DBM:
 	{
-		if (IS_MSG_CANNOT_IO(msg->msg_id))
-			psts = RTW_PHL_STATUS_CANNOT_IO;
-		else if (IS_MSG_FAIL(msg->msg_id))
-			psts = RTW_PHL_STATUS_FAILURE;
-		else if (IS_MSG_CANCEL(msg->msg_id))
-			psts = RTW_PHL_STATUS_FAILURE;
-		else
-			psts = rtw_phl_get_txinfo_pwr((void*)phl_info, (s16*)(phl_cmd->buf));
+		psts = rtw_phl_get_txinfo_pwr((void*)phl_info, (s16*)(phl_cmd->buf));
 	}
 	break;
 
@@ -298,6 +358,9 @@ _phl_cmd_general_post_phase_msg_hdlr(struct phl_info_t *phl_info, void *dispr,
 #ifdef RTW_PHL_BCN
 		psts = phl_cmd_issue_bcn_hdl(phl_info, phl_cmd->buf);
 #endif
+	break;
+	case MSG_EVT_EDCCA_CFG:
+		psts = phl_cmd_edcca_cfg_hdl(phl_info, phl_cmd->buf);
 	break;
 	case MSG_EVT_STOP_BCN:
 #ifdef RTW_PHL_BCN
@@ -338,6 +401,111 @@ _phl_cmd_general_post_phase_msg_hdlr(struct phl_info_t *phl_info, void *dispr,
 	case MSG_EVT_STA_CHG_STAINFO:
 		psts = phl_cmd_change_stainfo_hdl(phl_info, phl_cmd->buf);
 	break;
+
+	case MSG_EVT_TPE_INFO_UPDATE:
+		psts = phl_cmd_tpe_update_hdl(phl_info, phl_cmd->buf);
+	break;
+
+#ifdef CONFIG_PHL_TWT
+	case MSG_EVT_TWT_STA_ACCEPT:
+		psts = phl_twt_accept_for_sta_mode(phl_info, phl_cmd->buf);
+	break;
+
+	case MSG_EVT_TWT_STA_TEARDOWN:
+		psts = phl_twt_teardown_for_sta_mode(phl_info, phl_cmd->buf);
+	break;
+
+	case MSG_EVT_TWT_GET_TWT:
+		psts = phl_twt_get_target_wake_time(phl_info, phl_cmd->buf);
+	break;
+
+	case MSG_EVT_TWT_INFO_F_HDR:
+		psts = phl_twt_info_f_hrl(phl_info, phl_cmd->buf);
+	break;
+#endif
+
+	case MSG_EVT_GET_CUR_TSF:
+		psts = phl_cmd_get_cur_tsf_hdl(phl_info,
+			(struct rtw_phl_port_tsf *)phl_cmd->buf);
+	break;
+
+	case MSG_EVT_SET_MACID_PAUSE:
+		psts = phl_cmd_set_macid_pause_hdl(phl_info, phl_cmd->buf);
+	break;
+
+	case MSG_EVT_SET_MACID_PAUSE_AC:
+		psts = phl_cmd_set_macid_pause_ac_hdl(phl_info, phl_cmd->buf);
+	break;
+
+	case MSG_EVT_SET_MACID_PKT_DROP:
+		psts = phl_cmd_set_macid_pkt_drop_hdl(phl_info, phl_cmd->buf);
+	break;
+
+	case MSG_EVT_GT3_SETUP:
+		psts = phl_cmd_cfg_gt3_hdl(phl_info, phl_cmd->buf);
+	break;
+
+	case MSG_EVT_HW_SEQ_SETUP:
+		psts = phl_cmd_cfg_hw_seq_hdl(phl_info, phl_cmd->buf);
+	break;
+
+	case MSG_EVT_LIFETIME_SETUP:
+		psts = phl_cmd_cfg_lifetime_hdl(phl_info, phl_cmd->buf);
+	break;
+
+	case MSG_EVT_POWER_OFFSET_SETUP:
+		psts = phl_cmd_cfg_power_offset_hdl(phl_info, phl_cmd->buf);
+	break;
+
+	case MSG_EVT_SET_UL_FIXINFO:
+		psts = phl_set_fw_ul_fixinfo_hdl(phl_info,
+			(struct rtw_phl_ax_ul_fixinfo *)phl_cmd->buf);
+	break;
+
+#ifdef CONFIG_PHL_DFS
+	case MSG_EVT_DFS_RD_SETUP:
+		psts = phl_cmd_dfs_rd_ctl_hdl(phl_info, phl_cmd->buf);
+	break;
+#endif
+
+	case MSG_EVT_RX_DBG_CNT_GET_BY_IDX:
+		psts = phl_cmd_get_rx_cnt_by_idx_hdl(phl_info, phl_cmd->buf);
+		break;
+	case MSG_EVT_RX_DBG_CNT_RESET:
+		psts = phl_cmd_set_reset_rx_cnt_hdl(phl_info, phl_cmd->buf);
+		break;
+#ifdef CONFIG_PHL_USB_RX_AGGREGATION
+	case MSG_EVT_USB_RX_AGG_CFG:
+		psts = phl_cmd_usb_rx_agg_cfg_hdl(phl_info, phl_cmd->buf);
+		break;
+#endif
+	case MSG_EVT_TXPWR_SETUP:
+		psts = phl_cmd_txpwr_ctl_hdl(phl_info, phl_cmd->buf);
+		break;
+
+	case MSG_EVT_HW_CTS2SELF:
+		psts = phl_cmd_cfg_hw_cts2self_hdl(phl_info, phl_cmd->buf);
+		break;
+
+	case MSG_EVT_SET_STA_SEC_IV:
+		psts = phl_cmd_set_seciv_hdl(phl_info,
+			phl_cmd->buf);
+	break;
+
+#ifdef CONFIG_DBCC_P2P_BG_LISTEN
+	case MSG_EVT_CONNECT_CMD_DBCC_DIS:
+		psts = phl_cmd_dbcc_dis_hdl(phl_info, phl_cmd->buf);
+	break;
+
+	case MSG_EVT_DISCONNECT_CMD_DBCC_EN:
+		psts = phl_cmd_dbcc_en_hdl(phl_info, phl_cmd->buf);
+	break;
+#endif
+#ifdef CONFIG_PHL_NAN
+	case MSG_EVT_NAN_ENTRY:
+		 psts = phl_cmd_nan_event_hdl(phl_info, phl_cmd->buf);
+	break;
+#endif
 
 	default:
 		psts = RTW_PHL_STATUS_SUCCESS;
@@ -406,6 +574,9 @@ static void _fail_evt_hdlr(void *dispr, void *priv, struct phl_msg *msg)
 		/* watchdog do not need to handle fail case */
 		PHL_DBG("%s do simple watchdog!\n", __func__);
 		rtw_hal_simple_watchdog(phl_info->hal, false);
+#ifdef CONFIG_POST_CORE_KEEP_ALIVE
+		rtw_phl_set_wdog_state_keep_alive(phl_info, false, NULL);
+#endif
 		break;
 	default:
 #ifdef CONFIG_POWER_SAVE
@@ -414,6 +585,10 @@ static void _fail_evt_hdlr(void *dispr, void *priv, struct phl_msg *msg)
 		phl_disp_eng_set_bk_module_info(phl_info, idx,
 				PHL_MDL_POWER_MGNT, &op_info);
 #endif
+		PHL_ERR("%s :: MDL_ID(%d)_FAIL - MSG_EVT_ID=%d \n",
+			__func__,
+			MSG_MDL_ID_FIELD(msg->msg_id),
+			MSG_EVT_ID_FIELD(msg->msg_id));
 		break;
 	}
 }
@@ -425,10 +600,6 @@ static enum phl_mdl_ret_code _phl_cmd_general_msg_hdlr(void *dispr, void *priv,
 	enum rtw_phl_status status = RTW_PHL_STATUS_FAILURE;
 
 	if (IS_MSG_FAIL(msg->msg_id)) {
-
-		PHL_INFO("%s :: MDL_ID(%d)_FAIL - MSG_EVT_ID=%d \n", __func__,
-			 MSG_MDL_ID_FIELD(msg->msg_id),
-			 MSG_EVT_ID_FIELD(msg->msg_id));
 
 		_fail_evt_hdlr(dispr, priv, msg);
 

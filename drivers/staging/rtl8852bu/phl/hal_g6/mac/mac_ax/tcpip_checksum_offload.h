@@ -20,6 +20,15 @@
 #include "../type.h"
 #include "../mac_ax.h"
 
+#define MAC_AX_CHKSUM_OFD_TX	0x1
+#define MAC_AX_CHKSUM_OFD_RX	0x2
+
+#define MAC_AX_CHKOFD_TCP_CHKSUM_ERR	BIT(4)
+#define MAC_AX_CHKOFD_RX_IS_TCP_UDP		BIT(6)
+#define MAC_AX_CHKOFD_RX_IPV			BIT(5)
+#define MAC_AX_CHKOFD_TCP_CHKSUM_VLD	BIT(7)
+#define MAX_MACID_NUM_WITH_LLC 512
+
 /**
  * @struct mac_ax_en_tcpipchksum
  * @brief mac_ax_en_tcpipchksum
@@ -83,12 +92,10 @@ u32 mac_chk_rx_tcpip_chksum_ofd(struct mac_ax_adapter *adapter,
  * @}
  */
 
-#define MAC_AX_CHKSUM_OFD_TX	0x1
-#define MAC_AX_CHKSUM_OFD_RX	0x2
+u32 mac_read_with_llc(struct mac_ax_adapter *adapter,
+		      u16 macid, u8 *with_llc_en);
 
-#define MAC_AX_CHKOFD_TCP_CHKSUM_ERR	BIT(4)
-#define MAC_AX_CHKOFD_RX_IS_TCP_UDP		BIT(6)
-#define MAC_AX_CHKOFD_RX_IPV			BIT(5)
-#define MAC_AX_CHKOFD_TCP_CHKSUM_VLD	BIT(7)
+u32 mac_write_with_llc(struct mac_ax_adapter *adapter,
+		       u16 macid, u8 with_llc_en);
 
 #endif

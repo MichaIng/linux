@@ -52,6 +52,14 @@
 #define SET_CPUIO_DLY_CNT 2000
 #define SET_CPUIO_DLY_US 1
 
+/*--------------------Define MACRO----------------------------------*/
+#define VIRTUAL_ADDRESS_MAPPING(eng_sel, pkt_id, offset)	\
+	(0x00000000 | (((eng_sel) & 0x1) << 27) |		\
+	(((pkt_id) & 0xFFF) << 15) | ((offset) & 0xEFFF))
+
+#define GET_VIRTUAL_ADDRESS_WD(pkt_id, offset)\
+	((((pkt_id) & 0xFFF) << 15) | ((offset) & 0xEFFF))
+
 /*--------------------Define Enum------------------------------------*/
 
 /**
@@ -446,14 +454,6 @@ enum pkt_drop_ac {
 	PKT_DROP_AC_INVALID = PKT_DROP_AC_LAST,
 };
 
-/*--------------------Define MACRO----------------------------------*/
-#define VIRTUAL_ADDRESS_MAPPING(eng_sel, pkt_id, offset)	\
-	(0x00000000 | (((eng_sel) & 0x1) << 27) |		\
-	(((pkt_id) & 0xFFF) << 15) | ((offset) & 0xEFFF))
-
-#define GET_VIRTUAL_ADDRESS_WD(pkt_id, offset)\
-	((((pkt_id) & 0xFFF) << 15) | ((offset) & 0xEFFF))
-
 /*--------------------Define Struct----------------------------------*/
 
 /**
@@ -502,14 +502,15 @@ struct cpuio_ctrl_t {
 	u16 pkt_num;
 	u16 start_pktid;
 	u16 end_pktid;
+	// output
+	u16 pktid;
+	// input
 	u8 cmd_type;
 	u8 macid;
 	u8 src_pid;
 	u8 src_qid;
 	u8 dst_pid;
 	u8 dst_qid;
-	// output
-	u16 pktid;
 };
 
 /**
@@ -530,12 +531,12 @@ struct cpuio_ctrl_t {
  * Please Place Description here.
  */
 struct deq_enq_info {
+	u16 pktid;
 	u8 macid;
 	u8 src_pid;
 	u8 src_qid;
 	u8 dst_pid;
 	u8 dst_qid;
-	u16 pktid;
 };
 
 /**
@@ -552,10 +553,10 @@ struct deq_enq_info {
  * Please Place Description here.
  */
 struct first_pid_info {
+	u16 pktid;
 	u8 macid;
 	u8 src_pid;
 	u8 src_qid;
-	u16 pktid;
 };
 
 /**
@@ -574,11 +575,11 @@ struct first_pid_info {
  * Please Place Description here.
  */
 struct next_pid_info {
+	u16 start_pktid;
+	u16 pktid;
 	u8 macid;
 	u8 src_pid;
 	u8 src_qid;
-	u16 start_pktid;
-	u16 pktid;
 };
 
 /*--------------------Export global variable----------------------------*/

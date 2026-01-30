@@ -15,7 +15,11 @@
 #ifndef __RTW_SEC_CAM_H__
 #define __RTW_SEC_CAM_H__
 
-#define SEC_STATUS_STA_PK_GK_CONFLICT_DIS_BMC_SEARCH	BIT0
+#if 0
+#define SEC_CAM_ENT_NUM_SW_LIMIT 32
+
+#define SEC_STATUS_STA_PK_GK_CONFLICT_DIS_BMC_SEARCH BIT0
+#define SEC_CAP_CHK_BMC	BIT0
 
 struct sec_cam_bmp {
 	u32 m0;
@@ -47,6 +51,11 @@ struct sec_cam_ent {
 	u8 mac[ETH_ALEN];
 	u8 key[16];
 };
+
+void dump_sec_cam_ent(void *sel, struct sec_cam_ent *ent, int id);
+void dump_sec_cam_ent_title(void *sel, u8 has_id);
+void dump_sec_cam(void *sel, _adapter *adapter);
+void dump_sec_cam_cache(void *sel, _adapter *adapter);
 
 bool _rtw_camctl_chk_cap(_adapter *adapter, u8 cap);
 void _rtw_camctl_set_flags(_adapter *adapter, u32 flags);
@@ -84,12 +93,10 @@ void write_cam_cache(_adapter *adapter, u8 id, u16 ctrl, u8 *mac, u8 *key);
 void clear_cam_cache(_adapter *adapter, u8 id);
 
 void invalidate_cam_all(_adapter *padapter);
+#endif
 
 void flush_all_cam_entry(_adapter *padapter, enum phl_cmd_type cmd_type, u32 cmd_timeout);
 
-#if defined(DBG_CONFIG_ERROR_RESET) && defined(CONFIG_CONCURRENT_MODE)
-void rtw_iface_bcmc_sec_cam_map_restore(_adapter *adapter);
-#endif
 
 #ifdef  CONFIG_DBG_AX_CAM
 

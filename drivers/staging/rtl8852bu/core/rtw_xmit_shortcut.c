@@ -16,87 +16,6 @@
 #include <drv_types.h>
 
 #ifdef CONFIG_CORE_TXSC
-u8 DBG_PRINT_MDATA_ONCE;
-void _print_txreq_mdata(struct rtw_t_meta_data *mdata, const char *func)
-{
-	if (DBG_PRINT_MDATA_ONCE == 1) {
-		RTW_PRINT("[%s]\n", func);
-
-		RTW_PRINT("da: %02x%02x%02x%02x%02x%02x\n",
-			mdata->da[0], mdata->da[1], mdata->da[2], mdata->da[3], mdata->da[4], mdata->da[5]);
-		RTW_PRINT("sa: %02x%02x%02x%02x%02x%02x\n",
-			mdata->sa[0], mdata->sa[1], mdata->sa[2], mdata->sa[3], mdata->sa[4], mdata->sa[5]);
-		RTW_PRINT("to_ds: %d\n", mdata->to_ds);
-		RTW_PRINT("from_ds: %d\n", mdata->from_ds);
-		RTW_PRINT("band: %d\n", mdata->band);
-		RTW_PRINT("type: %d\n", mdata->type);
-
-		RTW_PRINT("hw_seq_mode: %d\n", mdata->hw_seq_mode);
-		RTW_PRINT("hw_ssn_sel: %d\n", mdata->hw_ssn_sel);
-		RTW_PRINT("smh_en: %d\n", mdata->smh_en);
-		RTW_PRINT("hw_amsdu: %d\n", mdata->hw_amsdu);
-		RTW_PRINT("hw_sec_iv: %d\n", mdata->hw_sec_iv);
-		RTW_PRINT("wd_page_size: %d\n", mdata->wd_page_size);
-		RTW_PRINT("hdr_len: %d\n", mdata->hdr_len);
-		RTW_PRINT("dma_ch: %d\n", mdata->dma_ch);
-		RTW_PRINT("usb_pkt_ofst: %d\n", mdata->usb_pkt_ofst);
-		RTW_PRINT("wdinfo_en: %d\n", mdata->wdinfo_en);
-		RTW_PRINT("wp_offset: %d\n", mdata->wp_offset);
-		RTW_PRINT("shcut_camid: %d\n", mdata->shcut_camid);
-		RTW_PRINT("usb_txagg_num: %d\n", mdata->usb_txagg_num);
-		RTW_PRINT("pktlen: %d\n", mdata->pktlen);
-		RTW_PRINT("tid: %d\n", mdata->tid);
-		RTW_PRINT("macid: %d\n", mdata->macid);
-		RTW_PRINT("sw_seq: %d\n", mdata->sw_seq);
-		RTW_PRINT("ampdu_en: %d\n", mdata->ampdu_en);
-		RTW_PRINT("bk: %d\n", mdata->bk);
-		RTW_PRINT("mbssid: %d\n", mdata->mbssid);
-		RTW_PRINT("hal_port: %d\n", mdata->hal_port);
-		RTW_PRINT("data_bw_er: %d\n", mdata->data_bw_er);
-		RTW_PRINT("dis_rts_rate_fb: %d\n", mdata->dis_rts_rate_fb);
-		RTW_PRINT("dis_data_rate_fb: %d\n", mdata->dis_data_rate_fb);
-		RTW_PRINT("f_ldpc: %d\n", mdata->f_ldpc);
-		RTW_PRINT("f_stbc: %d\n", mdata->f_stbc);
-		RTW_PRINT("f_dcm: %d\n", mdata->f_dcm);
-		RTW_PRINT("f_er: %d\n", mdata->f_er);
-		RTW_PRINT("f_rate: %d\n", mdata->f_rate);
-		RTW_PRINT("f_gi_ltf: %d\n", mdata->f_gi_ltf);
-		RTW_PRINT("f_bw: %d\n", mdata->f_bw);
-		RTW_PRINT("userate_sel: %d\n", mdata->userate_sel);
-		RTW_PRINT("ack_ch_info: %d\n", mdata->ack_ch_info);
-		RTW_PRINT("max_agg_num: %d\n", mdata->max_agg_num);
-		RTW_PRINT("nav_use_hdr: %d\n", mdata->nav_use_hdr);
-		RTW_PRINT("bc: %d\n", mdata->bc);
-		RTW_PRINT("mc: %d\n", mdata->mc);
-		RTW_PRINT("a_ctrl_bqr: %d\n", mdata->a_ctrl_bqr);
-		RTW_PRINT("a_ctrl_uph: %d\n", mdata->a_ctrl_uph);
-		RTW_PRINT("a_ctrl_bsr: %d\n", mdata->a_ctrl_bsr);
-		RTW_PRINT("a_ctrl_cas: %d\n", mdata->a_ctrl_cas);
-		RTW_PRINT("data_rty_lowest_rate: %d\n", mdata->data_rty_lowest_rate);
-		RTW_PRINT("data_tx_cnt_lmt: %d\n", mdata->data_tx_cnt_lmt);
-		RTW_PRINT("data_tx_cnt_lmt_en: %d\n", mdata->data_tx_cnt_lmt_en);
-		RTW_PRINT("sec_cam_idx: %d\n", mdata->sec_cam_idx);
-		RTW_PRINT("sec_hw_enc: %d\n", mdata->sec_hw_enc);
-		RTW_PRINT("sec_type: %d\n", mdata->sec_type);
-		RTW_PRINT("life_time_sel: %d\n", mdata->life_time_sel);
-		RTW_PRINT("ampdu_density: %d\n", mdata->ampdu_density);
-		RTW_PRINT("no_ack: %d\n", mdata->no_ack);
-		RTW_PRINT("ndpa: %d\n", mdata->ndpa);
-		RTW_PRINT("snd_pkt_sel: %d\n", mdata->snd_pkt_sel);
-		RTW_PRINT("sifs_tx: %d\n", mdata->sifs_tx);
-		RTW_PRINT("rtt_en: %d\n", mdata->rtt_en);
-		RTW_PRINT("spe_rpt: %d\n", mdata->spe_rpt);
-		RTW_PRINT("raw: %d\n", mdata->raw);
-		RTW_PRINT("sw_define: %d\n", mdata->sw_define);
-		RTW_PRINT("rts_en: %d\n", mdata->rts_en);
-		RTW_PRINT("cts2self: %d\n", mdata->cts2self);
-		RTW_PRINT("rts_cca_mode: %d\n", mdata->rts_cca_mode);
-		RTW_PRINT("hw_rts_en: %d\n", mdata->hw_rts_en);
-
-		DBG_PRINT_MDATA_ONCE = 0;
-	}
-}
-
 u8 DBG_PRINT_TXREQ_ONCE;
 void _print_txreq_pklist(struct xmit_frame *pxframe, struct rtw_xmit_req *ptxreq, struct sk_buff *pskb, const char *func)
 {
@@ -197,10 +116,9 @@ void txsc_dump(_adapter *padapter)
 		psta = pstapriv->sta_aid[i];
 		if (!psta)
 			continue;
+		RTW_PRINT("[%d] STA["MAC_FMT"]\n", i,
+			MAC_ARG(psta->phl_sta->mac_addr));
 
-		RTW_PRINT("[%d] STA[%02x:%02x:%02x:%02x:%02x:%02x]\n", i,
-			psta->phl_sta->mac_addr[0], psta->phl_sta->mac_addr[1], psta->phl_sta->mac_addr[2],
-			psta->phl_sta->mac_addr[3], psta->phl_sta->mac_addr[4], psta->phl_sta->mac_addr[5]);
 		RTW_PRINT("[txsc] cur_idx:%d\n", psta->txsc_cur_idx);
 		RTW_PRINT("[txsc][core] txsc_path_slow:%d\n", psta->txsc_path_slow);
 		RTW_PRINT("[txsc][core] txsc_path_ps:%d\n", psta->txsc_path_ps);
@@ -254,7 +172,7 @@ void txsc_recycle_txreq_phyaddr(_adapter *padapter, struct rtw_xmit_req *txreq)
 #ifdef CONFIG_ARCH_DMA_ADDR_T_64BIT
 	phy_addr |= ((u64)pkt_list->phy_addr_h << 32);
 #endif
-	pci_unmap_bus_addr(pdev, &phy_addr, pkt_list->length, PCI_DMA_TODEVICE);
+	pci_unmap_bus_addr(pdev, &phy_addr, pkt_list->length, DMA_TO_DEVICE);
 }
 
 void txsc_fill_txreq_phyaddr(_adapter *padapter, struct rtw_pkt_buf_list *pkt_list)
@@ -263,7 +181,7 @@ void txsc_fill_txreq_phyaddr(_adapter *padapter, struct rtw_pkt_buf_list *pkt_li
 	struct pci_dev *pdev = pci_data->ppcidev;
 	dma_addr_t phy_addr = 0;
 
-	pci_get_bus_addr(pdev, pkt_list->vir_addr, &phy_addr, pkt_list->length, PCI_DMA_TODEVICE);
+	pci_get_bus_addr(pdev, pkt_list->vir_addr, &phy_addr, pkt_list->length, DMA_TO_DEVICE);
 #ifdef CONFIG_ARCH_DMA_ADDR_T_64BIT
 	pkt_list->phy_addr_h =  phy_addr >> 32;
 #else
@@ -531,7 +449,7 @@ static void txsc_prepare_sc_entry(_adapter *padapter, struct xmit_frame *pxframe
 		idx, psta->txsc_cur_idx, txreq->shortcut_id, psta->txsc_entry_cache[idx].txsc_frag_len);
 
 	/* for debug */
-	_print_txreq_mdata(ptxsc_mdata, __func__);
+	dbg_dump_txreq_mdata(ptxsc_mdata, __func__);
 
 	_rtw_spinunlock_bh(&pxmitpriv->txsc_lock);
 }
@@ -636,6 +554,7 @@ u8 txsc_apply_sc_cached_entry(_adapter *padapter, struct txsc_pkt_entry *txsc_pk
 	/* priority = *(xmit_skb[0]->data + ETH_HLEN + 1); */
 	/*txreq->mdata.tid = tos_to_up(priority); */
 	priority = txreq->mdata.tid = txsc_pkt->priority;
+	txreq->mdata.cat = rtw_phl_cvt_tid_to_cat(priority);
 
 	/* SW shortcut --- */
 	/* rtw_core_wlan_fill_head */
@@ -745,7 +664,7 @@ u8 txsc_apply_sc_cached_entry(_adapter *padapter, struct txsc_pkt_entry *txsc_pk
 #endif /* RTW_PHL_DBG_CMD */
 
 	/* for tx debug */
-	_print_txreq_mdata(&txreq->mdata, __func__);
+	dbg_dump_txreq_mdata(&txreq->mdata, __func__);
 	_print_txreq_pklist(NULL, txsc_pkt->ptxreq, xmit_skb[0], __func__);
 
 exit:
@@ -894,19 +813,21 @@ void txsc_issue_addbareq_cmd(_adapter *padapter, u8 priority, struct sta_info *p
 {
 	u8 issued;
 	struct ht_priv	*phtpriv;
+	struct ampdu_priv *ampdu_priv;
 
 	if (txsc_issue_addbareq_check(padapter, issue_when_busy) == _FALSE)
 		return;
 
 	phtpriv = &psta->htpriv;
+	ampdu_priv = &psta->ampdu_priv;
 
-	if ((phtpriv->ht_option == _TRUE) && (phtpriv->ampdu_enable == _TRUE)) {
-		issued = (phtpriv->agg_enable_bitmap >> priority) & 0x1;
-		issued |= (phtpriv->candidate_tid_bitmap >> priority) & 0x1;
+	if ((phtpriv->ht_option == _TRUE) && (ampdu_priv->ampdu_enable == _TRUE)) {
+		issued = (ampdu_priv->agg_enable_bitmap >> priority) & 0x1;
+		issued |= (ampdu_priv->candidate_tid_bitmap >> priority) & 0x1;
 
 		if (issued == 0) {
 			RTW_INFO("rtw_issue_addbareq_cmd, p=%d\n", priority);
-			psta->htpriv.candidate_tid_bitmap |= BIT((u8)priority);
+			psta->ampdu_priv.candidate_tid_bitmap |= BIT((u8)priority);
 			rtw_addbareq_cmd(padapter, (u8) priority, psta->phl_sta->mac_addr);
 		}
 	}

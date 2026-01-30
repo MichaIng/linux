@@ -16,6 +16,5 @@
 #define _RTW_TRX_USB_H_
 #include <drv_types.h>		/* struct dvobj_priv and etc. */
 
-extern struct rtw_intf_ops usb_ops;
 
 #endif /* _RTW_TRX_USB_H_ */

@@ -22,7 +22,9 @@
 
 static struct s_handler test_handlers[VERIFY_FEATURES_MAX] = {
 	{ func_null }, /* VERIFY_FEATURES_NULL = 0 */
+#ifdef CONFIG_DBCC_SUPPORT
 	{ rtw_test_dbcc_cmd_process }, /* VERIFY_FEATURES_DBCC */
+#endif /* CONFIG_DBCC_SUPPORT */
 };
 
 void verify_cmd_done_notification_complete(void *ctx, struct phl_msg *msg)
@@ -258,6 +260,7 @@ void phl_test_verify_init(void *ctx)
 	ver_ctx = (struct verify_context *)ctx;
 	pCtrl = &(ver_ctx->test_ctrl);
 
+	ver_ctx->max_para = 30;
 	ver_ctx->status = VERIFY_STATUS_WAIT_CMD;
 	ver_ctx->is_test_end = false;
 	pCtrl->bp_handler = verify_bp_handler;
@@ -335,7 +338,7 @@ void phl_test_verify_cmd_process(void *ctx, void *buf, u32 buf_len, u8 submdid)
 	ver_ctx = (struct verify_context *)ctx;
 	phl_com = ver_ctx->phl_com;
 
-	if ((buf == NULL) || (buf_len <= 0)) {
+	if ((buf == NULL) || (buf_len > ver_ctx->max_para)) {
 		PHL_ERR("%s: Invalid buffer content!\n", __func__);
 		return;
 	}

@@ -1,6 +1,6 @@
 /******************************************************************************
  *
- * Copyright(c) 2019 Realtek Corporation.
+ * Copyright(c) 2019 - 2023 Realtek Corporation.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of version 2 of the GNU General Public License as
@@ -14,10 +14,84 @@
  *****************************************************************************/
 #define _HAL_API_RF_C_
 #include "hal_headers.h"
+#ifdef USE_TRUE_PHY
 #include "phy/rf/halrf_api.h"
 #include "phy/rf/halrf_export_fun.h"
 
-#ifdef USE_TRUE_PHY
+#ifdef CONFIG_PHL_DIAGNOSE
+void rtw_hal_rf_diagnostic_event(struct rtw_hal_com_t *hal, u8 type,
+		u8 level, u8 version, u8 *buf, u32 len)
+{
+	struct hal_info_t *hal_info = (struct hal_info_t *)hal->hal_priv;
+	struct rtw_phl_com_t *phl_com = hal_info->phl_com;
+
+	rtw_phl_send_diag_hub_msg(phl_com, PHL_DIAG_EVT_RF,
+				       type, level, version, buf, len);
+}
+
+enum rtw_hal_status rtw_hal_rf_query_diag_err_code(
+	void *hal, u32 *err_code)
+{
+	struct hal_info_t *hal_info = (struct hal_info_t *)hal;
+
+	return halrf_query_rfdz_err_code(hal_info->rf, err_code);
+}
+
+enum rtw_hal_status rtw_hal_rf_query_diag_info_len(u32 *len)
+{
+	if (!len)
+		return RTW_HAL_STATUS_FAILURE;
+
+	return halrf_query_rf_diag_buf_len(len);
+}
+
+#define HAL_RF_DIAG_CUR_VER 2
+enum rtw_hal_status rtw_hal_rf_query_diag_info(void *hal,
+	struct rtw_phl_diag_rf_info *info)
+{
+	struct hal_info_t *hal_info = (struct hal_info_t *)hal;
+	enum rtw_hal_status hal_status = RTW_HAL_STATUS_FAILURE;
+	HALRF_OUTSRC_RPT *rpt = NULL;
+
+	if (!info)
+		return hal_status;
+
+	hal_status = halrf_query_rf_diag_buf(hal_info->rf,
+		&info->ver, info->buf, info->len);
+	if (hal_status == RTW_HAL_STATUS_SUCCESS) {
+		/* check framework version */
+		if (info->ver != HAL_RF_DIAG_CUR_VER) {
+			PHL_ERR("%s: fail, incompatible framework ver(%d), cur(%d)\n",
+				__func__, info->ver, HAL_RF_DIAG_CUR_VER);
+			return RTW_HAL_STATUS_FAILURE;
+		}
+		rpt = (HALRF_OUTSRC_RPT *)info->buf;
+		/* copy err code for upper layer */
+		info->err_code.iqk = rpt->err.iqk;
+		info->err_code.dpk = rpt->err.dpk;
+		info->err_code.dack = rpt->err.dack;
+		info->err_code.rxdck = rpt->err.rxdck;
+		info->err_code.txgapk = rpt->err.txgapk;
+		info->err_code.tssi = rpt->err.tssi;
+		/* assign buf addr(point to raw data) & specify length/ver */
+		info->iqk_rpt.ver = rpt->iqk_rpt_ver;
+		info->iqk_rpt.buf = (u8 *)&rpt->iqk_rpt;
+		info->iqk_rpt.len = sizeof(HALRF_IQK_RPT);
+		info->dpk_rpt.ver = rpt->dpk_rpt_ver;
+		info->dpk_rpt.buf = (u8 *)&rpt->dpk_rpt;
+		info->dpk_rpt.len = sizeof(HALRF_DPK_RPT);
+		info->rt_rpt.ver = rpt->rt_rpt_ver;
+		info->rt_rpt.buf = (u8 *)&rpt->rt_rpt;
+		info->rt_rpt.len = sizeof(HALRF_RT_RPT);
+		info->txgapk_rpt.ver = rpt->txgapk_rpt_ver;
+		info->txgapk_rpt.buf = (u8 *)&rpt->txgapk_rpt;
+		info->txgapk_rpt.len = sizeof(HALRF_TXGAPK_RPT);
+	}
+
+	return hal_status;
+}
+#endif
+
 enum rtw_hal_status
 rtw_hal_rf_init(struct rtw_phl_com_t *phl_com,
 			struct hal_info_t *hal_info)
@@ -46,51 +120,46 @@ void rtw_hal_rf_deinit(struct rtw_phl_com_t *phl_com,
 
 void rtw_hal_init_rf_reg(struct rtw_phl_com_t *phl_com, void *hal)
 {
+	struct rtw_phl_evt_ops *ops = &phl_com->evt_ops;
 	struct hal_info_t *hal_info = (struct hal_info_t *)hal;
-	struct rtw_para_info_t *phy_reg_info = NULL;
-	struct rtw_para_pwrlmt_info_t *pwrlmt_info = NULL;
 	u8 phy_idx = 0;
+#ifdef DBG_MONITOR_TIME
+	u32 start_t = 0;
 
-	for (phy_idx = 0; phy_idx < 1 ; phy_idx++) {
-		phy_reg_info = &phl_com->phy_sw_cap[phy_idx].rf_radio_a_info;
-		halrf_config_radio_a_reg(hal_info->rf, phy_reg_info->para_src,
-				phy_reg_info->para_data_len, phy_reg_info->para_data);
-	}
+	PHL_FUN_MON_START(&start_t);
+#endif /* DBG_MONITOR_TIME */
 
-	for (phy_idx = 0; phy_idx < 1 ; phy_idx++) {
-		phy_reg_info = &phl_com->phy_sw_cap[phy_idx].rf_radio_b_info;
-		halrf_config_radio_b_reg(hal_info->rf , phy_reg_info->para_src,
-				phy_reg_info->para_data_len, phy_reg_info->para_data);
-	}
+	halrf_config_rf_parameter(hal_info->rf, phy_idx);
 
-	for (phy_idx = 0; phy_idx < 1 ; phy_idx++) {
-		phy_reg_info = &phl_com->phy_sw_cap[phy_idx].rf_txpwr_byrate_info;
-		halrf_config_store_power_by_rate(hal_info->rf , phy_reg_info->para_src,
-				phy_reg_info->para_data_len, phy_reg_info->para_data);
-	}
-	for (phy_idx = 0; phy_idx < 1 ; phy_idx++) {
-			phy_reg_info = &phl_com->phy_sw_cap[phy_idx].rf_txpwrtrack_info;
-			halrf_config_store_power_track(hal_info->rf , phy_reg_info->para_src,
-					phy_reg_info->para_data_len, phy_reg_info->para_data);
-	}
+	if (ops->tx_power_tbl_loaded)
+		ops->tx_power_tbl_loaded(phl_com->drv_priv, true, true);
 
-	for (phy_idx = 0; phy_idx < 1 ; phy_idx++) {
-		pwrlmt_info = &phl_com->phy_sw_cap[phy_idx].rf_txpwrlmt_info;
-		halrf_config_store_power_limit(hal_info->rf , pwrlmt_info->para_src,
-				pwrlmt_info->para_data_len, pwrlmt_info->para_data);
-	}
+#ifdef DBG_MONITOR_TIME
+	PHL_FUNC_MON_END(hal_info->phl_com, &start_t, TIME_HAL_INIT_RF_REG);
+#endif /* DBG_MONITOR_TIME */
 
-	for (phy_idx = 0; phy_idx < 1 ; phy_idx++) {
-		pwrlmt_info = &phl_com->phy_sw_cap[phy_idx].rf_txpwrlmt_ru_info;
-		halrf_config_store_power_limit_ru(hal_info->rf , pwrlmt_info->para_src,
-				pwrlmt_info->para_data_len, pwrlmt_info->para_data);
-	}
 }
 
+void rtw_hal_rf_ic_cfg_init(void *hal)
+{
+	struct hal_info_t *hal_info = (struct hal_info_t *)hal;
+
+	halrf_ic_cfg_init(hal_info->rf);
+}
 void rtw_hal_rf_dm_init(struct hal_info_t *hal_info)
 {
+#ifdef DBG_MONITOR_TIME
+	u32 start_t = 0;
+
+	PHL_FUN_MON_START(&start_t);
+#endif /* DBG_MONITOR_TIME */
+
 	halrf_dm_init(hal_info->rf);
+#ifdef DBG_MONITOR_TIME
+	PHL_FUNC_MON_END(hal_info->phl_com, &start_t, TIME_HAL_RF_DM_INIT);
+#endif /* DBG_MONITOR_TIME */
 }
+
 
 enum rtw_hal_status
 rtw_hal_rf_get_efuse_info(struct rtw_hal_com_t *hal_com,
@@ -119,19 +188,59 @@ rtw_hal_rf_set_power_table_switch(struct rtw_hal_com_t *hal_com,
 				pwrbyrate_type, pwrlmt_type);*/
 }
 
-int rtw_hal_rf_get_predefined_pw_lmt_regu_type_from_str(const char *str)
+int rtw_hal_rf_get_predef_pw_lmt_regu_type_from_str(
+	enum band_type band, const char *str)
 {
-	return halrf_get_predefined_pw_lmt_regu_type_from_str(str);
+	return halrf_get_predef_pw_lmt_regu_type_of_band_from_str(band, str);
 }
 
-const char * const *rtw_hal_rf_get_predefined_pw_lmt_regu_type_str_array(u8 *num)
+const char * const *rtw_hal_rf_get_predef_pw_lmt_regu_type_str_array(
+	enum band_type band, u8 *num)
 {
-	return halrf_get_predefined_pw_lmt_regu_type_str_array(num);
+	return halrf_get_predef_pw_lmt_regu_type_of_band_str_array(band, num);
+}
+
+u8 rtw_hal_rf_get_pw_lmt_regu_type(struct hal_info_t *hal_info, enum band_type band)
+{
+	return halrf_get_regulation_info(hal_info->rf, band);
 }
 
 const char *rtw_hal_rf_get_pw_lmt_regu_type_str(struct hal_info_t *hal_info, enum band_type band)
 {
 	return halrf_get_pw_lmt_regu_type_str(hal_info->rf, band);
+}
+
+bool rtw_hal_rf_pw_lmt_regu_tbl_exist(struct hal_info_t *hal_info, enum band_type band, u8 regu)
+{
+	return halrf_reg_tbl_exist(hal_info->rf, band, regu);
+}
+
+void rtw_hal_rf_set_pw_lmt_regu_table_exist(struct hal_info_t *hal_info, u8 band, u8 reg)
+{
+	halrf_set_reg_tbl_exist(hal_info->rf, band, reg);
+}
+
+int rtw_hal_rf_file_regd_ext_search(struct hal_info_t *hal_info
+	, enum band_type band, u16 domain_code, const char *country)
+{
+	int aidx_match;
+
+	halrf_file_regd_ext_of_band_search(hal_info->rf
+		, band, domain_code, (char *)country, PWR_LMT_6G_MAX, &aidx_match);
+
+	return aidx_match;
+}
+
+void rtw_hal_rf_auto_pw_lmt_regu(struct hal_info_t *hal_info)
+{
+	halrf_force_regulation(hal_info->rf, false, NULL, 0, NULL, 0, NULL, 0);
+}
+
+void rtw_hal_rf_force_pw_lmt_regu(struct hal_info_t *hal_info,
+	u8 regu_2g[], u8 regu_2g_len, u8 regu_5g[], u8 regu_5g_len, u8 regu_6g[], u8 regu_6g_len)
+{
+	halrf_force_regulation(hal_info->rf, true
+		, regu_2g, regu_2g_len, regu_5g, regu_5g_len, regu_6g, regu_6g_len);
 }
 
 enum rtw_hal_status rtw_hal_rf_read_pwr_table(
@@ -149,6 +258,18 @@ enum rtw_hal_status rtw_hal_rf_read_pwr_table(
 	return ret;
 }
 
+enum rtw_hal_status rtw_hal_rf_wlan_tx_power_control(struct rtw_hal_com_t *hal_com,
+	enum phl_phy_idx phy, enum phl_pwr_ctrl pwr_ctrl_idx, u32 tx_power_val, bool enable)
+{
+	struct hal_info_t *hal_info = (struct hal_info_t *)hal_com->hal_priv;
+
+	PHL_INFO("%s\n", __FUNCTION__);
+
+	halrf_wlan_tx_power_control(hal_info->rf, phy, pwr_ctrl_idx, tx_power_val, enable);
+
+	return RTW_HAL_STATUS_SUCCESS;
+}
+
 enum rtw_hal_status rtw_hal_rf_wl_tx_power_control(struct rtw_hal_com_t *hal_com,
 	u32 tx_power_val)
 {
@@ -161,13 +282,15 @@ enum rtw_hal_status rtw_hal_rf_wl_tx_power_control(struct rtw_hal_com_t *hal_com
 	return RTW_HAL_STATUS_SUCCESS;
 }
 
-enum rtw_hal_status rtw_hal_rf_get_pwrtrack(struct hal_info_t *hal_info, u8 *txpwr_track_status)
+enum rtw_hal_status rtw_hal_rf_get_pwrtrack(struct hal_info_t *hal_info,
+                                            u8 *txpwr_track_status,
+                                            u8 phy_idx)
 {
 	int ret = RTW_HAL_STATUS_SUCCESS;
 
-	PHL_INFO("[MP HAL API] %s \n", __FUNCTION__);
+	PHL_INFO("[MP HAL API] %s , phy_idx = %d\n", __FUNCTION__, phy_idx);
 
-	*txpwr_track_status = halrf_get_power_track(hal_info->rf);
+	*txpwr_track_status = halrf_get_power_track_phy(hal_info->rf, (enum phl_phy_idx)phy_idx);
 
 	return ret;
 }
@@ -262,35 +385,47 @@ rtw_hal_rf_set_suppression_tx(struct hal_info_t *hal_info)
 	PHL_INFO("%s\n", __FUNCTION__);
 	return RTW_HAL_STATUS_SUCCESS;
 }
-
+#ifdef CONFIG_DBCC_SUPPORT
 enum rtw_hal_status rtw_hal_rf_ctrl_dbcc(struct rtw_hal_com_t *hal_com,
 	bool dbcc_en)
 {
 	/*need replace with rf api*/
 	enum rtw_hal_status hal_status = RTW_HAL_STATUS_FAILURE;
 	struct hal_info_t *hal_info = (struct hal_info_t *)hal_com->hal_priv;
+#ifdef DBG_DBCC_MONITOR_TIME
+	u32 start_t = 0;
 
+	PHL_FUN_MON_START(&start_t);
+#endif /* DBG_DBCC_MONITOR_TIME */
 	if (halrf_set_dbcc(hal_info->rf, dbcc_en))
 		hal_status = RTW_HAL_STATUS_SUCCESS;
-
+#ifdef DBG_DBCC_MONITOR_TIME
+	PHL_FUNC_MON_END(hal_info->phl_com, &start_t, TIME_PHL_MAX);
+#endif /* DBG_DBCC_MONITOR_TIME */
 	return hal_status;
 }
+#endif /* CONFIG_DBCC_SUPPORT */
 
 #define DBG_RFK_TIME
-enum rtw_hal_status rtw_hal_rf_chl_rfk_trigger(void *hal,
-						u8 phy_idx, u8 force)
+enum rtw_hal_status rtw_hal_rf_chl_rfk_trigger(struct rtw_hal_com_t *hal_com,
+                                               u8 phy_idx,
+                                               enum rfk_tri_type rt_type)
 {
 	enum rtw_hal_status hal_status = RTW_HAL_STATUS_FAILURE;
-	struct hal_info_t *hal_info = (struct hal_info_t *)hal;
+	struct hal_info_t *hal_info = (struct hal_info_t *)hal_com->hal_priv;
 	#ifdef DBG_RFK_TIME
 	u32 iqk_start = _os_get_cur_time_ms();
 	#endif
+#ifdef DBG_MONITOR_TIME
+	u32 start_t = 0;
 
-	PHL_INFO("[DBG_RFK]%s: phy_idx(%d), force(%d)\n", __func__,
-		phy_idx, force);
-	rtw_hal_mac_ser_ctrl(hal_info, false);
+	PHL_FUN_MON_START(&start_t);
+#endif /* DBG_DBCC_MONITOR_TIME */
 
-	hal_status = halrf_chl_rfk_trigger(hal_info->rf, phy_idx, force);
+	PHL_INFO("[DBG_RFK]%s: phy_idx(%d), rt_type(%d)\n", __func__,
+		phy_idx, rt_type);
+
+	hal_status = halrf_chl_rfk_trigger(hal_info->rf, phy_idx, rt_type);
 
 	#ifdef DBG_RFK_TIME
 	PHL_INFO("[DBG_RFK]%s: RFK take %d (ms)\n", __func__,
@@ -299,7 +434,9 @@ enum rtw_hal_status rtw_hal_rf_chl_rfk_trigger(void *hal,
 	if (hal_status != RTW_HAL_STATUS_SUCCESS)
 		PHL_ERR("[MP HAL API] %s failed status(%d)\n",__FUNCTION__, hal_status);
 
-	rtw_hal_mac_ser_ctrl(hal_info, true);
+#ifdef DBG_MONITOR_TIME
+	PHL_FUNC_MON_END(hal_info->phl_com, &start_t, TIME_HAL_RFK);
+#endif /* DBG_DBCC_MONITOR_TIME */
 
 	return hal_status;
 }
@@ -600,18 +737,83 @@ rtw_hal_rf_set_power(struct hal_info_t *hal_info, enum phl_phy_idx phy,
 {
 	enum rtw_hal_status hal_status = RTW_HAL_STATUS_FAILURE;
 
-	if(halrf_set_power(hal_info->rf, phy, pwr_table))
-	{
+	if (phy >= HW_PHY_MAX)
+		goto exit;
+
+	FUNCIN();
+	PHL_TRACE(COMP_PHL_DBG, _PHL_INFO_, "%s(): pwr_table = %d\n", __func__, pwr_table);
+
+	if (halrf_set_power(hal_info->rf, phy, pwr_table))
 		hal_status = RTW_HAL_STATUS_SUCCESS;
-	}
-	else
-	{
-		hal_status = RTW_HAL_STATUS_FAILURE;
-	}
+
+exit:
+	return hal_status;
+}
+
+enum rtw_hal_status
+rtw_hal_rf_set_power_constraint(struct hal_info_t *hal_info, enum phl_phy_idx phy,
+					u16 mb)
+{
+	enum rtw_hal_status hal_status = RTW_HAL_STATUS_FAILURE;
+
+	if (phy >= HW_PHY_MAX)
+		goto exit;
+
+	/* here we choose to have software configuration only */
+	halrf_set_power_constraint(hal_info->rf, phy, mb, false);
+
+	hal_status = RTW_HAL_STATUS_SUCCESS;
+
+exit:
+	return hal_status;
+}
+
+enum rtw_hal_status
+rtw_hal_rf_set_tpe_control(struct hal_info_t *hal_info)
+{
+	enum rtw_hal_status hal_status = RTW_HAL_STATUS_SUCCESS;
+
+	FUNCIN();
+	PHL_TRACE(COMP_PHL_DBG, _PHL_INFO_, "%s(): \n", __func__);
+
+	halrf_set_tpe_control(hal_info->rf);
 
 	return hal_status;
 }
 
+bool
+rtw_hal_rf_check_tpe_allow(struct hal_info_t *hal_info, struct rtw_tpe_info_t *tpe_info)
+{
+	FUNCIN();
+	PHL_TRACE(COMP_PHL_DBG, _PHL_INFO_, "%s(): \n", __func__);
+
+	return halrf_check_tpe_allow(hal_info->rf, tpe_info);
+}
+
+enum rtw_hal_status
+rtw_hal_rf_update_tas_def_setting(void *hal, u32 tas_config)
+{
+#ifdef CONFIG_TAS_SUPPORT
+	struct hal_info_t *hal_info = (struct hal_info_t *)hal;
+
+	halrf_update_tas_def_setting(hal_info->rf, tas_config);
+#endif
+	return RTW_HAL_STATUS_SUCCESS;
+}
+
+enum rtw_hal_status
+rtw_hal_rf_tas_en(void *hal, u8 en)
+{
+#ifdef CONFIG_TAS_SUPPORT
+	struct hal_info_t *hal_info = (struct hal_info_t *)hal;
+
+	if (en)
+		halrf_tas_start(hal_info->rf);
+	else
+		halrf_tas_stop(hal_info->rf);
+#endif
+	return RTW_HAL_STATUS_SUCCESS;
+}
 enum rtw_hal_status rtw_hal_rf_set_gain_offset(struct hal_info_t *hal_info, u8 cur_phy_idx,
 						s8 offset, u8 rf_path)
 {
@@ -669,15 +871,25 @@ void rtw_hal_rf_do_tssi_scan(struct hal_info_t *hal_info, u8 cur_phy_idx)
 	halrf_do_tssi_scan(hal_info->rf, cur_phy_idx);
 }
 
-enum rtw_hal_status
-rtw_hal_rf_update_ext_pwr_lmt_table(struct hal_info_t *hal_info)
+void
+rtw_hal_rf_update_ext_pwr_lmt_table(struct hal_info_t *hal_info,
+					      enum phl_phy_idx phy)
 {
-	enum rtw_hal_status hal_status = RTW_HAL_STATUS_SUCCESS;
+	halrf_power_limit_set_ext_pwr_limit_table(hal_info->rf, phy);
+	halrf_power_limit_set_ext_pwr_limit_ru_table(hal_info->rf, phy);
+}
 
-	halrf_power_limit_set_ext_pwr_limit_table(hal_info->rf, HW_PHY_0);
-	halrf_power_limit_set_ext_pwr_limit_ru_table(hal_info->rf, HW_PHY_0);
+u8
+rtw_hal_rf_get_tx_tbl_to_pwr_times(struct hal_info_t *hal_info)
+{
+	return halrf_get_tx_tbl_to_tx_pwr_times(hal_info->rf);
+}
 
-	return hal_status;
+void
+rtw_hal_rf_set_tx_pwr_comp(struct hal_info_t *hal_info,	enum phl_phy_idx phy,
+			   struct rtw_phl_regu_dyn_ant_gain *dyn_ag)
+{
+	halrf_set_dynamic_ant_gain(hal_info->rf, phy, dyn_ag);
 }
 
 enum rtw_hal_status
@@ -717,7 +929,10 @@ rtw_hal_rf_dpk_switch(void *hal, bool enable)
 
 	PHL_TRACE(COMP_PHL_MCC, _PHL_INFO_, "rtw_hal_rf_dpk_switch(): enable(%d)\n",
 		enable);
+	if (RTW_HAL_STATUS_SUCCESS != rtw_hal_mac_ser_ctrl(hal, HAL_SER_RSN_RFK, false))
+		return;
 	halrf_dpk_switch(hal_info->rf, enable);
+	rtw_hal_mac_ser_ctrl(hal, HAL_SER_RSN_RFK, true);
 }
 
 void
@@ -734,10 +949,14 @@ rtw_hal_rf_tssi_config(void *hal, enum phl_phy_idx phy_idx, bool enable)
 }
 
 enum rtw_hal_status
-rtw_hal_rf_set_ch_bw(struct hal_info_t *hal_info, enum phl_phy_idx phy, u8 center_ch,
-						enum band_type band, enum channel_width bw)
+rtw_hal_rf_set_ch_bw(struct rtw_hal_com_t *hal_com,
+                     enum phl_phy_idx phy,
+                     u8 center_ch,
+                     enum band_type band,
+                     enum channel_width bw)
 {
 	enum rtw_hal_status hal_status = RTW_HAL_STATUS_SUCCESS;
+	struct hal_info_t *hal_info = (struct hal_info_t *)hal_com->hal_priv;
 
 	halrf_ctrl_bw_ch(hal_info->rf, phy, center_ch, band, bw);
 
@@ -794,6 +1013,15 @@ enum rtw_hal_status rtw_hal_rf_psd_query(struct hal_info_t *hal_info, u8 cur_phy
 	return hal_status;
 }
 
+enum rtw_hal_status rtw_hal_rf_bfer_cfg(struct hal_info_t *hal_info)
+{
+	enum rtw_hal_status hal_status = RTW_HAL_STATUS_SUCCESS;
+
+	halrf_bf_config_rf(hal_info->rf);
+
+	return hal_status;
+}
+
 void rtw_hal_rf_rx_ant(struct hal_info_t *hal_info, /*enum halrf_ant*/u8 ant)
 {
 	halrf_2g_rxant(hal_info->rf, ant);
@@ -835,34 +1063,275 @@ void rtw_hal_rf_notification(struct hal_info_t *hal_info,
 	halrf_wifi_event_notify(hal_info->rf, event, phy_idx);
 }
 
+void rtw_hal_rf_cmd_notification(struct hal_info_t *hal_info,
+                             void *hal_cmd,
+                             enum phl_phy_idx phy_idx)
+{
+	return;
+}
+
+enum rtw_hal_status
+rtw_hal_rf_syn_config(struct rtw_hal_com_t *hal_com,
+                      u8 syn_id,
+                      enum phl_phy_idx phy_idx,
+                      u8 path,
+                      bool turn_on)
+{
+	struct hal_info_t *hal_info = (struct hal_info_t *)hal_com->hal_priv;
+	enum rtw_hal_status hal_status = RTW_HAL_STATUS_SUCCESS;
+
+	switch(syn_id) {
+		case 1:
+			halrf_syn1_onoff(hal_info->rf, phy_idx, path, turn_on);
+			break;
+		default:
+			hal_status = RTW_HAL_STATUS_FAILURE;
+			PHL_ERR("%s unknown syn id(%d)\n", __func__, syn_id);
+			break;
+	}
+	return hal_status;
+}
+
+u32 rtw_hal_rf_process_c2h(void *hal, struct rtw_c2h_info *c2h, struct c2h_evt_msg *c2h_msg)
+{
+	struct hal_info_t *hal_info = (struct hal_info_t *)hal;
+	u8 cls = c2h->c2h_class;
+	u8 func = c2h->c2h_func;
+	u16 len = c2h->content_len;
+	u8 *buf = c2h->content;
+
+	return halrf_c2h_parsing(hal_info->rf, cls, func, len, buf);
+}
+
 void
 rtw_hal_rf_tssi_scan_ch(struct rtw_hal_com_t *hal_com,
-		enum phl_phy_idx phy_idx, enum rf_path path)
+	enum phl_phy_idx phy_idx, enum rf_path path)
 {
 	struct hal_info_t *hal_info = hal_com->hal_priv;
 
 	halrf_tssi_scan_ch(hal_info->rf, path);
 
-	halrf_tssi_set_efuse_to_de(hal_info->rf, phy_idx);
+	//halrf_tssi_set_efuse_to_de(hal_info->rf, phy_idx);
 }
 
-s8 rtw_hal_rf_get_power_limit(void *hal, enum phl_phy_idx phy,
-	u16 rate, u8 bandwidth, u8 beamforming, u8 tx_num, u8 channel)
+void
+rtw_hal_rf_set_mp_regulation(struct hal_info_t *hal_info,
+		enum phl_phy_idx phy_idx, u8 regulation)
 {
-	struct hal_info_t *hal_info = (struct hal_info_t *)hal;
+	halrf_set_mp_regulation(hal_info->rf, phy_idx, regulation);
+}
 
+
+void rtw_hal_rf_test_event_trigger(struct hal_info_t *hal_info,
+				enum phl_phy_idx phy_idx,
+				u8 event,
+				u8 func,
+				u32 *buf)
+{
+	*buf = halrf_test_event_trigger(hal_info->rf, phy_idx, event, func);
+}
+
+s8 rtw_hal_rf_get_power_limit(struct hal_info_t *hal_info,
+	enum phl_phy_idx phy, u16 rate, u8 bandwidth,
+	u8 beamforming, u8 tx_num, u8 channel)
+{
 	return halrf_get_power_limit(hal_info->rf, phy, RF_PATH_A, rate,
 		bandwidth, beamforming, tx_num, channel);
 }
 
-void rtw_hal_rf_cmd_notification(struct hal_info_t *hal_info,
-                             void *hal_cmd,
-                             enum phl_phy_idx phy_idx)
+s8 rtw_hal_rf_get_power_by_rate_band(struct hal_info_t *hal_info, enum phl_phy_idx phy,
+	u16 rate, u8 dcm, u8 offset, u32 band)
 {
-	/*to do*/
+	return halrf_get_power_by_rate_band(hal_info->rf, phy, rate, dcm, offset, band);
 }
 
+static const struct phl_pwr_byrate_stbl_sel pwr_byrate_stbl_0[] = {
+	{-1, BAND_ON_24G, CHANNEL_WIDTH_MAX},
+	{-1, BAND_ON_5G, CHANNEL_WIDTH_MAX},
+	{-1, BAND_ON_6G, CHANNEL_WIDTH_MAX},
+};
+
+void rtw_hal_rf_get_pwr_byrate_stbls(struct hal_info_t *hal_info,
+	const struct phl_pwr_byrate_stbl_sel **stbls, u8 *stbl_num)
+{
+	*stbls = pwr_byrate_stbl_0;
+	*stbl_num = ARRAY_SIZE(pwr_byrate_stbl_0);
+}
+
+s8 rtw_hal_rf_get_pwr_byrate_val_raw_tbl(struct hal_info_t *hal_info,
+	struct phl_pwr_byrate_val_sel sel)
+{
+	return halrf_get_power_by_rate_band(hal_info->rf, HW_PHY_MAX,
+		sel.rate, sel.dcm, 0, sel.band);
+}
+
+s8 rtw_hal_rf_get_pwr_byrate_offset_raw_tbl(struct hal_info_t *hal_info,
+	struct phl_pwr_byrate_offset_sel sel)
+{
+	return halrf_get_power_by_rate_band(hal_info->rf, HW_PHY_MAX,
+		sel.rate, 0, 1, sel.band);
+}
+
+s8 rtw_hal_rf_get_power_limit_option(struct hal_info_t *hal_info,
+	enum phl_phy_idx phy, u8 rf_path, u16 rate, u8 bandwidth, u8 beamforming,
+	u8 tx_num, u8 channel, u32 band, u8 reg)
+{
+	return halrf_get_power_limit_option(hal_info->rf, phy, rf_path, rate, bandwidth,
+					    beamforming, tx_num, channel, band, reg);
+}
+
+s8 rtw_hal_rf_get_power_limit_ru_option(struct hal_info_t *hal_info,
+	enum phl_phy_idx phy, u8 rf_path, u16 rate, u8 bandwidth,
+	u8 tx_num, u8 channel, u32 band, u8 reg)
+{
+	return halrf_get_power_limit_ru_option(hal_info->rf, phy, rf_path, rate, bandwidth,
+		tx_num, channel, band, reg);
+}
+
+u8 rtw_hal_rf_get_tx_tbl_to_tx_pwr_times(struct hal_info_t *hal_info)
+{
+	return halrf_get_tx_tbl_to_tx_pwr_times(hal_info->rf);
+}
+
+s8 rtw_hal_rf_get_power_limit_value_ww(struct hal_info_t *hal_info)
+{
+	return halrf_get_power_limit_value_ww(hal_info->rf);
+}
+
+s8 rtw_hal_rf_get_power_limit_value_na(struct hal_info_t *hal_info)
+{
+	return halrf_get_power_limit_value_na(hal_info->rf);
+}
+
+u32 rtw_hal_rf_get_regulation_max_num(struct hal_info_t *hal_info, enum band_type band)
+{
+	return halrf_get_regulation_max_num(hal_info->rf, band);
+}
+
+void rtw_hal_rf_power_by_rate_store_to_array(struct hal_info_t *hal_info,
+	u32 band, u32 tx_num, u32 rate_id, u32 data)
+{
+	halrf_power_by_rate_store_to_array(hal_info->rf, band, tx_num, rate_id, data);
+}
+
+void rtw_hal_rf_power_limit_store_to_array(struct hal_info_t *hal_info,
+	u8 regulation, u8 band, u8 bandwidth, u8 rate, u8 tx_num, u8 beamforming, u8 chnl, s8 val)
+{
+	halrf_power_limit_store_to_array(hal_info->rf,
+		regulation, band, bandwidth, rate, tx_num, beamforming, chnl, val);
+}
+
+void rtw_hal_rf_power_limit_shape_store_to_array(struct hal_info_t *hal_info,
+	u8 regulation, u8 band, u8 bandwidth, u8 rate,u8 tx_num, u8 beamforming, u8 val)
+{
+	halrf_power_limit_shape_store_to_array(hal_info->rf,
+		regulation, band, bandwidth, rate, tx_num, beamforming, val);
+}
+
+void rtw_hal_rf_power_limit_ru_store_to_array(struct hal_info_t *hal_info,
+	u8 band, u8 bandwidth, u8 tx_num, u8 rate, u8 regulation, u8 chnl, s8 val)
+{
+	halrf_power_limit_ru_store_to_array(hal_info->rf,
+		band, bandwidth, tx_num, rate, regulation, chnl, val);
+}
+
+void rtw_hal_rf_power_limit_ru_shape_store_to_array(struct hal_info_t *hal_info,
+	u8 band, u8 bandwidth, u8 tx_num, u8 rate, u8 regulation, u8 val)
+{
+	halrf_power_limit_ru_shape_store_to_array(hal_info->rf,
+		band, bandwidth, tx_num, rate, regulation, val);
+}
+
+void rtw_hal_rf_clear_limit_table(struct hal_info_t *hal_info,
+	u8 band_bmp, enum phl_pwr_table pwr_table)
+{
+	halrf_config_limit_default_option(hal_info->rf, band_bmp, pwr_table);
+}
+
+void
+rtw_hal_rf_rfe_ant_num_chk(struct rtw_hal_com_t *hal_com)
+{
+	struct hal_info_t *hal_info = hal_com->hal_priv;
+
+	halrf_rfe_ant_num_chk(hal_info->rf);
+}
+
+void
+rtw_hal_rf_set_pwr_lmt_main_or_aux(struct rtw_hal_com_t *hal_com, u8 ant)
+{
+	struct hal_info_t *hal_info = (struct hal_info_t *)hal_com->hal_priv;
+
+	halrf_set_pwr_lmt_main_or_aux(hal_info->rf, ant);
+}
+
+void
+rtw_hal_rf_cfg_tx_by_bt_link(struct hal_info_t *hal_info , u8 is_bt_link)
+{
+	halrf_cfg_radio_b_w_bt_status(hal_info->rf, is_bt_link);
+}
+
+void rtw_hal_rf_set_ant_main_or_aux(void *hal, enum rf_path path, bool main)
+{
+	struct hal_info_t *hal_info = (struct hal_info_t *) hal;
+
+	PHL_INFO ("[HAL] %s: path=%d, main = %d\n", __func__, path, main);
+	halrf_set_ant_main_or_aux(hal_info->rf, path, main);
+}
+
+struct halrf_fem_info rtw_hal_rf_efem_info(struct rtw_hal_com_t *hal_com)
+{
+	struct hal_info_t *hal_info = (struct hal_info_t *)hal_com->hal_priv;
+
+	return halrf_ex_efem_info(hal_info->rf);
+}
+
+enum rtw_hal_status
+rtw_hal_rf_ic_hw_setting_init(struct hal_info_t *hal_info)
+{
+	rtw_hal_rf_dm_init(hal_info);
+
+	return RTW_HAL_STATUS_SUCCESS;
+}
+
+void rtw_hal_rf_fwredl_config(struct hal_info_t *hal_info, enum phl_phy_idx phy_idx)
+{
+	PHL_INFO ("%s(): phy_idx=%d\n", __func__, phy_idx);
+
+	halrf_wowlan_config(hal_info->rf, phy_idx);
+}
+
+#ifdef CONFIG_PHL_RFK_FCS_SUPPPORT
+u8 rtw_hal_rf_fcs_support_num(struct hal_info_t *hal_info)
+{
+	return halrf_fcs_support_num(hal_info->rf);
+}
+#endif
+
 #else /*ifdef USE_TRUE_PHY*/
+#ifdef CONFIG_PHL_DIAGNOSE
+void rtw_hal_rf_diagnostic_event(struct rtw_hal_com_t *hal, u8 type,
+		u8 level, u8 version, u8 *buf, u32 len)
+{
+}
+
+enum rtw_hal_status rtw_hal_rf_query_diag_err_code(
+	void *hal, u32 *err_code)
+{
+	return RTW_HAL_STATUS_FAILURE;
+}
+
+enum rtw_hal_status rtw_hal_rf_query_diag_info_len(u32 *len)
+{
+	return RTW_HAL_STATUS_FAILURE;
+}
+
+enum rtw_hal_status rtw_hal_rf_query_diag_info(void *hal,
+	struct rtw_phl_diag_rf_info *info)
+{
+	return RTW_HAL_STATUS_FAILURE;
+}
+#endif
+
 enum rtw_hal_status
 rtw_hal_rf_init(struct rtw_phl_com_t *phl_com, struct hal_info_t *hal_info)
 {
@@ -898,6 +1367,13 @@ rtw_hal_rf_read_pwr_table(struct rtw_hal_com_t *hal_com, u8 rf_path, u16 rate,
 }
 
 enum rtw_hal_status
+rtw_hal_rf_wlan_tx_power_control(struct rtw_hal_com_t *hal_com,
+	enum phl_phy_idx phy, enum phl_pwr_ctrl pwr_ctrl_idx, u32 tx_power_val, bool enable)
+{
+	return RTW_HAL_STATUS_SUCCESS;
+}
+
+enum rtw_hal_status
 rtw_hal_rf_wl_tx_power_control(struct rtw_hal_com_t *hal_com,
 				u32 tx_power_val)
 {
@@ -905,7 +1381,8 @@ rtw_hal_rf_wl_tx_power_control(struct rtw_hal_com_t *hal_com,
 }
 
 enum rtw_hal_status rtw_hal_rf_get_pwrtrack(struct hal_info_t *hal_info,
-						u8 *txpwr_track_status)
+                                            u8 *txpwr_track_status,
+                                            u8 phy_idx)
 {
 	return RTW_HAL_STATUS_SUCCESS;
 }
@@ -975,14 +1452,18 @@ rtw_hal_rf_set_suppression_tx(struct hal_info_t *hal_info)
 	return RTW_HAL_STATUS_SUCCESS;
 }
 
+#ifdef CONFIG_DBCC_SUPPORT
 enum rtw_hal_status rtw_hal_rf_ctrl_dbcc(struct rtw_hal_com_t *hal_com,
 	bool dbcc_en)
 {
 	return RTW_HAL_STATUS_SUCCESS;
 }
+#endif /* CONFIG_DBCC_SUPPORT */
 
 enum rtw_hal_status
-rtw_hal_rf_chl_rfk_trigger(void *hal, u8 phy_idx, u8 force)
+rtw_hal_rf_chl_rfk_trigger(struct rtw_hal_com_t *hal_com,
+                           u8 phy_idx,
+			   enum rfk_tri_type rt_type)
 {
 	return RTW_HAL_STATUS_SUCCESS;
 }
@@ -1131,6 +1612,24 @@ rtw_hal_rf_set_power(struct hal_info_t *hal_info, enum phl_phy_idx phy,
 	return RTW_HAL_STATUS_SUCCESS;
 }
 
+enum rtw_hal_status
+rtw_hal_rf_set_power_constraint(struct hal_info_t *hal_info, enum phl_phy_idx phy,
+					u16 mb)
+{
+	return RTW_HAL_STATUS_SUCCESS;
+}
+
+enum rtw_hal_status
+rtw_hal_rf_update_tas_def_setting(void *hal, u32 tas_config)
+{
+	return RTW_HAL_STATUS_SUCCESS;
+}
+
+enum rtw_hal_status
+rtw_hal_rf_tas_en(void *hal, u8 en)
+{
+	return RTW_HAL_STATUS_SUCCESS;
+}
 enum rtw_hal_status rtw_hal_rf_set_gain_offset(struct hal_info_t *hal_info, u8 cur_phy_idx,
 						s8 offset, u8 rf_path)
 {
@@ -1167,8 +1666,11 @@ rtw_hal_rf_check_efuse_data(struct rtw_hal_com_t *hal_com, enum phl_phy_idx phy_
 }
 
 enum rtw_hal_status
-rtw_hal_rf_set_ch_bw(struct hal_info_t *hal_info, enum phl_phy_idx phy, u8 center_ch,
-					enum band_type band, enum channel_width bw)
+rtw_hal_rf_set_ch_bw(struct rtw_hal_com_t *hal_com,
+                     enum phl_phy_idx phy,
+                     u8 center_ch,
+                     enum band_type band,
+                     enum channel_width bw)
 
 {
 	return RTW_HAL_STATUS_SUCCESS;
@@ -1234,19 +1736,55 @@ rtw_hal_rf_set_power_table_switch(struct rtw_hal_com_t *hal_com,
 	return;
 }
 
-int rtw_hal_rf_get_predefined_pw_lmt_regu_type_from_str(const char *str)
+int rtw_hal_rf_get_predef_pw_lmt_regu_type_from_str(
+	enum band_type band, const char *str)
 {
 	return -1;
 }
 
-const char * const *rtw_hal_rf_get_predefined_pw_lmt_regu_type_str_array(u8 *num)
+const char * const *rtw_hal_rf_get_predef_pw_lmt_regu_type_str_array(
+	enum band_type band, u8 *num)
 {
 	return NULL;
+}
+
+u8 rtw_hal_rf_get_pw_lmt_regu_type(struct hal_info_t *hal_info, enum band_type band)
+{
+	return 0;
 }
 
 const char *rtw_hal_rf_get_pw_lmt_regu_type_str(struct hal_info_t *hal_info, enum band_type band)
 {
 	return NULL;
+}
+
+bool rtw_hal_rf_pw_lmt_regu_tbl_exist(struct hal_info_t *hal_info, enum band_type band, u8 regu)
+{
+	return false;
+}
+
+void rtw_hal_rf_set_pw_lmt_regu_table_exist(struct hal_info_t *hal_info, u8 band, u8 reg)
+{
+}
+
+int rtw_hal_rf_file_regd_ext_search(struct hal_info_t *hal_info
+	, enum band_type band, u16 domain_code, const char *country)
+{
+	return -1;
+}
+
+void rtw_hal_rf_auto_pw_lmt_regu(struct hal_info_t *hal_info)
+{
+}
+
+void rtw_hal_rf_force_pw_lmt_regu(struct hal_info_t *hal_info,
+	u8 regu_2g[], u8 regu_2g_len, u8 regu_5g[], u8 regu_5g_len, u8 regu_6g[], u8 regu_6g_len)
+{
+}
+
+enum rtw_hal_status rtw_hal_rf_bfer_cfg(struct hal_info_t *hal_info)
+{
+	return RTW_HAL_STATUS_SUCCESS;
 }
 
 void rtw_hal_rf_rx_ant(struct hal_info_t *hal_info, /*enum halrf_ant*/u8 ant)
@@ -1269,24 +1807,196 @@ void rtw_hal_rf_notification(struct hal_info_t *hal_info,
 	return;
 }
 
-void
-rtw_hal_rf_tssi_scan_ch(struct rtw_hal_com_t *hal_com,
-		enum phl_phy_idx phy_idx, enum rf_path path)
 
-{
-	return;
-}
-
-s8 rtw_hal_rf_get_power_limit(void *hal, enum phl_phy_idx phy,
-	u16 rate, u8 bandwidth, u8 beamforming, u8 tx_num, u8 channel)
-{
-	return 0;
-}
 
 void rtw_hal_rf_cmd_notification(struct hal_info_t *hal_info,
                              void *hal_cmd,
                              enum phl_phy_idx phy_idx)
 {
+	return;
+}
+
+enum rtw_hal_status
+rtw_hal_rf_syn_config(struct rtw_hal_com_t *hal_com,
+                      u8 syn_id,
+                      enum phl_phy_idx phy_idx,
+                      u8 path,
+                      bool turn_on)
+{
+	return RTW_HAL_STATUS_SUCCESS;
+}
+
+u32 rtw_hal_rf_process_c2h(void *hal, struct rtw_c2h_info *c2h, struct c2h_evt_msg *c2h_msg)
+{
+	return 0;
+}
+
+void
+rtw_hal_rf_tssi_scan_ch(struct rtw_hal_com_t *hal_com,
+	enum phl_phy_idx phy_idx, enum rf_path path)
+
+{
+	return;
+}
+
+void rtw_hal_rf_test_event_trigger(struct hal_info_t *hal_info,
+				enum phl_phy_idx phy_idx,
+				u8 event,
+				u8 func,
+				u32 *buf)
+{
 
 }
+
+
+s8 rtw_hal_rf_get_power_limit(struct hal_info_t *hal_info,
+	enum phl_phy_idx phy, u16 rate, u8 bandwidth,
+	u8 beamforming, u8 tx_num, u8 channel)
+{
+	return 0;
+}
+
+s8 rtw_hal_rf_get_power_by_rate_band(struct hal_info_t *hal_info, enum phl_phy_idx phy,
+	u16 rate, u8 dcm, u8 offset, u32 band)
+{
+	return 0;
+}
+
+void rtw_hal_rf_get_pwr_byrate_stbls(struct hal_info_t *hal_info,
+	const struct phl_pwr_byrate_stbl_sel **stbls, u8 *stbl_num)
+{
+}
+
+s8 rtw_hal_rf_get_pwr_byrate_val_raw_tbl(struct hal_info_t *hal_info,
+	struct phl_pwr_byrate_val_sel sel)
+{
+	return 0;
+}
+
+s8 rtw_hal_rf_get_pwr_byrate_offset_raw_tbl(struct hal_info_t *hal_info,
+	struct phl_pwr_byrate_offset_sel sel)
+{
+	return 0;
+}
+
+s8 rtw_hal_rf_get_power_limit_option(struct hal_info_t *hal_info,
+	enum phl_phy_idx phy, u8 rf_path, u16 rate, u8 bandwidth, u8 beamforming,
+	u8 tx_num, u8 channel, u32 band, u8 reg)
+{
+	return 0;
+}
+
+s8 rtw_hal_rf_get_power_limit_ru_option(struct hal_info_t *hal_info,
+	enum phl_phy_idx phy, u8 rf_path, u16 rate, u8 bandwidth,
+	u8 tx_num, u8 channel, u32 band, u8 reg)
+{
+	return 0;
+}
+
+u8 rtw_hal_rf_get_tx_tbl_to_tx_pwr_times(struct hal_info_t *hal_info)
+{
+	return 0;
+}
+
+s8 rtw_hal_rf_get_power_limit_value_ww(struct hal_info_t *hal_info)
+{
+	return 0;
+}
+
+s8 rtw_hal_rf_get_power_limit_value_na(struct hal_info_t *hal_info)
+{
+	return 0;
+}
+
+u32 rtw_hal_rf_get_regulation_max_num(struct hal_info_t *hal_info, enum band_type band)
+{
+	return 0;
+}
+
+void rtw_hal_rf_power_by_rate_store_to_array(struct hal_info_t *hal_info,
+	u32 band, u32 tx_num, u32 rate_id, u32 data)
+{
+}
+
+void rtw_hal_rf_power_limit_store_to_array(struct hal_info_t *hal_info,
+	u8 regulation, u8 band, u8 bandwidth, u8 rate, u8 tx_num, u8 beamforming, u8 chnl, s8 val)
+{
+}
+
+void rtw_hal_rf_power_limit_shape_store_to_array(struct hal_info_t *hal_info,
+	u8 regulation, u8 band, u8 bandwidth, u8 rate, u8 tx_num, u8 beamforming, u8 val)
+{
+}
+
+void rtw_hal_rf_power_limit_ru_store_to_array(struct hal_info_t *hal_info,
+	u8 band, u8 bandwidth, u8 tx_num, u8 rate, u8 regulation, u8 chnl, s8 val)
+{
+}
+
+void rtw_hal_rf_power_limit_ru_shape_store_to_array(struct hal_info_t *hal_info,
+	u8 band, u8 bandwidth, u8 tx_num, u8 rate, u8 regulation, u8 val)
+{
+}
+
+void rtw_hal_rf_clear_limit_table(struct hal_info_t *hal_info,
+	u8 band_bmp, enum phl_pwr_table pwr_table)
+{
+}
+
+void
+rtw_hal_rf_rfe_ant_num_chk(struct rtw_hal_com_t *hal_com)
+{
+}
+
+void
+rtw_hal_rf_set_pwr_lmt_main_or_aux(struct rtw_hal_com_t *hal_com, u8 ant)
+{
+}
+
+void
+rtw_hal_rf_cfg_tx_by_bt_link(struct hal_info_t *hal_info , u8 is_bt_link)
+{
+
+}
+
+void
+rtw_hal_rf_update_ext_pwr_lmt_table(struct hal_info_t *hal_info,
+                                    enum phl_phy_idx phy)
+{
+}
+
+u8
+rtw_hal_rf_get_tx_tbl_to_pwr_times(struct hal_info_t *hal_info)
+{
+	return 4;
+}
+
+void
+rtw_hal_rf_set_tx_pwr_comp(struct hal_info_t *hal_info,	enum phl_phy_idx phy,
+                           struct rtw_phl_regu_dyn_ant_gain *dyn_ag)
+{
+}
+
+void
+rtw_hal_rf_set_mp_regulation(struct hal_info_t *hal_info,
+                             enum phl_phy_idx phy_idx, u8 regulation)
+{
+}
+
+enum rtw_hal_status
+rtw_hal_rf_ic_hw_setting_init(struct hal_info_t *hal_info)
+{
+	return RTW_HAL_STATUS_SUCCESS;
+}
+void rtw_hal_rf_fwredl_config(struct hal_info_t *hal_info, enum phl_phy_idx phy_idx)
+{
+}
+
+#ifdef CONFIG_PHL_RFK_FCS_SUPPPORT
+u8 rtw_hal_rf_fcs_support_num(struct hal_info_t *hal_info)
+{
+	return 0;
+}
+#endif
+
 #endif /*ifdef USE_TRUE_PHY*/

@@ -98,21 +98,10 @@ enum rtw_ft_capability {
 	((rtw_ft_chk_flags(a, RTW_FT_EN)) && \
 	(((t) == 3) || ((t) == 4)))
 
-#define rtw_ft_roam_expired(a, r)	\
-	((rtw_chk_roam_flags(a, RTW_ROAM_ON_EXPIRED)) \
-	&& (r == WLAN_REASON_ACTIVE_ROAM))
-
 /* allow OTD while driver disconnect with current AP */
-#if 1
 #define rtw_ft_otd_roam_en(a)	\
 	((rtw_ft_chk_flags(a, RTW_FT_OTD_EN))	\
 	&& ((a)->mlmepriv.ft_roam.ft_cap & 0x01))
-#else
-#define rtw_ft_otd_roam_en(a)	\
-	((rtw_ft_chk_flags(a, RTW_FT_OTD_EN))	\
-	&& ((a)->mlmepriv.ft_roam.ft_roam_on_expired == _FALSE)	\
-	&& ((a)->mlmepriv.ft_roam.ft_cap & 0x01))
-#endif
 
 #define rtw_ft_otd_roam(a) \
 	rtw_ft_chk_flags(a, RTW_FT_PEER_OTD_EN)
@@ -133,7 +122,6 @@ struct ft_roam_info {
 	u8	ft_action[RTW_FT_MAX_IE_SZ];
 	u16	ft_action_len;
 	struct cfg80211_ft_event_params ft_event;
-	u8	ft_roam_on_expired;
 	u8	ft_flags;
 	u32 ft_status;
 	u32 ft_req_retry_cnt;
@@ -159,12 +147,12 @@ ssize_t rtw_ft_proc_flags_set(struct file *file, const char __user *buffer,
 u8 rtw_ft_chk_roaming_candidate(
 	_adapter *padapter, struct wlan_network *competitor);
 
-void rtw_ft_update_stainfo(_adapter *padapter, WLAN_BSSID_EX *pnetwork);
+void rtw_ft_update_stainfo(_adapter *padapter, struct _ADAPTER_LINK *padapter_link, WLAN_BSSID_EX *pnetwork);
 
 void rtw_ft_reassoc_event_callback(_adapter *padapter, u8 *pbuf);
 
 void rtw_ft_validate_akm_type(_adapter  *padapter,
-	struct wlan_network *pnetwork);
+	WLAN_BSSID_EX *network);
 
 void rtw_ft_update_bcn(_adapter *padapter, union recv_frame *precv_frame);
 
@@ -211,4 +199,5 @@ void rtw_ft_process_ft_auth_rsp(_adapter *padapter, u8 *pframe, u32 len);
 void rtw_ft_build_assoc_rsp_ies(_adapter *padapter,
 	struct sta_info *psta, struct pkt_attrib *pattrib, u8 **pframe);
 
+void rtw_ft_start_clnt_action(_adapter *padapter, u8 *pTargetAddr);
 #endif /* __RTW_FT_H_ */

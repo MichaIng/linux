@@ -15,15 +15,17 @@
 #ifndef __OSDEP_SERVICE_H_
 #define __OSDEP_SERVICE_H_
 
-#define RTW_RX_HANDLED			2
-#define RTW_RFRAME_UNAVAIL		3
-#define RTW_RFRAME_PKT_UNAVAIL		4
-#define RTW_RBUF_UNAVAIL		5
-#define RTW_RBUF_PKT_UNAVAIL		6
+#define RTW_RX_HANDLED		2
+#define RTW_RFRAME_UNAVAIL	3
+#define RTW_RFRAME_PKT_UNAVAIL	4
+#define RTW_RBUF_UNAVAIL	5
+#define RTW_RBUF_PKT_UNAVAIL	6
 #define RTW_SDIO_RECV_FAIL	7
-#define RTW_ALREADY			8
-#define RTW_RA_RESOLVING		9
-#define RTW_ORI_NO_NEED			10
+#define RTW_ALREADY		8
+#define RTW_RA_RESOLVING	9
+#define RTW_ORI_NO_NEED		10
+#define RTW_NOT_SUPPORT		15
+#define RTW_ABORT_LINKING	17
 
 /* #define RTW_STATUS_TIMEDOUT -110 */
 
@@ -97,6 +99,7 @@
 #endif
 
 extern int RTW_STATUS_CODE(int error_code);
+extern ATOMIC_T rtw_warn_on_cnt;
 
 #ifndef RTK_DMP_PLATFORM
 	#define CONFIG_USE_VMALLOC
@@ -138,10 +141,10 @@ void rtw_mstat_dump(void *sel);
 bool match_mstat_sniff_rules(const enum mstat_f flags, const size_t size);
 void *dbg_rtw_vmalloc(u32 sz, const enum mstat_f flags, const char *func, const int line);
 void *dbg_rtw_zvmalloc(u32 sz, const enum mstat_f flags, const char *func, const int line);
-void dbg_rtw_vmfree(void *pbuf, const enum mstat_f flags, u32 sz, const char *func, const int line);
+void dbg_rtw_vmfree(void *pbuf, u32 sz, const enum mstat_f flags, const char *func, const int line);
 void *dbg_rtw_malloc(u32 sz, const enum mstat_f flags, const char *func, const int line);
 void *dbg_rtw_zmalloc(u32 sz, const enum mstat_f flags, const char *func, const int line);
-void dbg_rtw_mfree(void *pbuf, const enum mstat_f flags, u32 sz, const char *func, const int line);
+void dbg_rtw_mfree(void *pbuf, u32 sz, const enum mstat_f flags, const char *func, const int line);
 
 struct sk_buff *dbg_rtw_skb_alloc(unsigned int size, const enum mstat_f flags, const char *func, const int line);
 void dbg_rtw_skb_free(struct sk_buff *skb, const enum mstat_f flags, const char *func, const int line);
@@ -314,6 +317,7 @@ s32 _rtw_get_passing_time_ms(systime start);
 s32 _rtw_get_remaining_time_ms(systime end);
 s32 _rtw_get_time_interval_ms(systime start, systime end);
 bool _rtw_time_after(systime a, systime b);
+bool _rtw_time_after_eq(systime a, systime b);
 
 #ifdef DBG_SYSTIME
 #define rtw_get_current_time() ({systime __stime = _rtw_get_current_time(); __stime;})
@@ -324,8 +328,10 @@ bool _rtw_time_after(systime a, systime b);
 #define rtw_get_passing_time_ms(start) ({u32 __ms = _rtw_get_passing_time_ms(start); typecheck(systime, start); __ms;})
 #define rtw_get_remaining_time_ms(end) ({u32 __ms = _rtw_get_remaining_time_ms(end); typecheck(systime, end); __ms;})
 #define rtw_get_time_interval_ms(start, end) ({u32 __ms = _rtw_get_time_interval_ms(start, end); typecheck(systime, start); typecheck(systime, end); __ms;})
-#define rtw_time_after(a,b) ({bool __r = _rtw_time_after(a,b); typecheck(systime, a); typecheck(systime, b); __r;})
-#define rtw_time_before(a,b) ({bool __r = _rtw_time_after(b, a); typecheck(systime, a); typecheck(systime, b); __r;})
+#define rtw_time_after(a, b) ({bool __r = _rtw_time_after(a, b); typecheck(systime, a); typecheck(systime, b); __r;})
+#define rtw_time_after_eq(a, b) ({bool __r = _rtw_time_after_eq(a, b); typecheck(systime, a); typecheck(systime, b); __r;})
+#define rtw_time_before(a, b) ({bool __r = _rtw_time_after(b, a); typecheck(systime, a); typecheck(systime, b); __r;})
+#define rtw_time_before_eq(a, b) ({bool __r = _rtw_time_after_eq(b, a); typecheck(systime, a); typecheck(systime, b); __r;})
 #else
 #define rtw_get_current_time() _rtw_get_current_time()
 #define rtw_systime_to_us(stime) _rtw_systime_to_us(stime)
@@ -335,9 +341,38 @@ bool _rtw_time_after(systime a, systime b);
 #define rtw_get_passing_time_ms(start) _rtw_get_passing_time_ms(start)
 #define rtw_get_remaining_time_ms(end) _rtw_get_remaining_time_ms(end)
 #define rtw_get_time_interval_ms(start, end) _rtw_get_time_interval_ms(start, end)
-#define rtw_time_after(a,b) _rtw_time_after(a,b)
-#define rtw_time_before(a,b) _rtw_time_after(b,a)
+#define rtw_time_after(a, b) _rtw_time_after(a, b)
+#define rtw_time_after_eq(a, b) _rtw_time_after(a, b)
+#define rtw_time_before(a, b) _rtw_time_after(b, a)
+#define rtw_time_before_eq(a, b) _rtw_time_after_eq(b, a)
 #endif
+
+#ifndef CONFIG_OSDEP_SPTIME_API
+sysptime rtw_sptime_get(void);
+sysptime rtw_sptime_get_raw(void);
+sysptime rtw_sptime_set(s64 secs, const u32 nsecs);
+sysptime rtw_sptime_zero(void);
+
+int rtw_sptime_cmp(const sysptime cmp1, const sysptime cmp2);
+sysptime rtw_sptime_sub(const sysptime lhs, const sysptime rhs);
+sysptime rtw_sptime_add(const sysptime lhs, const sysptime rhs);
+
+s64 rtw_sptime_to_ms(const sysptime sptime);
+sysptime rtw_ms_to_sptime(u64 ms);
+s64 rtw_sptime_to_us(const sysptime sptime);
+sysptime rtw_us_to_sptime(u64 us);
+s64 rtw_sptime_to_ns(const sysptime sptime);
+sysptime rtw_ns_to_sptime(u64 ns);
+#endif /* !CONFIG_OSDEP_SPTIME_API */
+
+#define rtw_sptime_eql(cmp1, cmp2) (rtw_sptime_cmp(cmp1, cmp2) == 0)
+#define rtw_sptime_is_zero(sptime) (rtw_sptime_cmp(sptime, rtw_sptime_zero()) == 0)
+#define rtw_sptime_diff_ms(start, end) rtw_sptime_to_ms(rtw_sptime_sub(end, start))
+#define rtw_sptime_diff_us(start, end) rtw_sptime_to_us(rtw_sptime_sub(end, start))
+#define rtw_sptime_diff_ns(start, end) rtw_sptime_to_ns(rtw_sptime_sub(end, start))
+#define rtw_sptime_pass_ms(start) rtw_sptime_diff_ms(start, rtw_sptime_get())
+#define rtw_sptime_pass_us(start) rtw_sptime_diff_us(start, rtw_sptime_get())
+#define rtw_sptime_pass_ns(start) rtw_sptime_diff_ns(start, rtw_sptime_get())
 
 void rtw_sleep_schedulable(int ms);
 
@@ -467,14 +502,72 @@ static inline int largest_bit_64(u64 bitmask)
 #define rtw_abs(a) ((a) < 0 ? -(a) : (a))
 #define rtw_min(a, b) (((a) > (b)) ? (b) : (a))
 #define rtw_max(a, b) (((a) > (b)) ? (a) : (b))
-#define rtw_is_range_a_in_b(hi_a, lo_a, hi_b, lo_b) (((hi_a) <= (hi_b)) && ((lo_a) >= (lo_b)))
-#define rtw_is_range_overlap(hi_a, lo_a, hi_b, lo_b) (((hi_a) > (lo_b)) && ((lo_a) < (hi_b)))
 
+#define rtw_is_range_empty(hi, lo) ((hi) == (lo))
+#define rtw_is_range_a_in_b(a_hi, a_lo, b_hi, b_lo) (((a_hi) <= (b_hi)) && ((a_lo) >= (b_lo)))
+#define rtw_is_range_adjacent(a_hi, a_lo, b_hi, b_lo) (((a_hi) == (b_lo)) || ((a_lo) == (b_hi)))
+#define rtw_is_range_overlap(a_hi, a_lo, b_hi, b_lo) (((a_hi) > (b_lo)) && ((a_lo) < (b_hi)))
+
+/*
+* Combine two ranges if possible (hilo_s is empty or adjcent/overlap with hilo)
+* @hi_s, @lo_s: range parameters to store combined range
+* @hi, @lo: range parameters to be combined, if combined, set to 0 (empty)
+*/
+#define rtw_range_combine(hi_s, lo_s, hi, lo) \
+	do { \
+		if (rtw_is_range_empty(hi, lo)) {} \
+		else if (rtw_is_range_empty(hi_s, lo_s)) { \
+			(hi_s) = (hi); \
+			(lo_s) = (lo); \
+			(hi) = 0; (lo) = 0; \
+		} else if (rtw_is_range_adjacent(hi_s, lo_s, hi, lo) \
+			|| rtw_is_range_overlap(hi_s, lo_s, hi, lo) \
+		) { \
+			(hi_s) = rtw_max(hi_s, hi); \
+			(lo_s) = rtw_min(lo_s, lo); \
+			(hi) = 0; (lo) = 0; \
+		} \
+	} while (0)
+
+/*
+* Merge two ranges (no need to adjcent/overlap with each other)
+* @hi_s, @lo_s: range parameters to store merged range
+* @hi, @lo: range parameters to be merged
+*/
+#define rtw_range_merge(hi_s, lo_s, hi, lo) \
+	do { \
+		if (rtw_is_range_empty(hi, lo)) {} \
+		else if (rtw_is_range_empty(hi_s, lo_s)) { \
+			(hi_s) = (hi); \
+			(lo_s) = (lo); \
+		} else { \
+			(hi_s) = rtw_max(hi_s, hi); \
+			(lo_s) = rtw_min(lo_s, lo); \
+		} \
+	} while (0)
+
+#define MAC_FMT_LEN 18
+#ifdef CONFIG_RTW_HIDDEN_MAC_ADDR
+#ifndef MAC_FMT
+#define MAC_FMT "%02x:%02x:%02x:xx:xx:xx"
+#endif
+#ifndef MAC_ARG
+#define MAC_ARG(x) ((u8 *)(x))[0], ((u8 *)(x))[1], ((u8 *)(x))[2]
+#endif
+#else /* CONFIG_RTW_HIDDEN_MAC_ADDR */
 #ifndef MAC_FMT
 #define MAC_FMT "%02x:%02x:%02x:%02x:%02x:%02x"
 #endif
 #ifndef MAC_ARG
 #define MAC_ARG(x) ((u8 *)(x))[0], ((u8 *)(x))[1], ((u8 *)(x))[2], ((u8 *)(x))[3], ((u8 *)(x))[4], ((u8 *)(x))[5]
+#endif
+#endif /* CONFIG_RTW_HIDDEN_MAC_ADDR */
+
+#ifndef MAC_FMT_SEL
+#define MAC_FMT_SEL "%02x:%02x:%02x:%02x:%02x:%02x"
+#endif
+#ifndef MAC_ARG_SEL
+#define MAC_ARG_SEL(x) ((u8 *)(x))[0], ((u8 *)(x))[1], ((u8 *)(x))[2], ((u8 *)(x))[3], ((u8 *)(x))[4], ((u8 *)(x))[5]
 #endif
 
 bool rtw_macaddr_is_larger(const u8 *a, const u8 *b);
@@ -498,10 +591,10 @@ int rtw_test_and_clear_bit(int nr, unsigned long *addr);
 int rtw_test_and_set_bit(int nr, unsigned long *addr);
 
 /* File operation APIs, just for linux now */
-#ifndef CONFIG_RTW_ANDROID
+#if !defined(CONFIG_RTW_ANDROID_GKI)
 int rtw_is_dir_readable(const char *path);
 int rtw_store_to_file(const char *path, u8 *buf, u32 sz);
-#endif /* CONFIG_RTW_ANDROID */
+#endif /* !defined(CONFIG_RTW_ANDROID_GKI) */
 int rtw_is_file_readable(const char *path);
 int rtw_is_file_readable_with_size(const char *path, u32 *sz);
 int rtw_readable_file_sz_chk(const char *path, u32 sz);
@@ -510,7 +603,10 @@ void rtw_free_netdev(struct net_device *netdev);
 
 u64 rtw_modular64(u64 x, u64 y);
 u64 rtw_division64(u64 x, u64 y);
- u32 rtw_random32(void);
+s64 rtw_division64_s64(s64 x, s64 y);
+u32 rtw_random32(void);
+
+void rtw_wiphy_rfkill_set_hw_state(struct wiphy *wiphy, bool blocked);
 
 /* Macros for handling unaligned memory accesses */
 
@@ -646,7 +742,7 @@ void dump_blacklist(void *sel, _queue *blist, const char *title);
 /* String handler */
 
 BOOLEAN is_null(char c);
-BOOLEAN is_all_null(char *c, int len);
+BOOLEAN is_all_null(const char *c, int len);
 BOOLEAN is_eol(char c);
 BOOLEAN is_space(char c);
 BOOLEAN is_decimal(char chTmp);
@@ -657,6 +753,17 @@ char alpha_to_upper(char c);
 int hex2num_i(char c);
 int hex2byte_i(const char *hex);
 int hexstr2bin(const char *hex, u8 *buf, size_t len);
+
+/*
+* ustrs
+* str_0      str_1      str_2      str_3
+* |          |          |          |          |
+* |---------------- ustrs_len ----------------|
+*/
+#define ustrs_for_each_str(ustrs, ustrs_len, str) \
+	for ((str) = (ustrs); (str) < (ustrs) + (ustrs_len); (str) += strlen(str) + 1)
+
+void ustrs_add(char **ustrs, int *ustrs_len, const char *str);
 
 /*
  * Write formatted output to sized buffer

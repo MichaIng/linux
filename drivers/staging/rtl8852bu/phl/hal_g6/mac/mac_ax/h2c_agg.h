@@ -19,7 +19,6 @@
 #include "fwcmd.h"
 #include "../fw_ax/inc_hdr/fwcmd_intf.h"
 
-#define ALIGN_4_BYTE(len) ((len + 0x3) & ~(0x3))
 #define H2C_AGG_SUB_HDR_LEN sizeof(u32)
 #define H2C_PKT_AGGREGATABLE(len) ((ALIGN_4_BYTE(len) + \
 								   WD_BODY_LEN + FWCMD_HDR_LEN + \

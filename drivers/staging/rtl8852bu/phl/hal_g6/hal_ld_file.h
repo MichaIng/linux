@@ -16,11 +16,13 @@
 #ifndef _HAL_LD_FILE_H_
 #define _HAL_LD_FILE_H_
 
-#define PHYPG_BAND2G 0
-#define PHYPG_BAND5G 1
-#define PHYPG_RF1Tx 0
-#define PHYPG_RF2Tx 1
-#define PHYPG_OFFSET 15
+enum PHY_PG_NSS_def {
+	PHYPG_1SS	= 0,
+	PHYPG_2SS	= 1,
+	PHYPG_NSS_MAX,
+
+	PHYPG_OFFSET	= 15,
+};
 
 enum PHY_PG_RATE_def {
 	CCK_11M_1M = 0,
@@ -34,37 +36,40 @@ enum PHY_PG_RATE_def {
 	HE2SS_MCS7_4 = 4,
 	HE2SS_MCS11_8 = 5,
 	HE2SS_DCM4_0 = 6,
-	Legacy_AllRate = 7,
-	HE_AllRate = 8,
+	Legacy_AllRate2_1 = 7,
+	HE_AllRate2_2 = 8,
+	OFDM_AllRate5_1 = 9,
+	OFDM_AllRate6_1 = 10,
 };
 
-struct _hal_file_regd_ext {
-		u16 domain;
-		char country[2];
-		char reg_name[10];
+struct hal_txpwr_byrate_t {
+	u32	band;	/* enum band_type */
+	u32	nss;	/* enum PHY_PG_NSS_def */
+	u32	rs;	/* enum PHY_PG_RATE_def */
+	u32	vals;
 };
 
 typedef struct hal_txpwr_lmt_t {
-	u8			band;
-	u8			bw;
-	u8			ntx;
-	u8			rs;
-	u8			bf;
-	u8			reg;
-	u8			ch;
-	s8			val;
-	u8			tx_shap_idx;
+	u8 band;
+	u8 bw;
+	u8 ntx;
+	u8 rs;
+	u8 bf;
+	u8 reg;
+	u8 ch;
+	s8 val;
+	u8 tx_shap_idx;
 } HAL_TXPWR_LMT_T , *PHAL_TXPWR_LMT_T;
 
 typedef struct hal_txpwr_lmt_ru_t {
-	u8			band;
-	u8			rubw;
-	u8			ntx;
-	u8			rs;
-	u8			reg;
-	u8			ch;
-	s8			val;
-	u8			tx_shap_idx;
+	u8 band;
+	u8 rubw;
+	u8 ntx;
+	u8 rs;
+	u8 reg;
+	u8 ch;
+	s8 val;
+	u8 tx_shap_idx;
 } Hal_Txpwr_lmt_Ru_t , *pHal_Txpwr_lmt_Ru_t;
 
 enum _halrf_tx_pw_lmt_ru_bandwidth_type {
@@ -76,7 +81,9 @@ enum _halrf_tx_pw_lmt_ru_bandwidth_type {
 
 enum _halrf_pw_lmt_band_type {
 		_PW_LMT_BAND_2_4G = 0,
-		_PW_LMT_BAND_5G = 1
+		_PW_LMT_BAND_5G = 1,
+		_PW_LMT_BAND_6G = 2,
+		_PW_LMT_MAX_BAND = 3
 };
 
 enum _halrf_pw_lmt_bandwidth_type {
@@ -115,6 +122,7 @@ enum _halrf_pw_lmt_beamforming_type {
 #define MAX_RF_PATH 4
 #define DELTA_SWINGIDX_SIZE 30
 #define BAND_NUM 4
+#define BAND_NUM_6G 4
 #define DELTA_SWINTSSI_SIZE 61
 
 /*@---------------------------End Define Parameters---------------------------*/
@@ -186,6 +194,14 @@ struct hal_txpwr_track_t {
 	s8 delta_swing_table_idx_5gc_n[BAND_NUM][DELTA_SWINGIDX_SIZE];
 	s8 delta_swing_table_idx_5gd_p[BAND_NUM][DELTA_SWINGIDX_SIZE];
 	s8 delta_swing_table_idx_5gd_n[BAND_NUM][DELTA_SWINGIDX_SIZE];
+	s8 delta_swing_table_idx_6ga_p[BAND_NUM_6G][DELTA_SWINGIDX_SIZE];
+	s8 delta_swing_table_idx_6ga_n[BAND_NUM_6G][DELTA_SWINGIDX_SIZE];
+	s8 delta_swing_table_idx_6gb_p[BAND_NUM_6G][DELTA_SWINGIDX_SIZE];
+	s8 delta_swing_table_idx_6gb_n[BAND_NUM_6G][DELTA_SWINGIDX_SIZE];
+	s8 delta_swing_table_idx_6gc_p[BAND_NUM_6G][DELTA_SWINGIDX_SIZE];
+	s8 delta_swing_table_idx_6gc_n[BAND_NUM_6G][DELTA_SWINGIDX_SIZE];
+	s8 delta_swing_table_idx_6gd_p[BAND_NUM_6G][DELTA_SWINGIDX_SIZE];
+	s8 delta_swing_table_idx_6gd_n[BAND_NUM_6G][DELTA_SWINGIDX_SIZE];
 	s8 delta_swing_tssi_table_2g_cck_a[DELTA_SWINTSSI_SIZE];
 	s8 delta_swing_tssi_table_2g_cck_b[DELTA_SWINTSSI_SIZE];
 	s8 delta_swing_tssi_table_2g_cck_c[DELTA_SWINTSSI_SIZE];
@@ -233,6 +249,8 @@ struct hal_txpwr_track_t {
 	u8 rf_kfree_enable;		/*for efuse enable check*/
 	};
 
+int rtw_hal_find_ext_regd_num(struct rtw_para_pwrlmt_info_t *para_info, const char *regd_name);
+char *rtw_hal_get_ext_regd_name(struct rtw_para_pwrlmt_info_t *para_info, u8 idx);
 void rtw_hal_dl_all_para_file(struct rtw_phl_com_t *phl_com, char *ic_name, void *hal);
 u8 rtw_hal_efuse_shadow_file_load(void *hal, char *ic_name, bool is_limit);
 u8 rtw_hal_ld_fw_symbol(struct rtw_phl_com_t *phl_com,

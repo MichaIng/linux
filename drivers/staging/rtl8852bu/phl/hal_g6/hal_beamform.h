@@ -32,6 +32,7 @@
 	(_cap & BF_CAP_HE_BFEE) || (_cap & BF_CAP_VHT_BFEE) \
 	|| (_cap & BF_CAP_HT_BFEE)
 
+#ifdef CONFIG_PHL_BEAMFORM
 //B[0:7] = {6M, 9M, 12M, 18M, 24M, 36M, 48M, 54M}
 //B[8:15] = HT MCS0~MCS7
 //B[16:23] = VHT 1SSMCS0~MCS7
@@ -197,4 +198,11 @@ enum rtw_hal_status
 hal_bf_set_bfee_csi_para(struct hal_info_t *hal_info, bool cr_cctl,
 			 struct rtw_phl_stainfo_t *sta);
 
+#else
+#define hal_bf_init(_hal_info, _bf_entry_nr, _su_entry_nr, _mu_entry_nr) RTW_HAL_STATUS_SUCCESS
+#define hal_bf_deinit(_hal_info)
+#define hal_bf_hw_mac_init_bfee(_hal_info, _band) RTW_HAL_STATUS_SUCCESS
+#define hal_bf_hw_mac_init_bfer(_hal_info, _band) RTW_HAL_STATUS_SUCCESS
+#define hal_bf_set_bfee_csi_para(_hal_info, _cr_cctl, _sta) RTW_HAL_STATUS_SUCCESS
+#endif
 #endif

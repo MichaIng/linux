@@ -19,6 +19,7 @@
 #define HAL_LPS_SKIP_HW_CFG 0
 #define HAL_IPS_SKIP_HW_CFG 0
 
-enum rtw_hal_status rtw_hal_ps_pwr_req(struct rtw_phl_com_t *phl_com, u8 src, bool pwr_req);
+enum rtw_hal_status rtw_hal_ps_pwr_req(struct rtw_phl_com_t *phl_com, u8 src,
+                                       bool pwr_req, bool leave_immediately);
 #endif
 #endif /*_HAL_PS_H_*/

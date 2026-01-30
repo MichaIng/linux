@@ -28,10 +28,11 @@
 #define phl_to_wow_info(_phl) (&_phl->wow_info)
 #define get_wow_pairwise_algo_type(_wow_info) (_wow_info->wow_wake_info.pairwise_sec_algo)
 #define get_wow_group_algo_type(_wow_info) (_wow_info->wow_wake_info.group_sec_algo)
+#define set_wow_init_pkt_ofld_id(pkt_id) (*pkt_id = 0xff)
 
 struct phl_wow_error {
-	u16 init;
-	u16 deinit;
+	u32 init;
+	u32 deinit;
 };
 
 struct phl_wow_stat {
@@ -45,7 +46,7 @@ struct phl_wow_stat {
 	u8 gtk_en;
 	u8 dot11w_en;
 	/* deinit */
-	enum rtw_wow_wake_reason wake_rsn;
+	enum rtw_mac_wow_wake_reason wake_rsn;
 	enum rtw_mac_pwr_st mac_pwr;
 	/* common */
 	struct phl_wow_error err;
@@ -61,6 +62,7 @@ struct phl_wow_info {
 
 	/* general info, should reset */
 	u8 func_en;
+	u8 no_link_mode;
 	struct phl_wow_error err;
 	struct rtw_phl_stainfo_t *sta;
 	enum rtw_wow_op_mode op_mode;
@@ -77,6 +79,12 @@ struct phl_wow_info {
 	u32 ack_pkt_token;
 	u32 wp_token;
 	u32 probe_req_pkt_token;
+#ifdef CONFIG_PHL_MDNS_OFFLOAD
+	u32 mdns_rsp_ipv4_token;
+	u32 mdns_rsp_ipv6_token;
+	u32 mdns_rsp_data_token[MAX_MDNS_RESP_NUM];
+	u32 mdns_passthru_list_token[MAX_MDNS_PASSTHRU_NAME_NUM];
+#endif
 
 	/* func */
 	struct rtw_keep_alive_info keep_alive_info;
@@ -89,9 +97,13 @@ struct phl_wow_info {
 	struct rtw_wow_wake_info wow_wake_info;
 	struct rtw_pattern_match_info pattern_match_info;
 	struct rtw_wow_gpio_info wow_gpio;
+	struct rtw_periodic_wake_info periodic_wake_info;
+#ifdef CONFIG_PHL_MDNS_OFFLOAD
+	struct rtw_mdns_ofld_info *mdns_ofld_info;
+#endif
 
 	/* info to core */
-	enum rtw_wow_wake_reason wake_rsn;
+	enum rtw_mac_wow_wake_reason wake_rsn;
 	struct rtw_aoac_report aoac_info;
 };
 
@@ -100,9 +112,16 @@ void phl_wow_mdl_deinit(struct phl_info_t* phl_info);
 
 #ifdef CONFIG_WOWLAN
 
+u8
+phl_get_wow_excld_susp_role_map(struct phl_info_t *phl_i);
+
 void phl_record_wow_stat(struct phl_wow_info *wow_info);
 
 void phl_wow_handle_wake_rsn(struct phl_wow_info *wow_info, u8 *reset);
+
+enum rtw_phl_status phl_set_wowlan(struct phl_info_t *phl_info, u8 enter, bool disable_inband);
+enum rtw_phl_status phl_cmd_set_wowlan_hdl(struct phl_info_t *phl_info, u8 *param);
+enum rtw_phl_status phl_cmd_set_wowlan(struct phl_wow_info *wow_info, u8 enter, bool direct);
 
 enum rtw_phl_status phl_wow_init_precfg(struct phl_wow_info *wow_info);
 
@@ -112,20 +131,25 @@ enum rtw_phl_status phl_wow_deinit_precfg(struct phl_wow_info *wow_info);
 
 enum rtw_phl_status phl_wow_deinit_postcfg(struct phl_wow_info *wow_info);
 
+enum rtw_phl_status phl_wow_init(struct phl_wow_info *wow_info);
+
+enum rtw_phl_status phl_wow_deinit(struct phl_wow_info *wow_info);
+
 void phl_reset_wow_info(struct phl_wow_info *wow_info);
 
 enum rtw_phl_status phl_wow_func_en(struct phl_wow_info *wow_info);
 
-void phl_wow_func_dis(struct phl_wow_info *wow_info);
+enum rtw_phl_status phl_wow_func_dis(struct phl_wow_info *wow_info);
 
 void phl_wow_decide_op_mode(struct phl_wow_info *wow_info, struct rtw_phl_stainfo_t *sta);
 #ifdef CONFIG_POWER_SAVE
 enum rtw_phl_status phl_wow_ps_proto_cfg(struct phl_wow_info *wow_info, bool enter_ps);
-
+void phl_wow_ps_judge_pwr_lvl(struct phl_wow_info *wow_info, bool enter_ps);
 void phl_wow_ps_pwr_ntfy(struct phl_wow_info *wow_info, bool enter_ps);
 
 enum rtw_phl_status phl_wow_ps_pwr_cfg(struct phl_wow_info *wow_info, bool enter_ps);
 #endif
+
 #endif /* CONFIG_WOWLAN */
 
 #endif /* _PHL_WOW_H_ */

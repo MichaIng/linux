@@ -1,6 +1,6 @@
 /******************************************************************************
  *
- * Copyright(c) 2007 - 2019 Realtek Corporation.
+ * Copyright(c) 2007 - 2022 Realtek Corporation.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of version 2 of the GNU General Public License as
@@ -15,27 +15,15 @@
 #ifndef __RTW_MEM_H__
 #define __RTW_MEM_H__
 
-#include <drv_conf.h>
-#include <basic_types.h>
-#include <osdep_service.h>
+#define RTKM_MGMT_SIZE PAGE_SIZE
 
-#ifdef CONFIG_SDIO_HCI
-#define MAX_RTKM_RECVBUF_SZ		MAX_RECVBUF_SZ
-#define MAX_RTKM_NR_PREALLOC_RECV_SKB	NR_RECVBUFF
-#else /* !CONFIG_SDIO_HCI */
-#ifdef CONFIG_PLATFORM_MSTAR_HIGH
-	#define MAX_RTKM_RECVBUF_SZ (31744) /* 31k */
-#else
-	#define MAX_RTKM_RECVBUF_SZ (15360) /* 15k */
-#endif /* CONFIG_PLATFORM_MSTAR_HIGH */
-#define MAX_RTKM_NR_PREALLOC_RECV_SKB 16
-#endif /* !CONFIG_SDIO_HCI */
+void *rtkm_kmalloc(size_t size, gfp_t flags);
+void *rtkm_kzalloc(size_t size, gfp_t flags);
+void rtkm_kfree(const void *objp, size_t size);
 
-u16 rtw_rtkm_get_buff_size(void);
-u8 rtw_rtkm_get_nr_recv_skb(void);
-struct u8 *rtw_alloc_revcbuf_premem(void);
-struct sk_buff *rtw_alloc_skb_premem(u16 in_size);
-int rtw_free_skb_premem(struct sk_buff *pskb);
-
+int rtkm_prealloc_init(void);
+void rtkm_prealloc_destroy(void);
+void rtkm_dump_mstatus(void *sel);
+void rtkm_set_trace(unsigned int mask);
 
 #endif /* __RTW_MEM_H__ */

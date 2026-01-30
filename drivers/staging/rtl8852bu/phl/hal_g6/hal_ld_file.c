@@ -16,8 +16,46 @@
 #include "hal_headers.h"
 #include "hal_ld_file.h"
 
+#ifdef CONFIG_LOAD_PHY_PARA_FROM_FILE
+static enum rtw_hal_status
+_hal_general_para_alloc(struct rtw_phl_com_t *phl_com, void *para_info_t)
+{
+	struct rtw_para_info_t *para_info = para_info_t;
+
+	if (para_info->para_src == RTW_PARA_SRC_EXTNAL) {
+		u32 buf_sz = MAX_HWCONFIG_FILE_CONTENT;
+		void *drv = phlcom_to_drvpriv(phl_com);
+
+		if (!para_info->para_data)
+			para_info->para_data = _os_mem_alloc(drv, buf_sz * sizeof(u32));
+
+		if (!para_info->para_data) {
+			PHL_TRACE(COMP_PHL_DBG, _PHL_ERR_,
+				"%s:: allocmem fail\n", __FUNCTION__);
+			return RTW_HAL_STATUS_FAILURE;
+		}
+		return RTW_HAL_STATUS_SUCCESS;
+	} else
+		return RTW_HAL_STATUS_FAILURE;
+}
+
+static void
+_hal_general_para_free(struct rtw_phl_com_t *phl_com
+	, struct rtw_para_info_t *para_info)
+{
+	u32 buf_sz = MAX_HWCONFIG_FILE_CONTENT;
+	void *drv = phlcom_to_drvpriv(phl_com);
+
+	if (para_info->para_data)
+		_os_mem_free(drv, para_info->para_data, buf_sz * sizeof(u32));
+
+	para_info->para_data = NULL;
+	para_info->para_data_len = 0;
+	para_info->loaded = false;
+}
+
 static int
-_hal_parse_phyreg(void *drv_priv, void *para_info_t, u8 *psrc_buf, u32 buflen)
+_hal_parse_phyreg(struct hal_info_t *hal_info, void *para_info_t, u8 *psrc_buf, u32 buflen)
 {
 	struct rtw_para_info_t *para_info = (struct rtw_para_info_t *)para_info_t;
 	u32 *pdest_buf = para_info->para_data;
@@ -59,6 +97,27 @@ _hal_parse_phyreg(void *drv_priv, void *para_info_t, u8 *psrc_buf, u32 buflen)
 	}
 #endif
 	return dest_buf_idx;
+}
+
+static enum rtw_hal_status
+_hal_pwr_byrate_para_alloc(struct rtw_phl_com_t *phl_com, void *para_info_t)
+{
+	struct rtw_para_info_t *para_info = para_info_t;
+
+	if (para_info->para_src == RTW_PARA_SRC_EXTNAL)
+		return RTW_HAL_STATUS_SUCCESS;
+	else
+		return RTW_HAL_STATUS_FAILURE;
+}
+
+static void
+_hal_pwr_byrate_para_free(struct rtw_phl_com_t *phl_com
+	, struct rtw_para_info_t *para_info, bool tmp_data_only)
+{
+	if (tmp_data_only)
+		return;
+
+	para_info->loaded = false;
 }
 
 static u32 phypg_combvalue_fromstring(		char *sz_line)
@@ -104,19 +163,25 @@ exit:
 	return combvalue;
 }
 
-static int
-_hal_parse_txpwr_by_rate(void *drv_priv, void *para_info_t, u8 *psrc_buf, u32 buflen)
+static void _hal_txpwr_by_rate_store_from_external_single(struct hal_info_t *hal_info
+	, struct hal_txpwr_byrate_t *data)
 {
-	struct rtw_para_info_t *para_info = (struct rtw_para_info_t *)para_info_t;
-	u32 *pdest_buf = para_info->para_data;
+	rtw_hal_rf_power_by_rate_store_to_array(hal_info,
+		data->band, data->nss, data->rs, data->vals);
+}
+
+static int
+_hal_parse_txpwr_by_rate(struct hal_info_t *hal_info, void *para_info_t, u8 *psrc_buf, u32 buflen)
+{
 	char	*sz_line, *ptmp;
-	u8	band = 0;
+	u8 band = 0, nss, rate_section;
 	u8 phy_reg_pg_version = 0;
 	u8 phy_reg_pg_value_type = 0;
 	u32 pwrhexval = 0;
 	u32 line_idx = 0;
 	u32 buf_idx = 0;
 	bool firstline = true;
+	struct hal_txpwr_byrate_t data;
 
 	ptmp = (char*)psrc_buf;
 	for (sz_line = hal_getLinefrombuffer(ptmp); sz_line != NULL; sz_line = hal_getLinefrombuffer(ptmp)) {
@@ -144,12 +209,16 @@ _hal_parse_txpwr_by_rate(void *drv_priv, void *para_info_t, u8 *psrc_buf, u32 bu
 				}
 			}
 			if (_os_strncmp(sz_line , "#[2.4G]#", 8) == 0) {
-					band = 0;
-					continue;
+				band = BAND_ON_24G;
+				continue;
 			}
 			if (_os_strncmp(sz_line , "#[5G]#", 6) == 0) {
-					band = 1;
-					continue;
+				band = BAND_ON_5G;
+				continue;
+			}
+			if (_os_strncmp(sz_line , "#[6G]#", 6) == 0) {
+				band = BAND_ON_6G;
+				continue;
 			}
 			if ((_os_strncmp(sz_line , "#[START]#", 9) == 0) || (_os_strncmp(sz_line , "#[END]#", 9) == 0) ) {
 					continue;
@@ -158,8 +227,7 @@ _hal_parse_txpwr_by_rate(void *drv_priv, void *para_info_t, u8 *psrc_buf, u32 bu
 				line_idx = 0;
 				pwrhexval = 0;
 
-				pdest_buf[buf_idx++] = band;
-				pdest_buf[buf_idx++] = PHYPG_RF1Tx;
+				nss = PHYPG_1SS;
 				line_idx += 6;
 				PHL_INFO("[Line]%s , line_idx %d \n", sz_line, line_idx);
 
@@ -168,61 +236,56 @@ _hal_parse_txpwr_by_rate(void *drv_priv, void *para_info_t, u8 *psrc_buf, u32 bu
 
 				sz_line += line_idx;
 				if (_os_strncmp(sz_line , "11M_1M", 6) == 0) {
-					pdest_buf[buf_idx++] = CCK_11M_1M;
+					rate_section = CCK_11M_1M;
 					sz_line += 6;
 					PHL_INFO("[Line]%s, line_idx %d \n", sz_line, line_idx);
 					pwrhexval = phypg_combvalue_fromstring(sz_line);
 					PHL_INFO("combine Value Get Pwr hex Val = %x\n", pwrhexval);
-					pdest_buf[buf_idx++] = pwrhexval;
 				} else if (_os_strncmp(sz_line , "18M_6M", 6) == 0) {
-					pdest_buf[buf_idx++] = OFDM_18M_6M;
+					rate_section = OFDM_18M_6M;
 					sz_line += 6;
 					PHL_INFO("[Line]%s, line_idx %d \n", sz_line, line_idx);
 					pwrhexval = phypg_combvalue_fromstring(sz_line);
 					PHL_INFO("combine Value Get Pwr hex Val = %x\n", pwrhexval);
-					pdest_buf[buf_idx++] = pwrhexval;
 				} else if (_os_strncmp(sz_line , "54M_24M", 7) == 0) {
-					pdest_buf[buf_idx++] = OFDM_54M_24M;
+					rate_section = OFDM_54M_24M;
 					sz_line += 7;
 					PHL_INFO("[Line]%s, line_idx %d \n", sz_line, line_idx);
 					pwrhexval = phypg_combvalue_fromstring(sz_line);
 					PHL_INFO("combine Value Get Pwr hex Val = %x\n", pwrhexval);
-					pdest_buf[buf_idx++] = pwrhexval;
 				} else if (_os_strncmp(sz_line , "MCS3_0", 6) == 0) {
-					pdest_buf[buf_idx++] = HE1SS_MCS3_0;
+					rate_section = HE1SS_MCS3_0;
 					sz_line += 6;
 					PHL_INFO("[Line]%s, line_idx %d \n", sz_line, line_idx);
 					pwrhexval = phypg_combvalue_fromstring(sz_line);
 					PHL_INFO("combine Value Get Pwr hex Val = %x\n", pwrhexval);
-					pdest_buf[buf_idx++] = pwrhexval;
 				} else if (_os_strncmp(sz_line , "MCS7_4", 6) == 0) {
-					pdest_buf[buf_idx++] = HE1SS_MCS7_4;
+					rate_section = HE1SS_MCS7_4;
 					sz_line += 6;
 					PHL_INFO("[Line]%s, line_idx %d \n", sz_line, line_idx);
 					pwrhexval = phypg_combvalue_fromstring(sz_line);
 					PHL_INFO("combine Value Get Pwr hex Val = %x\n", pwrhexval);
-					pdest_buf[buf_idx++] = pwrhexval;
 				} else if (_os_strncmp(sz_line , "MCS11_8", 6) == 0) {
-					pdest_buf[buf_idx++] = HE1SS_MCS11_8;
+					rate_section = HE1SS_MCS11_8;
 					sz_line += 7;
 					PHL_INFO("[Line]%s, line_idx %d \n", sz_line, line_idx);
 					pwrhexval = phypg_combvalue_fromstring(sz_line);
 					PHL_INFO("combine Value Get Pwr hex Val = %x\n", pwrhexval);
-					pdest_buf[buf_idx++] = pwrhexval;
 				} else if (_os_strncmp(sz_line , "DCM4_0", 6) == 0) {
-					pdest_buf[buf_idx++] = HE1SS_DCM4_0;
+					rate_section = HE1SS_DCM4_0;
 					sz_line += 6;
 					PHL_INFO("[Line]%s, line_idx %d \n", sz_line, line_idx);
 					pwrhexval = phypg_combvalue_fromstring(sz_line);
 					PHL_INFO("combine Value Get Pwr hex Val = %x\n", pwrhexval);
-					pdest_buf[buf_idx++] = pwrhexval;
+				} else {
+					PHL_ERR("nss:%u, invalid rate section:%s\n", nss, sz_line);
+					goto exit;
 				}
 			} else if (_os_strncmp(sz_line , "[Nss2]", 6) == 0) {
 				line_idx = 0;
 				pwrhexval = 0;
 
-				pdest_buf[buf_idx++] = band;
-				pdest_buf[buf_idx++] = PHYPG_RF2Tx;
+				nss = PHYPG_2SS;
 				PHL_INFO("[Line]%s , line_idx %d \n", sz_line, line_idx);
 
 				line_idx += 6;
@@ -231,40 +294,38 @@ _hal_parse_txpwr_by_rate(void *drv_priv, void *para_info_t, u8 *psrc_buf, u32 bu
 
 				sz_line += line_idx;
 				if (_os_strncmp(sz_line , "MCS3_0", 6) == 0) {
-					pdest_buf[buf_idx++] = HE2SS_MCS3_0;
+					rate_section = HE2SS_MCS3_0;
 					sz_line += 6;
 					PHL_INFO("[Line]%s, line_idx %d \n", sz_line, line_idx);
 					pwrhexval = phypg_combvalue_fromstring(sz_line);
 					PHL_INFO("combine Value Get Pwr hex Val = %x\n", pwrhexval);
-					pdest_buf[buf_idx++] = pwrhexval;
 				} else if (_os_strncmp(sz_line , "MCS7_4", 6) == 0) {
-					pdest_buf[buf_idx++] = HE2SS_MCS7_4;
+					rate_section = HE2SS_MCS7_4;
 					sz_line += 6;
 					PHL_INFO("[Line]%s, line_idx %d \n", sz_line, line_idx);
 					pwrhexval = phypg_combvalue_fromstring(sz_line);
 					PHL_INFO("combine Value Get Pwr hex Val = %x\n", pwrhexval);
-					pdest_buf[buf_idx++] = pwrhexval;
 				} else if (_os_strncmp(sz_line , "MCS11_8", 6) == 0) {
-					pdest_buf[buf_idx++] = HE2SS_MCS11_8;
+					rate_section = HE2SS_MCS11_8;
 					sz_line += 7;
 					PHL_INFO("[Line]%s, line_idx %d \n", sz_line, line_idx);
 					pwrhexval = phypg_combvalue_fromstring(sz_line);
 					PHL_INFO("combine Value Get Pwr hex Val = %x\n", pwrhexval);
-					pdest_buf[buf_idx++] = pwrhexval;
 				} else if (_os_strncmp(sz_line , "DCM4_0", 6) == 0) {
-					pdest_buf[buf_idx++] = HE2SS_DCM4_0;
+					rate_section = HE2SS_DCM4_0;
 					sz_line += 6;
 					PHL_INFO("[Line]%s, line_idx %d \n", sz_line, line_idx);
 					pwrhexval = phypg_combvalue_fromstring(sz_line);
 					PHL_INFO("combine Value Get Pwr hex Val = %x\n", pwrhexval);
-					pdest_buf[buf_idx++] = pwrhexval;
+				} else {
+					PHL_ERR("nss:%u, invalid rate section:%s\n", nss, sz_line);
+					goto exit;
 				}
 			} else if (_os_strncmp(sz_line , "[Offset]", 8) == 0) {
 				line_idx = 0;
 				pwrhexval = 0;
 
-				pdest_buf[buf_idx++] = band;
-				pdest_buf[buf_idx++] = PHYPG_OFFSET;
+				nss = PHYPG_OFFSET;
 				PHL_INFO("[Line]%s , line_idx %d \n", sz_line, line_idx);
 
 				line_idx += 8;
@@ -272,62 +333,71 @@ _hal_parse_txpwr_by_rate(void *drv_priv, void *para_info_t, u8 *psrc_buf, u32 bu
 					++line_idx;
 
 				sz_line += line_idx;
-				if (band == 0) {
-					if (_os_strncmp(sz_line , "AllRate1", 8) == 0) {
-						pdest_buf[buf_idx++] = Legacy_AllRate;
-						sz_line += 8;
+				if (band == BAND_ON_24G) {
+					if (_os_strncmp(sz_line , "AllRate2_1", 10) == 0) {
+						rate_section = Legacy_AllRate2_1;
+						sz_line += 10;
 						PHL_INFO("[Line]%s, line_idx %d \n", sz_line, line_idx);
 						pwrhexval = phypg_combvalue_fromstring(sz_line);
 						PHL_INFO("combine Value Get Pwr hex Val = %x\n", pwrhexval);
-						pdest_buf[buf_idx++] = pwrhexval;
-					}
-					else if (_os_strncmp(sz_line , "AllRate2", 8) == 0) {
-						pdest_buf[buf_idx++] = HE_AllRate;
-						sz_line += 8;
+					} else if (_os_strncmp(sz_line , "AllRate2_2", 10) == 0) {
+						rate_section = HE_AllRate2_2;
+						sz_line += 10;
 						PHL_INFO("[Line]%s, line_idx %d \n", sz_line, line_idx);
 						pwrhexval = phypg_combvalue_fromstring(sz_line);
 						PHL_INFO("combine Value Get Pwr hex Val = %x\n", pwrhexval);
-						pdest_buf[buf_idx++] = pwrhexval;
+					} else {
+						PHL_ERR("nss:%u, invalid rate section:%s\n", nss, sz_line);
+						goto exit;
 					}
+				} else if (band == BAND_ON_5G) {
+					if (_os_strncmp(sz_line , "AllRate5_1", 10) == 0) {
+						rate_section = OFDM_AllRate5_1; /* 5G band all rate only OFDM upper */
+						sz_line += 10;
+						PHL_INFO("[Line]%s, line_idx %d \n", sz_line, line_idx);
+						pwrhexval = phypg_combvalue_fromstring(sz_line);
+						PHL_INFO("combine Value Get Pwr hex Val = %x\n", pwrhexval);
+					} else {
+						PHL_ERR("nss:%u, invalid rate section:%s\n", nss, sz_line);
+						goto exit;
+					}
+				} else if (band == BAND_ON_6G) {
+					if (_os_strncmp(sz_line , "AllRate6_1", 10) == 0) {
+						rate_section = OFDM_AllRate6_1; /* 6G band all rate only OFDM upper */
+						sz_line += 10;
+						PHL_INFO("[Line]%s, line_idx %d \n", sz_line, line_idx);
+						pwrhexval = phypg_combvalue_fromstring(sz_line);
+						PHL_INFO("combine Value Get Pwr hex Val = %x\n", pwrhexval);
+					} else {
+						PHL_ERR("nss:%u, invalid rate section:%s\n", nss, sz_line);
+						goto exit;
+					}
+				} else {
+					PHL_ERR("nss:%u, invalid band:%u\n", nss, band);
+					goto exit;
 				}
-				if (band == 1) {
-					if (_os_strncmp(sz_line , "AllRate1", 8) == 0) {
-						pdest_buf[buf_idx++] = Legacy_AllRate; /* 5G band all rate only OFDM upper */
-						sz_line += 8;
-						PHL_INFO("[Line]%s, line_idx %d \n", sz_line, line_idx);
-						pwrhexval = phypg_combvalue_fromstring(sz_line);
-						PHL_INFO("combine Value Get Pwr hex Val = %x\n", pwrhexval);
-						pdest_buf[buf_idx++] = pwrhexval;
-					}
-				}
+			} else {
+				PHL_ERR("invalid nss:%s\n", sz_line);
+				goto exit;
 			}
+
+			data.band = band;
+			data.nss = nss;
+			data.rs = rate_section;
+			data.vals = pwrhexval;
+
+			_hal_txpwr_by_rate_store_from_external_single(hal_info, &data);
+			buf_idx++;
 		}
 	}
 	return buf_idx;
-exit:
-#if 0 /*dbg dump*/
-	{
-		u32 i = 0 ;
-		char *strbuf , *pextra;
-		strbuf = _os_mem_alloc(drv_priv, buf_idx  * sizeof(u32));
-		pextra = strbuf;
 
-		sprintf(strbuf, "\n");
-		pextra = strbuf + _os_strlen(strbuf);
-		for (i = 0; i <= buf_idx; i ++) {
-			pextra += sprintf(pextra, " %x \t", pdest_buf[i]);
-			if ( ((i+1)%4 == 0) && (i != 0))
-				pextra += sprintf(pextra, "\n");
-		}
-		printk( "%s \n" , strbuf);
-		_os_mem_free(drv_priv, strbuf, buf_idx  * sizeof(u32));
-	}
-#endif
+exit:
 	return 0;
 }
 
 static int
-_hal_parse_radio(void *drv_priv, void *para_info_t, u8 *psrc_buf, u32 buflen)
+_hal_parse_radio(struct hal_info_t *hal_info, void *para_info_t, u8 *psrc_buf, u32 buflen)
 {
 	struct rtw_para_info_t *para_info = (struct rtw_para_info_t *)para_info_t;
 	u32 *pdest_buf = para_info->para_data;
@@ -371,14 +441,62 @@ _hal_parse_radio(void *drv_priv, void *para_info_t, u8 *psrc_buf, u32 buflen)
 	return dest_buf_idx;
 }
 
+static char *
+hal_phy_get_ext_regd_name_pos(struct rtw_para_pwrlmt_info_t *para_info, u8 idx)
+{
+#ifdef PHL_DYNAMIC_ALLOC_EXT_REGD_NAME
+	if (para_info->band == BAND_ON_6G)
+		return (((struct ext_regd_6g *)(para_info->ext_regd_name)) + idx)->name;
+	else
+		return (((struct ext_regd *)(para_info->ext_regd_name)) + idx)->name;
+#else
+	return para_info->ext_regd_name[idx];
+#endif
+}
+
+static char *
+hal_phy_get_ext_regd_name(struct rtw_para_pwrlmt_info_t *para_info, u8 idx)
+{
+	if (idx > para_info->ext_regd_arridx)
+		return NULL;
+
+	return hal_phy_get_ext_regd_name_pos(para_info, idx);
+}
+
+static void
+hal_phy_set_ext_regd_name(struct rtw_para_pwrlmt_info_t *para_info, u8 idx,
+			const char *regd_name)
+{
+	char *pos;
+	u8 max_size = para_info->band == BAND_ON_6G ? regd_name_max_size_6g : regd_name_max_size;
+
+	if (idx >= max_size) {
+		_os_warn_on(1);
+		return;
+	}
+
+	pos = hal_phy_get_ext_regd_name_pos(para_info, idx);
+
+	if (regd_name) {
+		u8 max_len;
+
+		if (para_info->band == BAND_ON_6G)
+			max_len = regd_name_max_len_6g;
+		else 
+			max_len = regd_name_max_len;
+		_os_strncpy(pos, regd_name, max_len - 1);
+	} else
+		*pos = 0;
+}
+
 static int
 hal_phy_find_ext_regd_num(struct rtw_para_pwrlmt_info_t *para_info,
-			char *regd_name)
+			const char *regd_name)
 {
-	int i = 0;
+	u16 i = 0;
 
 	for (i = 0; i <= para_info->ext_regd_arridx ; i++) {
-		if (_os_strcmp(regd_name, para_info->ext_regd_name[i]) == 0) {
+		if (_os_strcmp(regd_name, hal_phy_get_ext_regd_name(para_info, (u8)i)) == 0) {
 			return i;
 		}
 	}
@@ -393,39 +511,24 @@ _hal_add_ext_reg_codemap(void *d,
 			const char *regd_name,
 			u32 		nlen)
 {
-	struct _hal_file_regd_ext *pregd_codemap;
-	struct _hal_file_regd_ext *ent;
+	struct pwrlmt_ext_regd_map *pregd_codemap;
+	struct pwrlmt_ext_regd_map *ent;
 
 	if (!regd_name || !nlen) {
 		PHL_ERR("regd_name || nlen Null\n");
 		goto exit;
 	}
 
-	pregd_codemap = (struct _hal_file_regd_ext *)para_info->ext_reg_codemap;
+	pregd_codemap = (struct pwrlmt_ext_regd_map *)para_info->ext_reg_codemap;
 	ent = &pregd_codemap[para_info->ext_reg_map_num];
 
-	if (regd_name && _os_strlen((u8*)regd_name) < 10) {
-
-		if (hal_phy_find_ext_regd_num(para_info, (char *)regd_name) == -1) {
-			u8 idx = (u8)(para_info->ext_regd_arridx + 1);
-
-			if (idx < regd_name_max_size) {
-				_os_strcpy(para_info->ext_regd_name[idx], regd_name);
-				para_info->ext_regd_arridx++;
-				PHL_INFO("extrea reg [%d] = [%s]\n",
-					idx, para_info->ext_regd_name[idx]);
-			} else {
-				PHL_ERR("extrea reg [%d] over size\n", idx);
-				goto exit;
-			}
-		}
-
-		_os_mem_cpy(d, ent->reg_name, (void*)regd_name, nlen);
-		PHL_INFO("store reg_name = [%s]\n", ent->reg_name);
-	} else {
+	if (!regd_name || _os_strlen((u8*)regd_name) >= regd_name_max_len) {
 		PHL_ERR("reg_name = [%s]\n", ent->reg_name);
 		goto exit;
 	}
+
+	_os_mem_cpy(d, ent->reg_name, (void*)regd_name, nlen);
+	PHL_INFO("store reg_name = [%s]\n", ent->reg_name);
 
 	if (domain != 0)
 		ent->domain = domain;
@@ -490,7 +593,7 @@ parse_reg_exc_config(void *drv_priv,
 
 		/* check if all hex */
 		for (j = i_val_s; j < i_val_e; j++)
-			if (hal_ishexdigit(sz_line[j]) == false)
+			if (_is_hexdigit(sz_line[j]) == false)
 				return false;
 
 		/* get value from hex string */
@@ -514,7 +617,7 @@ parse_reg_exc_config(void *drv_priv,
 
 		/* check if all alpha */
 		for (j = i_val_s; j < i_val_e; j++)
-			if (hal_is_alpha(sz_line[j]) == false)
+			if (_is_alpha(sz_line[j]) == false)
 				return false;
 
 		country = sz_line + i_val_s;
@@ -553,8 +656,126 @@ parse_reg_exc_config(void *drv_priv,
 	return true;
 }
 
-static void hal_phy_store_tx_power_limit		(void *drv_priv,
-		u8				*sregulation,
+static enum rtw_hal_status
+_hal_pwrlmt_para_alloc(struct rtw_phl_com_t *phl_com, void *para_info_t)
+{
+	struct rtw_para_pwrlmt_info_t *para_info = para_info_t;
+
+	if (para_info->para_src == RTW_PARA_SRC_EXTNAL) {
+		u32 buf_sz = MAX_NUM_PWRLMT_EXT_REGD_MAP *
+			sizeof(struct pwrlmt_ext_regd_map);
+		void *drv = phlcom_to_drvpriv(phl_com);
+		u8 para_regd_str_arridx;
+		enum band_type band = para_info->band;
+		const char * const *_para_regd_str =
+			rtw_hal_rf_get_predef_pw_lmt_regu_type_str_array(
+				band, &para_regd_str_arridx);
+		u8 i = 0;
+
+		if(_para_regd_str == NULL)
+			return RTW_HAL_STATUS_FAILURE;
+
+#ifdef PHL_DYNAMIC_ALLOC_EXT_REGD_NAME
+		if (!para_info->ext_regd_name) {
+			if (band == BAND_ON_6G) {
+				para_info->ext_regd_name_size = sizeof(struct ext_regd_6g) * regd_name_max_size_6g;
+			} else {
+				para_info->ext_regd_name_size = sizeof(struct ext_regd) * regd_name_max_size;
+			}
+
+			para_info->ext_regd_name = _os_mem_alloc(drv, para_info->ext_regd_name_size);
+		}
+
+		if (!para_info->ext_regd_name) {
+			para_info->ext_regd_name_size = 0;
+			PHL_TRACE(COMP_PHL_DBG, _PHL_ERR_,
+				"%s::ext_regd_name allocmem fail\n",__FUNCTION__);
+			return RTW_HAL_STATUS_FAILURE;
+		}
+#endif
+
+		if (!para_info->ext_reg_codemap)
+			para_info->ext_reg_codemap = _os_mem_alloc(drv, buf_sz);
+		if (!para_info->ext_reg_codemap) {
+#ifdef PHL_DYNAMIC_ALLOC_EXT_REGD_NAME
+			_os_mem_free(drv, para_info->ext_regd_name, para_info->ext_regd_name_size);
+			para_info->ext_regd_name = NULL;
+			para_info->ext_regd_name_size = 0;
+#endif
+			PHL_TRACE(COMP_PHL_DBG, _PHL_ERR_,
+				"%s::ext_reg_codemap allocmem fail\n",__FUNCTION__);
+			return RTW_HAL_STATUS_FAILURE;
+		}
+
+		para_info->ext_regd_arridx = 0;
+		for (i = 0; i < para_regd_str_arridx ; i++) {
+			hal_phy_set_ext_regd_name(para_info, i, _para_regd_str[i]);
+			para_info->ext_regd_arridx++;
+			PHL_INFO(" prepare ext_regd_name[%d] = %s\n",
+				i , hal_phy_get_ext_regd_name(para_info, i));
+		}
+		para_info->ext_regd_arridx--; /* array idx = number - 1 */
+
+		return RTW_HAL_STATUS_SUCCESS;
+	} else
+		return RTW_HAL_STATUS_FAILURE;
+}
+
+static void
+_hal_pwrlmt_para_free(struct rtw_phl_com_t *phl_com
+	, struct rtw_para_pwrlmt_info_t *para_info, bool tmp_data_only)
+{
+	u32 buf_sz = MAX_NUM_PWRLMT_EXT_REGD_MAP * sizeof(struct pwrlmt_ext_regd_map);
+	void *drv = phlcom_to_drvpriv(phl_com);
+
+	if (tmp_data_only)
+		return;
+
+	para_info->loaded = false;
+
+#ifdef PHL_DYNAMIC_ALLOC_EXT_REGD_NAME
+	if (para_info->ext_regd_name)
+		_os_mem_free(drv, para_info->ext_regd_name, para_info->ext_regd_name_size);
+	para_info->ext_regd_name = NULL;
+	para_info->ext_regd_name_size = 0;
+#endif
+	para_info->ext_regd_arridx = 0;
+
+	if (para_info->ext_reg_codemap)
+		_os_mem_free(drv, para_info->ext_reg_codemap, buf_sz);
+	para_info->ext_reg_codemap = NULL;
+	para_info->ext_reg_map_num = 0;
+}
+
+static void _hal_txpwr_lmt_store_from_external_single(struct hal_info_t *hal_info
+	, struct hal_txpwr_lmt_t *data)
+{
+	rtw_hal_rf_set_pw_lmt_regu_table_exist(hal_info,
+		data->band, data->reg);
+
+	rtw_hal_rf_power_limit_shape_store_to_array(hal_info,
+		data->reg, data->band, data->bw, data->rs,
+		data->ntx, data->bf, data->tx_shap_idx);
+
+	rtw_hal_rf_power_limit_store_to_array(hal_info,
+		data->reg, data->band, data->bw, data->rs,
+		data->ntx, data->bf, data->ch, data->val);
+}
+
+static void _hal_txpwr_lmt_ru_store_from_external_single(struct hal_info_t *hal_info
+	, struct hal_txpwr_lmt_ru_t *data)
+{
+	rtw_hal_rf_power_limit_ru_shape_store_to_array(hal_info,
+		data->band, data->rubw, data->ntx, data->rs,
+		data->reg, data->tx_shap_idx);
+
+	rtw_hal_rf_power_limit_ru_store_to_array(hal_info,
+		data->band, data->rubw, data->ntx, data->rs,
+		data->reg, data->ch, data->val);
+}
+
+static void hal_phy_store_tx_power_limit(struct hal_info_t *hal_info,
+		u8				reg_idx,
 		u8				*sband,
 		u8				*sbandwidth,
 		u8				*sratesection,
@@ -562,126 +783,131 @@ static void hal_phy_store_tx_power_limit		(void *drv_priv,
 		u8				*sntx,
 		u8				*schannel,
 		u8				*spwrlimit,
-		u8				*spshape_idx,
-		void *pstc_txpwr_lmt,
-		struct rtw_para_pwrlmt_info_t *para_info)
+		u8				*spshape_idx)
 {
-	u8 band = 0, bandwidth = 0, ratesec = 0, channel = 0;
-	u8 ntx_idx = 0 , bf = 0 , pshape_idx = 0;
-	int regulation = -1;
-	s8 powerlimit = 0;
+	struct hal_txpwr_lmt_t data = {0};
 
-	struct hal_txpwr_lmt_t *array_tc_8852a_txpwr_lmt = (struct hal_txpwr_lmt_t *)pstc_txpwr_lmt;
-
-	if (hal_get_u1bint_fromstr_indec((char *)schannel, &channel) == false
-		|| hal_get_s1bint_fromstr_indec((char *)spwrlimit, &powerlimit) == false) {
+	if (hal_get_u1bint_fromstr_indec((char *)schannel, &data.ch) == false
+		|| hal_get_s1bint_fromstr_indec((char *)spwrlimit, &data.val) == false) {
 		PHL_INFO("Illegal index of power limit table [ch %s][val %s]\n",
 			 (char *)schannel, (char *)spwrlimit);
 		return;
 	}
 
 	if (spshape_idx != NULL) {
-		if (hal_get_u1bint_fromstr_indec((char *)spshape_idx, &pshape_idx) == false) {
+		if (hal_get_u1bint_fromstr_indec((char *)spshape_idx, &data.tx_shap_idx) == false) {
 			PHL_INFO("Illegal index of pshape idx [val %s]\n", (char *)spshape_idx);
 			return;
 		}
 	}
 
 	if (_os_strncmp((char *)sratesection, (const char *)"CCK", 3) == 0)
-		ratesec = _PW_LMT_RS_CCK;
+		data.rs = _PW_LMT_RS_CCK;
 	else if (_os_strncmp((char *)sratesection, (const char *)"OFDM", 4) == 0)
-		ratesec = _PW_LMT_RS_OFDM;
+		data.rs = _PW_LMT_RS_OFDM;
 	else if (_os_strncmp((char *)sratesection, (const char *)"HT", 2) == 0)
-		ratesec = _PW_LMT_RS_HT;
+		data.rs = _PW_LMT_RS_HT;
 	else if (_os_strncmp((char *)sratesection, (const char *)"VHT", 3) == 0)
-		ratesec = _PW_LMT_RS_VHT;
+		data.rs = _PW_LMT_RS_VHT;
 	else if (_os_strncmp((char *)sratesection, (const char *)"HE", 2) == 0)
-		ratesec = _PW_LMT_RS_HE;
+		data.rs = _PW_LMT_RS_HE;
 	else {
 		PHL_INFO("Wrong rate section:%s\n", (char *)sratesection);
 		return;
 	}
 
 	if (_os_strncmp((char *)sntx, (const char *)"1T", 2) == 0)
-		ntx_idx = _PW_LMT_PH_1T;
+		data.ntx = _PW_LMT_PH_1T;
 	else if (_os_strncmp((char *)sntx, (const char *)"2T", 2) == 0)
-		ntx_idx = _PW_LMT_PH_2T;
+		data.ntx = _PW_LMT_PH_2T;
 	else if (_os_strncmp((char *)sntx, (const char *)"3T", 2) == 0)
-		ntx_idx = _PW_LMT_PH_3T;
+		data.ntx = _PW_LMT_PH_3T;
 	else if (_os_strncmp((char *)sntx, (const char *)"4T", 2) == 0)
-		ntx_idx = _PW_LMT_PH_4T;
+		data.ntx = _PW_LMT_PH_4T;
 	else {
 		PHL_INFO("Wrong tx num:%s\n", (char *)sntx);
 		return;
 	}
 
 	if (_os_strncmp((char *)sbandwidth, (const char *)"20M", 3) == 0)
-		bandwidth = _PW_LMT_BW_20M;
+		data.bw = _PW_LMT_BW_20M;
 	else if (_os_strncmp((char *)sbandwidth, (const char *)"40M", 3) == 0)
-		bandwidth = _PW_LMT_BW_40M;
+		data.bw = _PW_LMT_BW_40M;
 	else if (_os_strncmp((char *)sbandwidth, (const char *)"80M", 3) == 0)
-		bandwidth = _PW_LMT_BW_80M;
+		data.bw = _PW_LMT_BW_80M;
 	else if (_os_strncmp((char *)sbandwidth, (const char *)"160M", 4) == 0)
-		bandwidth = _PW_LMT_BW_160M;
+		data.bw = _PW_LMT_BW_160M;
 	else {
 		PHL_INFO("unknown bandwidth: %s\n", (char *)sbandwidth);
 		return;
 	}
 
 	if (_os_strncmp((char *)sband, (const char *)"2.4G", 4) == 0)
-		band = _PW_LMT_BAND_2_4G;
+		data.band = _PW_LMT_BAND_2_4G;
 	else if (_os_strncmp((char *)sband, (const char *)"5G", 2) == 0)
-		band = _PW_LMT_BAND_5G;
+		data.band = _PW_LMT_BAND_5G;
+	else if (_os_strncmp((char *)sband, (const char *)"6G", 2) == 0)
+		data.band = _PW_LMT_BAND_6G;
 	else {
 		PHL_INFO("unknown band: %s\n", (char *)sband);
 		return;
 	}
 
 	if (_os_strncmp((char *)sbf, (const char *)"Non-BF", 6) == 0 || _os_strncmp((char *)sbf, (const char *)"NA", 2) == 0)
-		bf = _PW_LMT_NONBF;
+		data.bf = _PW_LMT_NONBF;
 	else if (_os_strncmp((char *)sbf, (const char *)"BF", 2) == 0)
-		bf = _PW_LMT_BF;
+		data.bf = _PW_LMT_BF;
 	else {
 		PHL_INFO("unknown BF: %s\n", (char *)sbf);
 		return;
 	}
 
-	regulation = rtw_hal_rf_get_predefined_pw_lmt_regu_type_from_str((char *)sregulation);
-	if (regulation == -1) {
-		int regd_num = hal_phy_find_ext_regd_num(para_info, (char *)sregulation);
+	data.reg = reg_idx;
 
-		if (regd_num != -1) {
-			regulation = (u8)regd_num;
-			PHL_INFO("new regulation num: %d\n", regulation);
-		} else {
-		PHL_INFO("unknown regulation: %s\n", (char *)sregulation);
-		return;
-	}
-	}
+	_hal_txpwr_lmt_store_from_external_single(hal_info, &data);
 
-	array_tc_8852a_txpwr_lmt->band = band;
-	array_tc_8852a_txpwr_lmt->bw = bandwidth;
-	array_tc_8852a_txpwr_lmt->ch = channel;
-	array_tc_8852a_txpwr_lmt->rs = ratesec;
-	array_tc_8852a_txpwr_lmt->ntx = ntx_idx;
-	array_tc_8852a_txpwr_lmt->bf = bf;
-	array_tc_8852a_txpwr_lmt->val = powerlimit;
-	array_tc_8852a_txpwr_lmt->reg = (u8)regulation;
-	array_tc_8852a_txpwr_lmt->tx_shap_idx = pshape_idx;
-
-	PHL_DBG("Store of power limit table [regulation %d][band %d][bw %d]"\
+	PHL_INFO("Store of power limit table [regulation %d][band %d][bw %d]"
 		"[rate section %d][ntx %d][BF %d][chnl %d][val %d] [sphape_idx %d]\n",
-		array_tc_8852a_txpwr_lmt->reg, array_tc_8852a_txpwr_lmt->band,
-		array_tc_8852a_txpwr_lmt->bw , array_tc_8852a_txpwr_lmt->rs,
-		array_tc_8852a_txpwr_lmt->ntx, array_tc_8852a_txpwr_lmt->bf,
-		array_tc_8852a_txpwr_lmt->ch, array_tc_8852a_txpwr_lmt->val,
-		array_tc_8852a_txpwr_lmt->tx_shap_idx);
-
+		data.reg, data.band, data.bw , data.rs, data.ntx, data.bf,
+		data.ch, data.val, data.tx_shap_idx);
 }
 
+static int
+_hal_get_ext_regd_name_idx(void *d,
+	struct rtw_para_pwrlmt_info_t *para_info, const char *regd_name)
+{
+	int idx;
+
+	idx = rtw_hal_rf_get_predef_pw_lmt_regu_type_from_str(para_info->band, regd_name);
+	if (idx != -1)
+		return idx;
+
+	idx = hal_phy_find_ext_regd_num(para_info, regd_name);
+	if (idx == -1) {
+		u8 max_size;
+
+		idx = para_info->ext_regd_arridx + 1;
+		if (para_info->band == BAND_ON_6G)
+			max_size = regd_name_max_size_6g;
+		else
+			max_size = regd_name_max_size;
+
+		if (idx >= max_size) {
+			PHL_ERR("extra reg [%d] over size\n", idx);
+			return -1;
+		}
+
+		hal_phy_set_ext_regd_name(para_info, (u8)idx, regd_name);
+		para_info->ext_regd_arridx++;
+		PHL_INFO("extra reg [%d] = [%s]\n",
+			idx, hal_phy_get_ext_regd_name(para_info, (u8)idx));
+	}
+
+	return idx;
+}
 
 static int
-_hal_parse_txpwrlmt(void *drv_priv, void *para_info_t, u8 *psrc_buf, u32 buflen)
+_hal_parse_txpwrlmt(struct hal_info_t *hal_info, void *para_info_t, u8 *psrc_buf, u32 buflen)
 {
 #define LD_STAGE_EXC_MAPPING	0
 #define LD_STAGE_TAB_DEFINE		1
@@ -692,8 +918,9 @@ _hal_parse_txpwrlmt(void *drv_priv, void *para_info_t, u8 *psrc_buf, u32 buflen)
 #define LD_STAGE_PSHAPE_NUM		6
 
 	struct rtw_para_pwrlmt_info_t *para_info = (struct rtw_para_pwrlmt_info_t *)para_info_t;
-	u32 *pdest_buf = para_info->para_data;
+	void *drv_priv;
 	char **regulation = NULL;
+	int *reg_idx = NULL;
 	char **pshape = NULL;
 	char	*sz_line = NULL, *ptmp = NULL;
 	char band[10], bandwidth[10], ratesection[10], ntx[10], colnumbuf[10], bf_type[10];
@@ -701,14 +928,20 @@ _hal_parse_txpwrlmt(void *drv_priv, void *para_info_t, u8 *psrc_buf, u32 buflen)
 	u8	loadingstage = LD_STAGE_EXC_MAPPING;
 	u32 struct_idx = 0;
 	u32	i = 0, forcnt = 0;
-	PHAL_TXPWR_LMT_T array_tc_8852a_txpwr_lmt;
+	u8 dbm_to_txgi;
+	s8 ww_value, na_value;
 
-	if (pdest_buf == NULL || psrc_buf == NULL) {
+	if (psrc_buf == NULL) {
 		PHL_INFO("%s, fail !!! NULL buf !!!\n", __func__);
 		return 0;
 	}
 
-	array_tc_8852a_txpwr_lmt = (PHAL_TXPWR_LMT_T)pdest_buf;
+	drv_priv = hal_to_drvpriv(hal_info);
+	dbm_to_txgi = rtw_hal_get_tx_tbl_to_tx_pwr_times(hal_info);
+	ww_value = rtw_hal_get_power_limit_value_ww(hal_info);
+	na_value = rtw_hal_get_power_limit_value_na(hal_info);
+
+	para_info->ext_reg_map_num = 0;
 
 	ptmp = (char *)psrc_buf;
 	for (sz_line = hal_getLinefrombuffer(ptmp); sz_line != NULL; sz_line = hal_getLinefrombuffer(ptmp)) {
@@ -827,6 +1060,12 @@ line_start:
 				struct_idx = 0;
 				goto exit;
 			}
+			reg_idx = _os_mem_alloc(drv_priv, sizeof(*reg_idx) * colnum);
+			if (!reg_idx) {
+				PHL_ERR("reg_idx alloc fail\n");
+				struct_idx = 0;
+				goto exit;
+			}
 			pshape = (char **)_os_mem_alloc(drv_priv, sizeof(char *) * colnum);
 			if (!pshape) {
 				PHL_ERR("Regulation alloc fail\n");
@@ -861,6 +1100,9 @@ line_start:
 
 				_os_mem_cpy(drv_priv, regulation[forcnt], sz_line + i_ns, i - i_ns);
 				regulation[forcnt][i - i_ns] = '\0';
+
+				reg_idx[forcnt] = _hal_get_ext_regd_name_idx(drv_priv
+					, para_info, regulation[forcnt]);
 			}
 
 			if (1) {
@@ -900,6 +1142,7 @@ line_start:
 				pshape[forcnt] = (char *)_os_mem_alloc(drv_priv, i - i_ns + 1);
 				if (!pshape[forcnt]) {
 					PHL_ERR("Regulation alloc fail, pshape [%d]\n", forcnt);
+					struct_idx = 0;
 					goto exit;
 				}
 				PHL_INFO("2.pshape [%d] = %s\n", forcnt, pshape[forcnt]);
@@ -940,6 +1183,11 @@ line_start:
 						}
 						_os_mem_free(drv_priv, (u8 *)regulation, sizeof(char *) * colnum);
 						regulation = NULL;
+					}
+					if (reg_idx) {
+						_os_mem_free(drv_priv, reg_idx
+							, sizeof(*reg_idx) * colnum);
+						reg_idx = NULL;
 					}
 					if (pshape) {
 						for (forcnt = 0; forcnt < colnum; ++forcnt) {
@@ -992,7 +1240,6 @@ line_start:
 					* case "WW" assign special ww value
 					* means to get minimal limit in other regulations at same channel
 					*/
-					s8 ww_value = -63;
 					_os_snprintf(powerlimit, 10, "%d", ww_value);
 					i += 2;
 
@@ -1001,7 +1248,7 @@ line_start:
 					* case "NA" assign max txgi value
 					* means no limitation
 					*/
-					_os_snprintf(powerlimit, 10, "%d", 63);
+					_os_snprintf(powerlimit, 10, "%d", na_value);
 					i += 2;
 
 				} else if ((sz_line[i] >= '0' && sz_line[i] <= '9') || sz_line[i] == '.'
@@ -1026,7 +1273,7 @@ line_start:
 					}
 
 					/* transform to string of value in unit of txgi */
-					lmt = (integer * 4) + ((u16)fraction * 4 / 100);
+					lmt = (integer * dbm_to_txgi) + ((u16)fraction * dbm_to_txgi / 100);
 					if (negative)
 						lmt = -lmt;
 					_os_snprintf(powerlimit, 10, "%d", lmt);
@@ -1038,18 +1285,29 @@ line_start:
 						goto exit;
 					}
 
+					if (reg_idx[forcnt] < 0)
+						continue;
+
 					/* store the power limit value */
-					hal_phy_store_tx_power_limit(drv_priv, (u8 *)regulation[forcnt],
+					hal_phy_store_tx_power_limit(hal_info, (u8)reg_idx[forcnt],
 						(u8 *)band, (u8 *)bandwidth, (u8 *)ratesection,
 						(u8 *)bf_type, (u8 *)ntx, (u8 *)channel,
-						(u8 *)powerlimit, (u8 *)pshape[forcnt],
-						(void*)&array_tc_8852a_txpwr_lmt[struct_idx], para_info);
+						(u8 *)powerlimit, (u8 *)pshape[forcnt]);
 
 					struct_idx++;
 					}
 				}
 	}
+
 exit:
+	if (struct_idx == 0) {
+		/* clear corresponding table */
+		u8 band_bmp = para_info->band == BAND_ON_24G ? BAND_CAP_2G | BAND_CAP_5G : BAND_CAP_6G;
+
+		rtw_hal_rf_clear_limit_table(hal_info, band_bmp, PWR_LIMIT);
+		_hal_pwrlmt_para_free(hal_info->phl_com, para_info, false);
+	}
+
 	if (regulation) {
 		for (forcnt = 0; forcnt < colnum; ++forcnt) {
 			if (regulation[forcnt]) {
@@ -1061,6 +1319,10 @@ exit:
 		}
 		_os_mem_free(drv_priv, (u8 *)regulation, sizeof(char *) * colnum);
 		regulation = NULL;
+	}
+	if (reg_idx) {
+		_os_mem_free(drv_priv, reg_idx, sizeof(*reg_idx) * colnum);
+		reg_idx = NULL;
 	}
 	if (pshape) {
 		for (forcnt = 0; forcnt < colnum; ++forcnt) {
@@ -1078,114 +1340,86 @@ exit:
 	return struct_idx;
 }
 
-
-static void hal_phy_store_tx_power_limit_ru		(void *drv_priv,
-		u8				*sregulation,
+static void hal_phy_store_tx_power_limit_ru(struct hal_info_t *hal_info,
+		u8				reg_idx,
 		u8				*sband,
 		u8				*sbandwidth,
 		u8				*sratesection,
 		u8				*sntx,
 		u8				*schannel,
 		u8				*spwrlimit,
-		u8				*spshape_idx,
-		void *pstc_txpwr_lmt_ru,
-		struct rtw_para_pwrlmt_info_t *para_info)
+		u8				*spshape_idx)
 {
-	u8 band = 0, bandwidth = 0, ratesec = 0, channel = 0;
-	u8 ntx_idx = 0 , pshape_idx = 0;
-	int regulation = -1;
-	s8 powerlimit = 0;
+	struct hal_txpwr_lmt_ru_t data = {0};
 
-	struct hal_txpwr_lmt_ru_t *array_tc_8852a_txpwr_lmt_ru = (struct hal_txpwr_lmt_ru_t *)pstc_txpwr_lmt_ru;
-
-	if (hal_get_u1bint_fromstr_indec((char *)schannel, &channel) == false
-		|| hal_get_s1bint_fromstr_indec((char *)spwrlimit, &powerlimit) == false) {
+	if (hal_get_u1bint_fromstr_indec((char *)schannel, &data.ch) == false
+		|| hal_get_s1bint_fromstr_indec((char *)spwrlimit, &data.val) == false) {
 		PHL_INFO("Illegal index of power limit table [ch %s][val %s]\n",
 			 (char *)schannel, (char *)spwrlimit);
 		return;
 	}
 
 	if (spshape_idx != NULL) {
-		if (hal_get_u1bint_fromstr_indec((char *)spshape_idx, &pshape_idx) == false) {
+		if (hal_get_u1bint_fromstr_indec((char *)spshape_idx, &data.tx_shap_idx) == false) {
 			PHL_INFO("Illegal index of pshape idx [val %s]\n", (char *)spshape_idx);
 			return;
 		}
 	}
 
 	if (_os_strncmp((char *)sband, (const char *)"2.4G", 4) == 0)
-		band = _PW_LMT_BAND_2_4G;
+		data.band = _PW_LMT_BAND_2_4G;
 	else if (_os_strncmp((char *)sband, (const char *)"5G", 2) == 0)
-		band = _PW_LMT_BAND_5G;
+		data.band = _PW_LMT_BAND_5G;
+	else if (_os_strncmp((char *)sband, (const char *)"6G", 2) == 0)
+		data.band = _PW_LMT_BAND_6G;
 	else {
 		PHL_INFO("unknown band: %s\n", (char *)sband);
 		return;
 	}
 
 	if (_os_strncmp((char *)sbandwidth, (const char *)"RU26", 4) == 0)
-		bandwidth = _PW_LMT_RU_BW_RU26;
+		data.rubw = _PW_LMT_RU_BW_RU26;
 	else if (_os_strncmp((char *)sbandwidth, (const char *)"RU52", 4) == 0)
-		bandwidth = _PW_LMT_RU_BW_RU52;
+		data.rubw = _PW_LMT_RU_BW_RU52;
 	else if (_os_strncmp((char *)sbandwidth, (const char *)"RU106", 5) == 0)
-		bandwidth = _PW_LMT_RU_BW_RU106;
+		data.rubw = _PW_LMT_RU_BW_RU106;
 	else {
 		PHL_INFO("unknown RU bandwidth: %s\n", (char *)sbandwidth);
 		return;
 	}
 
 	if (_os_strncmp((char *)sntx, (const char *)"1T", 2) == 0)
-		ntx_idx = _PW_LMT_PH_1T;
+		data.ntx = _PW_LMT_PH_1T;
 	else if (_os_strncmp((char *)sntx, (const char *)"2T", 2) == 0)
-		ntx_idx = _PW_LMT_PH_2T;
+		data.ntx = _PW_LMT_PH_2T;
 	else if (_os_strncmp((char *)sntx, (const char *)"3T", 2) == 0)
-		ntx_idx = _PW_LMT_PH_3T;
+		data.ntx = _PW_LMT_PH_3T;
 	else if (_os_strncmp((char *)sntx, (const char *)"4T", 2) == 0)
-		ntx_idx = _PW_LMT_PH_4T;
+		data.ntx = _PW_LMT_PH_4T;
 	else {
 		PHL_INFO("Wrong tx num:%s\n", (char *)sntx);
 		return;
 	}
 
 	if (_os_strncmp((char *)sratesection, (const char *)"HE", 2) == 0)
-		ratesec = _PW_LMT_RS_HE;
+		data.rs = _PW_LMT_RS_HE;
 	else {
 		PHL_INFO("Wrong RU rate section:%s\n", (char *)sratesection);
 		return;
 	}
 
-	regulation = rtw_hal_rf_get_predefined_pw_lmt_regu_type_from_str((char *)sregulation);
-	if (regulation == -1) {
-		int regd_num = hal_phy_find_ext_regd_num(para_info, (char *)sregulation);
+	data.reg = reg_idx;
 
-		if (regd_num != -1) {
-			regulation = (u8)regd_num;
-			PHL_INFO("new regulation num: %d\n", regulation);
-		} else {
-		PHL_INFO("unknown regulation: %s\n", (char *)sregulation);
-		return;
-	}
+	_hal_txpwr_lmt_ru_store_from_external_single(hal_info, &data);
 
-	}
-
-	array_tc_8852a_txpwr_lmt_ru->band = band;
-	array_tc_8852a_txpwr_lmt_ru->rubw = bandwidth;
-	array_tc_8852a_txpwr_lmt_ru->ntx = ntx_idx;
-	array_tc_8852a_txpwr_lmt_ru->rs = ratesec;
-	array_tc_8852a_txpwr_lmt_ru->reg = (u8)regulation;
-	array_tc_8852a_txpwr_lmt_ru->ch = channel;
-	array_tc_8852a_txpwr_lmt_ru->val = powerlimit;
-	array_tc_8852a_txpwr_lmt_ru->tx_shap_idx = pshape_idx;
-
-	PHL_INFO("Store of power limit RU table [band %d][bw %d][ntx %d]"\
-			"[rate section %d][regulation %d][chnl %d][val %d]  [sphape_idx %d]\n",
-		array_tc_8852a_txpwr_lmt_ru->band , array_tc_8852a_txpwr_lmt_ru->rubw,
-		array_tc_8852a_txpwr_lmt_ru->ntx, array_tc_8852a_txpwr_lmt_ru->rs,
-		array_tc_8852a_txpwr_lmt_ru->reg, array_tc_8852a_txpwr_lmt_ru->ch,
-		array_tc_8852a_txpwr_lmt_ru->val, array_tc_8852a_txpwr_lmt_ru->tx_shap_idx);
+	PHL_INFO("Store of power limit RU table [band %d][bw %d][ntx %d]"
+		"[rate section %d][regulation %d][chnl %d][val %d]  [sphape_idx %d]\n",
+		data.band, data.rubw, data.ntx, data.rs,
+		data.reg, data.ch, data.val, data.tx_shap_idx);
 }
 
-
 static int
-_hal_parse_txpwrlmt_ru(void *drv_priv, void *para_info_t, u8 *psrc_buf, u32 buflen)
+_hal_parse_txpwrlmt_ru(struct hal_info_t *hal_info, void *para_info_t, u8 *psrc_buf, u32 buflen)
 {
 #define LD_STAGE_EXC_MAPPING	0
 #define LD_STAGE_TAB_DEFINE		1
@@ -1196,8 +1430,9 @@ _hal_parse_txpwrlmt_ru(void *drv_priv, void *para_info_t, u8 *psrc_buf, u32 bufl
 #define LD_STAGE_PSHAPE_NUM		6
 
 	struct rtw_para_pwrlmt_info_t *para_info = (struct rtw_para_pwrlmt_info_t *)para_info_t;
-	u32 *pdest_buf = para_info->para_data;
+	void *drv_priv;
 	char **regulation = NULL;
+	int *reg_idx = NULL;
 	char **pshape = NULL;
 	char	*sz_line = NULL, *ptmp = NULL;
 	char band[10], bandwidth[10], ratesection[10], ntx[10], col_num_buf[10];
@@ -1205,14 +1440,20 @@ _hal_parse_txpwrlmt_ru(void *drv_priv, void *para_info_t, u8 *psrc_buf, u32 bufl
 	u8	loadingstage = LD_STAGE_EXC_MAPPING;
 	u32 struct_idx = 0;
 	u32	i = 0, for_cnt = 0;
-	pHal_Txpwr_lmt_Ru_t array_tc_txpwr_lmt_ru;
+	u8 dbm_to_txgi;
+	s8 ww_value, na_value;
 
-	if (pdest_buf == NULL || psrc_buf == NULL) {
+	if (psrc_buf == NULL) {
 		PHL_INFO("%s, fail !!! NULL buf !!!\n", __func__);
 		return 0;
 	}
 
-	array_tc_txpwr_lmt_ru = (pHal_Txpwr_lmt_Ru_t)pdest_buf;
+	drv_priv = hal_to_drvpriv(hal_info);
+	dbm_to_txgi = rtw_hal_get_tx_tbl_to_tx_pwr_times(hal_info);
+	ww_value = rtw_hal_get_power_limit_value_ww(hal_info);
+	na_value = rtw_hal_get_power_limit_value_na(hal_info);
+
+	para_info->ext_reg_map_num = 0;
 
 	ptmp = (char *)psrc_buf;
 	for (sz_line = hal_getLinefrombuffer(ptmp); sz_line != NULL; sz_line = hal_getLinefrombuffer(ptmp)) {
@@ -1325,6 +1566,12 @@ line_start:
 				struct_idx = 0;
 				goto exit;
 			}
+			reg_idx = _os_mem_alloc(drv_priv, sizeof(*reg_idx) * col_num);
+			if (!reg_idx) {
+				PHL_ERR("reg_idx alloc fail\n");
+				struct_idx = 0;
+				goto exit;
+			}
 			pshape = (char **)_os_mem_alloc(drv_priv, sizeof(char *) * col_num);
 			if (!pshape) {
 				PHL_ERR("Regulation alloc fail\n");
@@ -1359,6 +1606,9 @@ line_start:
 
 				_os_mem_cpy(drv_priv, regulation[for_cnt], sz_line + i_ns, i - i_ns);
 				regulation[for_cnt][i - i_ns] = '\0';
+
+				reg_idx[for_cnt] = _hal_get_ext_regd_name_idx(drv_priv
+					, para_info, regulation[for_cnt]);
 			}
 
 			if (1) {
@@ -1438,6 +1688,11 @@ line_start:
 						_os_mem_free(drv_priv, (u8 *)regulation, sizeof(char *) * col_num);
 						regulation = NULL;
 					}
+					if (reg_idx) {
+						_os_mem_free(drv_priv, reg_idx
+							, sizeof(*reg_idx) * col_num);
+						reg_idx = NULL;
+					}
 					if (pshape) {
 						for (for_cnt = 0; for_cnt < col_num; ++for_cnt) {
 							if (pshape[for_cnt]) {
@@ -1489,8 +1744,6 @@ line_start:
 					* case "WW" assign special ww value
 					* means to get minimal limit in other regulations at same channel
 					*/
-					s8 ww_value = -63;//phy_txpwr_ww_lmt_value(Adapter);
-
 					_os_snprintf(powerlimit, 10, "%d", ww_value);
 					i += 2;
 
@@ -1499,7 +1752,7 @@ line_start:
 					* case "NA" assign max txgi value
 					* means no limitation
 					*/
-					_os_snprintf(powerlimit, 10, "%d", 127);
+					_os_snprintf(powerlimit, 10, "%d", na_value);
 					i += 2;
 
 				} else if ((sz_line[i] >= '0' && sz_line[i] <= '9') || sz_line[i] == '.'
@@ -1523,7 +1776,7 @@ line_start:
 						goto exit;
 					}
 					/* transform to string of value in unit of txgi */
-					lmt = (integer * 4) + ((u16)fraction * 4 / 100);
+					lmt = (integer * dbm_to_txgi) + ((u16)fraction * dbm_to_txgi / 100);
 					if (negative)
 						lmt = -lmt;
 					_os_snprintf(powerlimit, 10, "%d", lmt);
@@ -1535,20 +1788,30 @@ line_start:
 						goto exit;
 					}
 
+					if (reg_idx[for_cnt] < 0)
+						continue;
+
 					/* store the power limit value */
-					hal_phy_store_tx_power_limit_ru(drv_priv,
-									(u8 *)regulation[for_cnt], (u8 *)band,
-									(u8 *)bandwidth, (u8 *)ratesection,
-									(u8 *)ntx, (u8 *)channel, (u8 *)powerlimit,
-									(u8 *)pshape[for_cnt],
-									(void*)&array_tc_txpwr_lmt_ru[struct_idx],
-									para_info);
-					PHL_DBG("array_tc_txpwr_lmt_ru[%d] \n", struct_idx);
+					hal_phy_store_tx_power_limit_ru(hal_info,
+						(u8)reg_idx[for_cnt], (u8 *)band,
+						(u8 *)bandwidth, (u8 *)ratesection,
+						(u8 *)ntx, (u8 *)channel, (u8 *)powerlimit,
+						(u8 *)pshape[for_cnt]);
+					PHL_INFO("array_tc_8852a_txpwr_lmt_ru[%d] \n", struct_idx);
 					struct_idx++;
 					}
 				}
 	}
+
 exit:
+	if (struct_idx == 0) {
+		/* clear corresponding table */
+		u8 band_bmp = para_info->band == BAND_ON_24G ? BAND_CAP_2G | BAND_CAP_5G : BAND_CAP_6G;
+
+		rtw_hal_rf_clear_limit_table(hal_info, band_bmp, PWR_LIMIT_RU);
+		_hal_pwrlmt_para_free(hal_info->phl_com, para_info, false);
+	}
+	
 	if (regulation) {
 		for (for_cnt = 0; for_cnt < col_num; ++for_cnt) {
 			if (regulation[for_cnt]) {
@@ -1560,6 +1823,10 @@ exit:
 		}
 		_os_mem_free(drv_priv, (u8 *)regulation, sizeof(char *) * col_num);
 		regulation = NULL;
+	}
+	if (reg_idx) {
+		_os_mem_free(drv_priv, reg_idx, sizeof(*reg_idx) * col_num);
+		reg_idx = NULL;
 	}
 	if (pshape) {
 		for (for_cnt = 0; for_cnt < col_num; ++for_cnt) {
@@ -1578,7 +1845,6 @@ exit:
 }
 
 static void hal_phy_store_tx_power_track(
-		void *drv_priv,
 		char *band,
 		char *path,
 		char *sign,
@@ -1587,6 +1853,10 @@ static void hal_phy_store_tx_power_track(
 		char *data,
 		void *txpwr_track_table)
 {
+#define STR_EQUAL_6G(_band, _path, _sign, _rate, _chnl) \
+	((_os_strcmp(band, _band) == 0) && (_os_strcmp(path, _path) == 0) && (_os_strcmp(sign, _sign) == 0) &&\
+	 (_os_strcmp(rate, _rate) == 0) && (_os_strcmp(channel, _chnl) == 0)\
+	)
 #define STR_EQUAL_5G(_band, _path, _sign, _rate, _chnl) \
 	((_os_strcmp(band, _band) == 0) && (_os_strcmp(path, _path) == 0) && (_os_strcmp(sign, _sign) == 0) &&\
 	 (_os_strcmp(rate, _rate) == 0) && (_os_strcmp(channel, _chnl) == 0)\
@@ -1638,6 +1908,7 @@ static void hal_phy_store_tx_power_track(
 		STORE_SWING_TABLE(prfcalibrateInfo->delta_swing_table_idx_5gb_p[0], j);
 	else if (STR_EQUAL_5G("5G", "B", "-", "ALL", "0"))
 		STORE_SWING_TABLE(prfcalibrateInfo->delta_swing_table_idx_5gb_n[0], j);
+#if (BAND_NUM > 1)
 	else if (STR_EQUAL_5G("5G", "A", "+", "ALL", "1"))
 		STORE_SWING_TABLE(prfcalibrateInfo->delta_swing_table_idx_5ga_p[1], j);
 	else if (STR_EQUAL_5G("5G", "A", "-", "ALL", "1"))
@@ -1646,6 +1917,8 @@ static void hal_phy_store_tx_power_track(
 		STORE_SWING_TABLE(prfcalibrateInfo->delta_swing_table_idx_5gb_p[1], j);
 	else if (STR_EQUAL_5G("5G", "B", "-", "ALL", "1"))
 		STORE_SWING_TABLE(prfcalibrateInfo->delta_swing_table_idx_5gb_n[1], j);
+#endif
+#if (BAND_NUM > 2)
 	else if (STR_EQUAL_5G("5G", "A", "+", "ALL", "2"))
 		STORE_SWING_TABLE(prfcalibrateInfo->delta_swing_table_idx_5ga_p[2], j);
 	else if (STR_EQUAL_5G("5G", "A", "-", "ALL", "2"))
@@ -1654,6 +1927,8 @@ static void hal_phy_store_tx_power_track(
 		STORE_SWING_TABLE(prfcalibrateInfo->delta_swing_table_idx_5gb_p[2], j);
 	else if (STR_EQUAL_5G("5G", "B", "-", "ALL", "2"))
 		STORE_SWING_TABLE(prfcalibrateInfo->delta_swing_table_idx_5gb_n[2], j);
+#endif
+#if (BAND_NUM > 3)
 	else if (STR_EQUAL_5G("5G", "A", "+", "ALL", "3"))
 		STORE_SWING_TABLE(prfcalibrateInfo->delta_swing_table_idx_5ga_p[3], j);
 	else if (STR_EQUAL_5G("5G", "A", "-", "ALL", "3"))
@@ -1662,12 +1937,45 @@ static void hal_phy_store_tx_power_track(
 		STORE_SWING_TABLE(prfcalibrateInfo->delta_swing_table_idx_5gb_p[3], j);
 	else if (STR_EQUAL_5G("5G", "B", "-", "ALL", "3"))
 		STORE_SWING_TABLE(prfcalibrateInfo->delta_swing_table_idx_5gb_n[3], j);
+#endif
+	else if (STR_EQUAL_6G("6G", "A", "+", "ALL", "0"))
+		STORE_SWING_TABLE(prfcalibrateInfo->delta_swing_table_idx_6ga_p[0], j);
+	else if (STR_EQUAL_6G("6G", "A", "-", "ALL", "0"))
+		STORE_SWING_TABLE(prfcalibrateInfo->delta_swing_table_idx_6ga_n[0], j);
+	else if (STR_EQUAL_6G("6G", "B", "+", "ALL", "0"))
+		STORE_SWING_TABLE(prfcalibrateInfo->delta_swing_table_idx_6gb_p[0], j);
+	else if (STR_EQUAL_6G("6G", "B", "-", "ALL", "0"))
+		STORE_SWING_TABLE(prfcalibrateInfo->delta_swing_table_idx_6gb_n[0], j);
+	else if (STR_EQUAL_6G("6G", "A", "+", "ALL", "1"))
+		STORE_SWING_TABLE(prfcalibrateInfo->delta_swing_table_idx_6ga_p[1], j);
+	else if (STR_EQUAL_6G("6G", "A", "-", "ALL", "1"))
+		STORE_SWING_TABLE(prfcalibrateInfo->delta_swing_table_idx_6ga_n[1], j);
+	else if (STR_EQUAL_6G("6G", "B", "+", "ALL", "1"))
+		STORE_SWING_TABLE(prfcalibrateInfo->delta_swing_table_idx_6gb_p[1], j);
+	else if (STR_EQUAL_6G("6G", "B", "-", "ALL", "1"))
+		STORE_SWING_TABLE(prfcalibrateInfo->delta_swing_table_idx_6gb_n[1], j);
+	else if (STR_EQUAL_6G("6G", "A", "+", "ALL", "2"))
+		STORE_SWING_TABLE(prfcalibrateInfo->delta_swing_table_idx_6ga_p[2], j);
+	else if (STR_EQUAL_6G("6G", "A", "-", "ALL", "2"))
+		STORE_SWING_TABLE(prfcalibrateInfo->delta_swing_table_idx_6ga_n[2], j);
+	else if (STR_EQUAL_6G("6G", "B", "+", "ALL", "2"))
+		STORE_SWING_TABLE(prfcalibrateInfo->delta_swing_table_idx_6gb_p[2], j);
+	else if (STR_EQUAL_6G("6G", "B", "-", "ALL", "2"))
+		STORE_SWING_TABLE(prfcalibrateInfo->delta_swing_table_idx_6gb_n[2], j);
+	else if (STR_EQUAL_6G("6G", "A", "+", "ALL", "3"))
+		STORE_SWING_TABLE(prfcalibrateInfo->delta_swing_table_idx_6ga_p[3], j);
+	else if (STR_EQUAL_6G("6G", "A", "-", "ALL", "3"))
+		STORE_SWING_TABLE(prfcalibrateInfo->delta_swing_table_idx_6ga_n[3], j);
+	else if (STR_EQUAL_6G("6G", "B", "+", "ALL", "3"))
+		STORE_SWING_TABLE(prfcalibrateInfo->delta_swing_table_idx_6gb_p[3], j);
+	else if (STR_EQUAL_6G("6G", "B", "-", "ALL", "3"))
+		STORE_SWING_TABLE(prfcalibrateInfo->delta_swing_table_idx_6gb_n[3], j);
 	else
 		PHL_INFO("===>initDeltaSwingIndexTables(): The input is invalid!!\n");
 }
 
 static int
-_hal_parse_txpwrtrack(void *drv_priv, void *para_info_t, u8 *psrc_buf, u32 buflen)
+_hal_parse_txpwrtrack(struct hal_info_t *hal_info, void *para_info_t, u8 *psrc_buf, u32 buflen)
 {
 	struct rtw_para_info_t *para_info = (struct rtw_para_info_t *)para_info_t;
 	u32 *pdest_buf = para_info->para_data;
@@ -1706,12 +2014,12 @@ _hal_parse_txpwrtrack(void *drv_priv, void *para_info_t, u8 *psrc_buf, u32 bufle
 				if (!_os_strcmp("5G",band))
 					PHL_ERR("Fail to parse channel group!\n");
 			}
-			while (i < _os_strlen((u8 *)sz_line) && '{' != sz_line[i])
+			while ( i < _os_strlen((u8 *)sz_line) && '{' != sz_line[i])
 				i++;
 			if (!hal_parse_fiedstring(sz_line, &i, data, '{', '}')) {
 				PHL_ERR("Fail to parse data!\n");
 			}
-			hal_phy_store_tx_power_track(drv_priv,
+			hal_phy_store_tx_power_track(
 						band, path, sign,
 						chnl, rate, data,
 						(void*)txpwr_track);
@@ -1720,217 +2028,250 @@ _hal_parse_txpwrtrack(void *drv_priv, void *para_info_t, u8 *psrc_buf, u32 bufle
 	return 1;
 }
 
-void
-_hal_dl_para_file(struct rtw_phl_com_t *phl_com,
-	void *para_info_t, char *ic_name,
-	int (*parser_fun)(void *drv_priv, void *para_info_t, u8 *psrc_buf, u32 buflen),
-	const char *file_name)
+static void
+_hal_decrypt_para_file(
+	char *paraFile,
+	u32  buflen
+)
 {
-#ifdef CONFIG_LOAD_PHY_PARA_FROM_FILE
+	u32	i = 0, j = 0;
+	u32	currentPos = 0;
+	/*External file size shall<=MAX_LINES_HWCONFIG_TXT*MAX_BYTES_LINE_HWCONFIG_TXT=512000(no more than 18 bits)*/
+	u8	map[95] = {0};
+	u8	currentChar = *paraFile;
 
-	void *drv = phl_com->drv_priv;
+	PHL_TRACE(COMP_PHL_DBG, _PHL_DEBUG_, "=====> %s()\n", __func__);
+	for (i = 0; i < 95; i++)
+		map[i] = (u8)(94 - i);
+	i = 0;
+	while (currentChar != '\0') {
+		currentChar = *(paraFile + currentPos);
+
+		if (currentPos >= buflen) {/*Error handling in case that the encrypted file doesn't have an EOF symbol*/
+			PHL_TRACE(COMP_PHL_DBG, _PHL_DEBUG_, "currentPos:%u EncChar:%c\n", currentPos, currentChar);
+			PHL_TRACE(COMP_PHL_DBG, _PHL_DEBUG_, "%s(): curPos reach buflen, forced break!\n", __func__);
+			break;
+		}
+		if (currentChar == '\n') {
+			i++;
+			j = 0;
+			PHL_TRACE(COMP_PHL_DBG, _PHL_DEBUG_, "\n");
+		} else {
+			currentChar -= (u8)((((i + j) * 3) % 128));
+
+			*(paraFile + currentPos) = map[currentChar - 32] + 32;/*Translate to the plain text*/
+			PHL_TRACE(COMP_PHL_DBG, _PHL_DEBUG_, "%c", (map[currentChar - 32] + 32));
+
+			if (currentChar == '\0') {
+				PHL_TRACE(COMP_PHL_DBG, _PHL_DEBUG_, "\n%s(): currChar Reach EOF!!\n", __func__);
+			}
+			j++;
+		}
+		currentPos++;
+	}
+	PHL_TRACE(COMP_PHL_DBG, _PHL_DEBUG_, "<===== %s(): countLines:%u, curPos:%u\n", __func__, i, currentPos);
+}
+
+static void _hal_get_para_path(struct rtw_para_info_t *para_info, char *ic_name, const char *file_name
+	, bool use_sub_type, char *total_path)
+{
 	char hal_phy_folder[MAX_PATH_LEN] = {0};
 	char para_file_name[MAX_PATH_LEN] = {0};
+	u32 postfix_size = 0, i = 0, dot_pos = 0;
 	char *sp, *ext = NULL;
-	u8 dot_pos;
-	u32 para_size = 0, postfix_size = 0, i = 0;
+
+	/* Step1: Determine parameter folder path. Use path in para_info if it is not empty. */
+	if (para_info->para_path[0] != 0) {
+		_os_snprintf(hal_phy_folder, MAX_PATH_LEN, "%s",
+					 para_info->para_path);
+	} else if (para_info->hal_phy_folder != NULL) {
+		_os_snprintf(hal_phy_folder, MAX_PATH_LEN, "%s",
+					 para_info->hal_phy_folder);
+	} else {
+		_os_snprintf(hal_phy_folder, MAX_PATH_LEN, "%s%s%s",
+				     HAL_FILE_CONFIG_PATH , ic_name, _os_path_sep);
+	}
+
+	/* Step2: Determine parameter file name */
+	_os_strncpy(para_file_name, file_name, _os_strlen((u8 *)file_name)+1);
+
+	/* Step3: Add postfix into original file name if it is specified by user */
+	postfix_size = _os_strlen((u8 *)para_info->postfix);
+
+	if (postfix_size != 0) {
+		/* find the position of latest dot char in file name */
+		sp = para_file_name;
+		for (i = 0, dot_pos = 0; i < _os_strlen((u8 *)file_name); i++) {
+			if (sp[i] == '.')
+				dot_pos = (u8)i;
+		}
+
+		/* Get file extension name from original file name string */
+		ext = (char *)file_name + dot_pos;
+
+		/* Attach postfix, extension name and null terminator */
+		_os_strncpy(sp + dot_pos, para_info->postfix, postfix_size);
+		_os_strncpy(sp + dot_pos + postfix_size, ext, _os_strlen((u8 *)ext));
+		*(sp + dot_pos + postfix_size + _os_strlen((u8 *)ext)) = '\0';
+	}
+
+	/* Step4: Generate final parameter file full path */
+	_os_snprintf(total_path, MAX_PATH_LEN, "%s%s", hal_phy_folder, para_file_name);
+
+}
+
+static void
+_hal_dl_para_file(struct rtw_phl_com_t *phl_com, struct hal_info_t *hal_info,
+	void *para_info_t, char *ic_name,
+	enum rtw_hal_status (*alloc_fun)(struct rtw_phl_com_t *phl_com, void *para_info_t),
+	int (*parser_fun)(struct hal_info_t *hal_info, void *para_info_t, u8 *psrc_buf, u32 buflen),
+	const char *file_name)
+{
+	enum rtw_hal_status status = RTW_HAL_STATUS_FAILURE;
+	void *drv = phl_com->drv_priv;
+	u32 para_size = 0;
 	u8 *para_buf = NULL;
+	u32 para_buf_len = MAX_HWCONFIG_FILE_CONTENT;
+	bool dec_cf = phl_com->decrypt_cf;
 	struct rtw_para_info_t *para_info = (struct rtw_para_info_t *)para_info_t;
 
-	if (para_info->para_src == RTW_PARA_SRC_INTNAL) {
-		PHL_TRACE(COMP_PHL_DBG, _PHL_DEBUG_, "%s.parser_fun=NULL \n", file_name);
-		return;
+	if (para_info->para_src == RTW_PARA_SRC_INTNAL)
+		goto exit;
+
+	if (!parser_fun) {
+		PHL_TRACE(COMP_PHL_DBG, _PHL_DEBUG_, "%s.parser_fun=NULL\n", file_name);
+		goto exit;
 	}
 
-	if (!parser_fun || (!para_info->para_data)) {
-		PHL_TRACE(COMP_PHL_DBG, _PHL_DEBUG_, "%s.parser_fun=NULL \n", file_name);
-		para_info->para_src = RTW_PARA_SRC_INTNAL;
-		return;
+	if (!alloc_fun) {
+		PHL_TRACE(COMP_PHL_DBG, _PHL_DEBUG_, "%s.alloc_fun=NULL\n", file_name);
+		goto exit;
 	}
 
-	if ((para_info->para_data_len != 0) && (para_info->para_src == RTW_PARA_SRC_EXTNAL)) {
-		PHL_TRACE(COMP_PHL_DBG, _PHL_DEBUG_, "%s. para_data_len != 0 !!!\n", file_name);
-		return;
+	if (para_info->loaded) {
+		PHL_TRACE(COMP_PHL_DBG, _PHL_DEBUG_, "%s. is loaded\n", file_name);
+		/* exit with success directly to avoid reload and process file content */
+		status = RTW_HAL_STATUS_SUCCESS;
+		goto exit;
 	}
 
+	/* prepare para_buf, para_size */
 	if (para_info->para_src == RTW_PARA_SRC_EXTNAL_BUF) {
-		if (para_info->ext_para_file_buf != 0) {
-			/* Parsing file content */
-			para_info->para_data_len =
-				parser_fun(drv, para_info,
-					   para_info->ext_para_file_buf,
-					   para_info->ext_para_file_buf_len);
-
-			if (para_info->para_data_len) {
-				PHL_TRACE(COMP_PHL_DBG, _PHL_INFO_,
-					"%s:: Download file ok.\n", __FUNCTION__);
-			} else {
-				PHL_TRACE(COMP_PHL_DBG, _PHL_INFO_,
-					"%s:: Failed to parser %s \n",
-					__FUNCTION__, file_name);
-				para_info->para_src = RTW_PARA_SRC_INTNAL;
-			}
-			PHL_TRACE(COMP_PHL_DBG, _PHL_INFO_, "%s:: Download file ok.\n", file_name);
-		} else {
-			PHL_TRACE(COMP_PHL_DBG, _PHL_INFO_, "%s:: Error reading file.\n", file_name);
-
-			para_info->para_src = RTW_PARA_SRC_INTNAL;
-			para_info->para_data_len = 0;
+		if (!para_info->ext_para_file_buf) {
+			PHL_TRACE(COMP_PHL_DBG, _PHL_DEBUG_, "%s.ext_para_file_buf=NULL\n", file_name);
+			goto exit;
 		}
-	} else {
-		para_buf = _os_mem_alloc(drv, MAX_HWCONFIG_FILE_CONTENT);
-		if (!para_buf) {
-			PHL_TRACE(COMP_PHL_DBG, _PHL_DEBUG_, "para_buf=NULL \n");
-			para_info->para_src = RTW_PARA_SRC_INTNAL;
-			return;
+		if (para_info->ext_para_file_buf_len == 0) {
+			PHL_TRACE(COMP_PHL_DBG, _PHL_DEBUG_, "%s.ext_para_file_buf_len=0\n", file_name);
+			goto exit;
 		}
+		para_buf = para_info->ext_para_file_buf;
+		para_size = para_info->ext_para_file_buf_len;
 
-		if (para_info->para_src == RTW_PARA_SRC_EXTNAL) {
-			_os_snprintf(para_info->para_path, MAX_PATH_LEN, "%s%s%s%s",
-				     hal_phy_folder ,ic_name, _os_path_sep, file_name);
-
-			/* Determine parameter folder path */
-			if (para_info->hal_phy_folder != NULL) {
-				_os_snprintf(hal_phy_folder, MAX_PATH_LEN, "%s",
-							 para_info->hal_phy_folder);
-			} else {
-				_os_snprintf(hal_phy_folder, MAX_PATH_LEN, "%s%s%s",
-						     HAL_FILE_CONFIG_PATH , ic_name, _os_path_sep);
-			}
-
-			/* Determine parameter file name */
-			_os_strncpy(para_file_name, file_name, _os_strlen((u8 *)file_name)+1);
-
-			/* Add postfix into original file name if it is specified by user */
-			postfix_size = _os_strlen((u8 *)para_info->postfix);
-
-			if (postfix_size != 0) {
-				/* find the position of latest dot char in file name */
-				sp = para_file_name;
-				for (i = 0, dot_pos = 0; i < _os_strlen((u8 *)file_name); i++) {
-					if (sp[i] == '.')
-						dot_pos = (u8) i;
-				}
-
-				/* Get file extension name from original file name string */
-				ext = (char *)file_name + dot_pos;
-
-				/* Attach postfix, extension name and null terminator */
-				_os_strncpy(sp + dot_pos, para_info->postfix, postfix_size);
-				_os_strncpy(sp + dot_pos + postfix_size, ext, _os_strlen((u8 *)ext));
-				*(sp + dot_pos + postfix_size + _os_strlen((u8 *)ext)) = '\0';
-			}
-
-			/* Generate final parameter file full path */
-			_os_snprintf(para_info->para_path, MAX_PATH_LEN, "%s%s",
-					 hal_phy_folder, para_file_name);
-
-			PHL_TRACE(COMP_PHL_DBG, _PHL_INFO_, "%s:: %s\n",__FUNCTION__,
-				  para_info->para_path);
-
-			para_size = _os_read_file(para_info->para_path, para_buf,
-						  MAX_HWCONFIG_FILE_CONTENT);
-		} else if (para_info->para_src == RTW_PARA_SRC_CUSTOM) {
-			_os_mem_cpy(drv, para_buf, para_info->para_data, para_info->para_data_len);
-			_os_mem_set(drv, para_info->para_data, 0, para_info->para_data_len);
-			para_size = para_info->para_data_len;
-			para_info->para_data_len = 0;
-		}
-
-		if (para_size != 0) {
-			/* Parsing file content */
-			para_info->para_data_len = parser_fun(drv, para_info, para_buf,
-							      para_size);
-
-			if (para_info->para_data_len) {
-				PHL_TRACE(COMP_PHL_DBG, _PHL_INFO_,
-					  "%s:: Download file ok.\n", __FUNCTION__);
-			} else {
-				PHL_TRACE(COMP_PHL_DBG, _PHL_INFO_,
-					  "%s:: Failed to parser %s\n",
-					  __FUNCTION__, file_name);
-				para_info->para_src = RTW_PARA_SRC_INTNAL;
-			}
-			PHL_TRACE(COMP_PHL_DBG, _PHL_INFO_, "%s:: Download file ok.\n",
-				  file_name);
-		} else {
-			PHL_TRACE(COMP_PHL_DBG, _PHL_ERR_, "%s:: Error reading file.\n",
-				  file_name);
-
-			para_info->para_src = RTW_PARA_SRC_INTNAL;
-			para_info->para_data_len = 0;
-		}
-		_os_mem_free(drv, para_buf, MAX_HWCONFIG_FILE_CONTENT);
-	}
-#endif
-}
-
-enum rtw_hal_status
-_phl_pwrlmt_para_alloc(struct rtw_phl_com_t* phl_com,
-				struct rtw_para_pwrlmt_info_t *para_info)
-{
-#ifdef CONFIG_LOAD_PHY_PARA_FROM_FILE
-	if (para_info->para_src == RTW_PARA_SRC_EXTNAL
-		|| para_info->para_src == RTW_PARA_SRC_EXTNAL_BUF) {
-		u32 file_buf_sz = MAX_HWCONFIG_FILE_CONTENT;
-		u32 buf_sz = MAX_LINES_HWCONFIG_TXT;
-		void *drv = phl_com->drv_priv;
-		u8 para_regd_str_arridx;
-		const char * const *_para_regd_str = rtw_hal_rf_get_predefined_pw_lmt_regu_type_str_array(&para_regd_str_arridx);
-		u8 i = 0;
-
-		for (i = 0; i < para_regd_str_arridx ; i++) {
-			_os_strcpy(para_info->ext_regd_name[i] , _para_regd_str[i]);
-			PHL_INFO(" prepare ext_regd_name[%d] = %s",
-					i , para_info->ext_regd_name[i]);
-		}
-		para_info->ext_regd_arridx = para_regd_str_arridx;
-
-		para_info->para_data = _os_mem_alloc(drv, file_buf_sz * sizeof(u32));
+	} else if (para_info->para_src == RTW_PARA_SRC_CUSTOM) {
 		if (!para_info->para_data) {
-			PHL_TRACE(COMP_PHL_DBG, _PHL_ERR_,
-				"%s::para_data allocmem fail\n",__FUNCTION__);
-			return RTW_HAL_STATUS_FAILURE;
+			PHL_TRACE(COMP_PHL_DBG, _PHL_DEBUG_, "%s.para_data=NULL\n", file_name);
+			goto exit;
+		}
+		if (para_info->para_data_len == 0) {
+			PHL_TRACE(COMP_PHL_DBG, _PHL_DEBUG_, "%s.para_data_len=0\n", file_name);
+			goto exit;
+		}
+		para_buf_len = para_info->para_data_len;
+		para_buf = _os_mem_alloc(drv, para_buf_len);
+		if (!para_buf) {
+			PHL_TRACE(COMP_PHL_DBG, _PHL_WARNING_,
+				"%s.alloc para_buf with size %d fail\n", file_name, para_buf_len);
+			goto exit;
 		}
 
-		para_info->ext_reg_codemap = _os_mem_alloc(drv, buf_sz * sizeof(u8));
-		if (!para_info->ext_reg_codemap) {
-			if (para_info->para_data)
-				_os_mem_free(drv, para_info->para_data, file_buf_sz * sizeof(u32));
-			para_info->para_data = NULL;
-			PHL_TRACE(COMP_PHL_DBG, _PHL_ERR_,
-				"%s::ext_reg_codemap allocmem fail\n",__FUNCTION__);
-			return RTW_HAL_STATUS_FAILURE;
+		_os_mem_cpy(drv, para_buf, para_info->para_data, para_info->para_data_len);
+		_os_mem_set(drv, para_info->para_data, 0, para_info->para_data_len);
+		para_size = para_info->para_data_len;
+		para_info->para_data_len = 0;
+
+	} else if (para_info->para_src == RTW_PARA_SRC_EXTNAL) {
+		char total_path[MAX_PATH_LEN];
+
+		_hal_get_para_path(para_info, ic_name, file_name, false, total_path);
+		PHL_TRACE(COMP_PHL_DBG, _PHL_INFO_, "%s:: %s\n",__FUNCTION__, total_path);
+
+		if (_os_file_readable_supported()) {
+			if (!_os_file_readable(total_path, &para_buf_len) || para_buf_len == 0) {
+				PHL_TRACE(COMP_PHL_DBG, _PHL_INFO_,
+					"%s::%s not readable\n", __FUNCTION__, total_path);
+				goto exit;
+			}
+			para_buf_len++; /* all parsing function rely on _os_strsep(), need '\0' ending */
 		}
-		return RTW_HAL_STATUS_SUCCESS;
-	} else
-		return RTW_HAL_STATUS_FAILURE;
+
+		para_buf = _os_mem_alloc(drv, para_buf_len);
+		if (!para_buf) {
+			PHL_TRACE(COMP_PHL_DBG, _PHL_WARNING_,
+				"%s.alloc para_buf with size %d fail\n", file_name, para_buf_len);
+			goto exit;
+		}
+
+		para_size = _os_read_file(total_path, para_buf, para_buf_len);
+		if (para_size == 0) {
+			PHL_TRACE(COMP_PHL_DBG, _PHL_INFO_,
+				"%s._os_read_file fail\n", file_name);
+			goto exit;
+		}
+
+		if (dec_cf)
+			_hal_decrypt_para_file((char*)para_buf, para_size);
+	}
+
+	/* allocate para_info */
+	if (alloc_fun(phl_com, para_info) != RTW_HAL_STATUS_SUCCESS) {
+		PHL_TRACE(COMP_PHL_DBG, _PHL_WARNING_,
+			"%s.alloc_fun fail\n", file_name);
+		goto exit;
+	}
+
+	/* Parsing file content */
+	para_info->para_data_len = parser_fun(hal_info, para_info, para_buf, para_size);
+	if (para_info->para_data_len == 0) {
+		PHL_TRACE(COMP_PHL_DBG, _PHL_INFO_,
+			"%s:: Failed to parser %s\n", __FUNCTION__, file_name);
+		goto exit;
+	}
+
+	status = RTW_HAL_STATUS_SUCCESS;
+	PHL_TRACE(COMP_PHL_DBG, _PHL_INFO_, "%s:: Download file ok.\n", file_name);
+
+exit:
+	if (para_info->para_src == RTW_PARA_SRC_EXTNAL
+		|| para_info->para_src == RTW_PARA_SRC_CUSTOM
+	) {
+		if (para_buf)
+			_os_mem_free(drv, para_buf, para_buf_len);
+	}
+
+	para_info->loaded = status == RTW_HAL_STATUS_SUCCESS;
+ 	if (status != RTW_HAL_STATUS_SUCCESS) {
+		para_info->para_src = RTW_PARA_SRC_INTNAL;
+		para_info->para_data_len = 0;
+	}
+}
+#endif /* CONFIG_LOAD_PHY_PARA_FROM_FILE */
+
+int rtw_hal_find_ext_regd_num(struct rtw_para_pwrlmt_info_t *para_info, const char *regd_name)
+{
+#ifdef CONFIG_LOAD_PHY_PARA_FROM_FILE
+	return hal_phy_find_ext_regd_num(para_info, regd_name);
 #else
-	return RTW_HAL_STATUS_FAILURE;
+	return -1;
 #endif
 }
 
-enum rtw_hal_status
-phl_load_file_data_alloc(struct rtw_phl_com_t* phl_com, struct rtw_para_info_t *para_info)
+char *rtw_hal_get_ext_regd_name(struct rtw_para_pwrlmt_info_t *para_info, u8 idx)
 {
 #ifdef CONFIG_LOAD_PHY_PARA_FROM_FILE
-	u32 buf_sz = MAX_HWCONFIG_FILE_CONTENT;
-	void *drv = phl_com->drv_priv;
-
-	if (para_info->para_src == RTW_PARA_SRC_EXTNAL) {
-		if (para_info->para_data_len == 0) {
-			para_info->para_data = _os_mem_alloc(drv, buf_sz * sizeof(u32));
-	}
-	if (!para_info->para_data) {
-			PHL_TRACE(COMP_PHL_DBG, _PHL_ERR_,
-				"%s:: allocmem fail\n",__FUNCTION__);
-			return RTW_HAL_STATUS_FAILURE;
-		}
-		return RTW_HAL_STATUS_SUCCESS;
-	} else
-		return RTW_HAL_STATUS_FAILURE;
+	return hal_phy_get_ext_regd_name(para_info, idx);
 #else
-	return RTW_HAL_STATUS_FAILURE;
+	return NULL;
 #endif
 }
 
@@ -1939,82 +2280,157 @@ rtw_hal_dl_all_para_file(struct rtw_phl_com_t *phl_com,
 							char *ic_name, void *hal)
 {
 #ifdef CONFIG_LOAD_PHY_PARA_FROM_FILE
-	struct hal_info_t *hal_info = hal;
+	struct dev_cap_t *dev_cap = &phl_com->dev_cap;
 	struct phy_sw_cap_t *phy_sw_cap = NULL;
 	u8 idx=0;
 	u8 max_phy_num = 1;
+	bool dec_cf = phl_com->decrypt_cf;
 
-	if (hal_info->hal_com->dbcc_en == true)
-		max_phy_num = 2;
+#ifdef CONFIG_DBCC_SUPPORT
+	if (phl_com->dev_cap.dbcc_sup == true)
+		max_phy_num = MAX_BAND_NUM;
+#endif
 
-	for (idx=0; idx < max_phy_num; idx++) {/*Temp modiy for 1 BB phy Reg file */
+	for (idx = 0; idx < max_phy_num; idx++) {
 
 		phy_sw_cap = &phl_com->phy_sw_cap[idx];
-		if (phl_load_file_data_alloc(phl_com,
-					&phy_sw_cap->bb_phy_reg_info) == RTW_HAL_STATUS_SUCCESS)
-			_hal_dl_para_file(phl_com,
-					&phy_sw_cap->bb_phy_reg_info,
-					ic_name,
-					_hal_parse_phyreg,
-					"PHY_REG.txt");
 
-		if (phl_load_file_data_alloc(phl_com,
-					&phy_sw_cap->bb_phy_reg_gain_info) == RTW_HAL_STATUS_SUCCESS)
-			_hal_dl_para_file(phl_com,
-					&phy_sw_cap->bb_phy_reg_gain_info,
-					ic_name,
-					_hal_parse_phyreg,
-					"PHY_REG_GAIN.txt");
+		_hal_dl_para_file(phl_com, hal,
+				&phy_sw_cap->bb_phy_reg_info,
+				ic_name,
+				_hal_general_para_alloc,
+				_hal_parse_phyreg,
+				"PHY_REG.txt");
 
-		if (phl_load_file_data_alloc(phl_com,
-					&phy_sw_cap->rf_radio_a_info) == RTW_HAL_STATUS_SUCCESS)
-			_hal_dl_para_file(phl_com,
-					&phy_sw_cap->rf_radio_a_info,
-					ic_name,
-					_hal_parse_radio,
-					"RadioA.txt");
+		_hal_dl_para_file(phl_com, hal,
+				&phy_sw_cap->bb_phy_reg_gain_info,
+				ic_name,
+				_hal_general_para_alloc,
+				_hal_parse_phyreg,
+				"PHY_REG_GAIN.txt");
 
-		if (phl_load_file_data_alloc(phl_com,
-					&phy_sw_cap->rf_radio_b_info) == RTW_HAL_STATUS_SUCCESS)
-			_hal_dl_para_file(phl_com,
-					&phy_sw_cap->rf_radio_b_info,
-					ic_name,
-					_hal_parse_radio,
-					"RadioB.txt");
+		_hal_dl_para_file(phl_com, hal,
+				&phy_sw_cap->rf_radio_a_info,
+				ic_name,
+				_hal_general_para_alloc,
+				_hal_parse_radio,
+				"RadioA.txt");
 
-		if (phl_load_file_data_alloc(phl_com,
-				&phy_sw_cap->rf_txpwr_byrate_info) == RTW_HAL_STATUS_SUCCESS)
-			_hal_dl_para_file(phl_com,
-					&phy_sw_cap->rf_txpwr_byrate_info,
-					ic_name,
-					_hal_parse_txpwr_by_rate,
-					"TXPWR_ByRate.txt");
+		_hal_dl_para_file(phl_com, hal,
+				&phy_sw_cap->rf_radio_b_info,
+				ic_name,
+				_hal_general_para_alloc,
+				_hal_parse_radio,
+				"RadioB.txt");
 
-		if (phl_load_file_data_alloc(phl_com,
-				&phy_sw_cap->rf_txpwrtrack_info) == RTW_HAL_STATUS_SUCCESS)
-			_hal_dl_para_file(phl_com,
-					&phy_sw_cap->rf_txpwrtrack_info,
-					ic_name,
-					_hal_parse_txpwrtrack,
-					"TXPWR_TrackTSSI.txt");
+		_hal_dl_para_file(phl_com, hal,
+				&phy_sw_cap->rf_txpwr_byrate_info,
+				ic_name,
+				_hal_pwr_byrate_para_alloc,
+				_hal_parse_txpwr_by_rate,
+				((dec_cf) ?
+				"TXPWR_ByRate_Enc.txt" : "TXPWR_ByRate.txt"));
 
-		if (_phl_pwrlmt_para_alloc(phl_com,
-				&phy_sw_cap->rf_txpwrlmt_info) == RTW_HAL_STATUS_SUCCESS)
-			_hal_dl_para_file(phl_com,
+		_hal_dl_para_file(phl_com, hal,
+				&phy_sw_cap->rf_txpwrtrack_info,
+				ic_name,
+				_hal_general_para_alloc,
+				_hal_parse_txpwrtrack,
+				"TXPWR_TrackTSSI.txt");
+
+		if (dev_cap->band_sup & (BAND_CAP_2G | BAND_CAP_5G))
+			_hal_dl_para_file(phl_com, hal,
 					&phy_sw_cap->rf_txpwrlmt_info,
 					ic_name,
+					_hal_pwrlmt_para_alloc,
 					_hal_parse_txpwrlmt,
-					"TXPWR_LMT.txt");
+					((dec_cf) ?
+					"TXPWR_LMT_Enc.txt" : "TXPWR_LMT.txt"));
 
-		if (_phl_pwrlmt_para_alloc(phl_com,
-				&phy_sw_cap->rf_txpwrlmt_ru_info) == RTW_HAL_STATUS_SUCCESS)
-			_hal_dl_para_file(phl_com,
+		if (dev_cap->band_sup & (BAND_CAP_2G | BAND_CAP_5G))
+			_hal_dl_para_file(phl_com, hal,
 					&phy_sw_cap->rf_txpwrlmt_ru_info,
 					ic_name,
+					_hal_pwrlmt_para_alloc,
 					_hal_parse_txpwrlmt_ru,
-					"TXPWR_LMT_RU.txt");
+					((dec_cf) ?
+					"TXPWR_LMT_RU_Enc.txt" : "TXPWR_LMT_RU.txt"));
+
+		if (dev_cap->band_sup & BAND_CAP_6G)
+			_hal_dl_para_file(phl_com, hal,
+					&phy_sw_cap->rf_txpwrlmt_6g_info,
+					ic_name,
+					_hal_pwrlmt_para_alloc,
+					_hal_parse_txpwrlmt,
+					((dec_cf) ?
+					"TXPWR_LMT_6G_Enc.txt" : "TXPWR_LMT_6G.txt"));
+
+		if (dev_cap->band_sup & BAND_CAP_6G)
+			_hal_dl_para_file(phl_com, hal,
+					&phy_sw_cap->rf_txpwrlmt_ru_6g_info,
+					ic_name,
+					_hal_pwrlmt_para_alloc,
+					_hal_parse_txpwrlmt_ru,
+					((dec_cf) ?
+					"TXPWR_LMT_RU_6G_Enc.txt" : "TXPWR_LMT_RU_6G.txt"));
+
+		phy_sw_cap->bfreed_para = false;
 	}
 #endif
+}
+
+void rtw_hal_pwr_byrate_para_free(struct rtw_phl_com_t *phl_com
+	, struct rtw_para_info_t *para_info, bool tmp_data_only)
+{
+#ifdef CONFIG_LOAD_PHY_PARA_FROM_FILE
+	_hal_pwr_byrate_para_free(phl_com, para_info, tmp_data_only);
+#endif
+}
+
+void rtw_hal_pwrlmt_para_free(struct rtw_phl_com_t *phl_com
+	, struct rtw_para_pwrlmt_info_t *para_info, bool tmp_data_only)
+{
+#ifdef CONFIG_LOAD_PHY_PARA_FROM_FILE
+	_hal_pwrlmt_para_free(phl_com, para_info, tmp_data_only);
+#endif
+}
+
+void rtw_hal_general_para_free(struct rtw_phl_com_t *phl_com
+	, struct rtw_para_info_t *para_info)
+{
+#ifdef CONFIG_LOAD_PHY_PARA_FROM_FILE
+	_hal_general_para_free(phl_com, para_info);
+#endif
+}
+
+bool rtw_hal_txpwr_by_rate_store_from_external(struct rtw_hal_com_t *hal_com
+	, struct rtw_para_info_t *para_info)
+{
+#ifdef CONFIG_LOAD_PHY_PARA_FROM_FILE
+	if (para_info->loaded)
+		return true;
+#endif
+	return false;
+}
+
+bool rtw_hal_txpwr_lmt_store_from_external(struct rtw_hal_com_t *hal_com
+	, struct rtw_para_pwrlmt_info_t *para_info)
+{
+#ifdef CONFIG_LOAD_PHY_PARA_FROM_FILE
+	if (para_info->loaded)
+		return true;
+#endif
+	return false;
+}
+
+bool rtw_hal_txpwr_lmt_ru_store_from_external(struct rtw_hal_com_t *hal_com
+	, struct rtw_para_pwrlmt_info_t *para_info)
+{
+#ifdef CONFIG_LOAD_PHY_PARA_FROM_FILE
+	if (para_info->loaded)
+		return true;
+#endif
+	return false;
 }
 
 u8 rtw_hal_ld_fw_symbol(struct rtw_phl_com_t *phl_com,

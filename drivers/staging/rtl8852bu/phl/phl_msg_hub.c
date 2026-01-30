@@ -15,6 +15,10 @@
  *
  *****************************************************************************/
 #include "phl_headers.h"
+
+#define CONFIG_MSG_HUB_THREAD
+/*#define CONFIG_MSG_HUB_WORKQUEUE*/
+
 #define MODL_MASK_LEN (PHL_BK_MDL_END / 8)
 #define MAX_MSG_NUM	(16)
 
@@ -40,6 +44,7 @@ struct phl_msg_ex {
 	struct phl_msg ctx;
 	struct msg_completion_routine completion;
 };
+
 /**
  * phl_msg_hub - responsible for phl msg forwarding,
  * @status: contain mgnt status flags, refer to enum msg_hub_status
@@ -48,14 +53,20 @@ struct phl_msg_ex {
  * @recver: msg receiver, refer to enum phl_msg_recver_layer
  */
 struct phl_msg_hub {
+	struct phl_info_t *phl;
 	u32 status;
-		struct phl_msg_ex msg_pool[MAX_MSG_NUM];
-		struct phl_queue  idle_msg_q;
-		struct phl_queue  wait_msg_q;
-		_os_sema msg_q_sema;
-		_os_thread msg_notify_thread;
-		/* for core & phl layer respectively */
-		struct phl_msg_receiver_ex recver[MSG_RECV_MAX];
+	struct phl_msg_ex msg_pool[MAX_MSG_NUM];
+	struct phl_queue  idle_msg_q;
+	struct phl_queue  wait_msg_q;
+	#ifdef CONFIG_MSG_HUB_THREAD
+	_os_sema msg_q_sema;
+	_os_thread msg_notify_thread;
+	#endif
+	#ifdef CONFIG_MSG_HUB_WORKQUEUE
+	_os_workitem msg_notify_work;
+	#endif
+	/* for core & phl layer respectively */
+	struct phl_msg_receiver_ex recver[MSG_RECV_MAX];
 };
 
 inline static u8 _is_bitmap_empty(void* d, u8* bitmap){
@@ -111,7 +122,12 @@ static void push_back_wait_msg(struct phl_info_t* phl, struct phl_msg_ex* ex)
 	void *d = phl_to_drvpriv(phl);
 	struct phl_msg_hub* hub = (struct phl_msg_hub*)phl->msg_hub;
 	pq_push(d, &hub->wait_msg_q, &ex->list, _tail, _bh);
+	#ifdef CONFIG_MSG_HUB_THREAD
 	_os_sema_up(d, &(hub->msg_q_sema));
+	#endif
+	#ifdef CONFIG_MSG_HUB_WORKQUEUE
+	_os_workitem_schedule(d, &hub->msg_notify_work);
+	#endif
 }
 
 void msg_forward(struct phl_info_t* phl, struct phl_msg_ex* ex)
@@ -133,7 +149,7 @@ void msg_forward(struct phl_info_t* phl, struct phl_msg_ex* ex)
 				_os_mem_set(d, recver, 0, sizeof(struct phl_msg_receiver_ex));
 			continue;
 		}
-		if(_chk_bitmap_bit(recver->bitmap, module_id)) {
+		if(_chk_bitmap_bit(recver->bitmap, MODL_MASK_LEN, module_id)) {
 			PHL_TRACE(COMP_PHL_DBG, _PHL_DEBUG_, "%s notify %d layer\n",
 				  __FUNCTION__, i);
 			recver->ctx.incoming_evt_notify(recver->ctx.priv,
@@ -145,7 +161,8 @@ void msg_forward(struct phl_info_t* phl, struct phl_msg_ex* ex)
 
 }
 
-int msg_thread_hdl(void* param)
+#ifdef CONFIG_MSG_HUB_THREAD
+static int msg_hub_thread_hdl(void* param)
 {
 	struct phl_info_t* phl = (struct phl_info_t *)param;
 	void *d = phl_to_drvpriv(phl);
@@ -173,11 +190,28 @@ int msg_thread_hdl(void* param)
 	PHL_INFO("%s down\n",__FUNCTION__);
 	return 0;
 }
+#endif
+#ifdef CONFIG_MSG_HUB_WORKQUEUE
+static void msg_hub_work_hdl(void *work)
+{
+	void *d;
+	struct phl_info_t* phl;
+	struct phl_msg_hub *hub;
+	struct phl_msg_ex* ex = NULL;
 
+	hub = (struct phl_msg_hub *)phl_container_of(work, struct phl_msg_hub, msg_notify_work);
+	phl = hub->phl;
+	d = phl_to_drvpriv(phl);
 
+	while (pop_front_wait_msg(phl, &ex)) {
+		msg_forward(phl, ex);
+		push_back_idle_msg(phl, ex);
+	}
+}
+#endif
 enum rtw_phl_status phl_msg_hub_init(struct phl_info_t* phl)
 {
-	struct phl_msg_hub* hub = NULL;
+	struct phl_msg_hub *hub = NULL;
 	void *d = phl_to_drvpriv(phl);
 
 
@@ -191,7 +225,11 @@ enum rtw_phl_status phl_msg_hub_init(struct phl_info_t* phl)
 		return RTW_PHL_STATUS_RESOURCE;
 	}
 	phl->msg_hub = hub;
+	hub->phl = phl;
+	#ifdef CONFIG_MSG_HUB_THREAD
 	_os_sema_init(d, &(hub->msg_q_sema), 0);
+	#endif
+
 	pq_init(d, &(hub->idle_msg_q));
 	pq_init(d, &(hub->wait_msg_q));
 	SET_STATUS_FLAG(hub->status, MSG_HUB_INIT);
@@ -210,7 +248,9 @@ enum rtw_phl_status phl_msg_hub_deinit(struct phl_info_t* phl)
 	phl_msg_hub_stop(phl);
 	pq_deinit(d, &(hub->idle_msg_q));
 	pq_deinit(d, &(hub->wait_msg_q));
+	#ifdef CONFIG_MSG_HUB_THREAD
 	_os_sema_free(d, &(hub->msg_q_sema));
+	#endif
 	_os_mem_free(d, hub, sizeof(struct phl_msg_hub));
 	PHL_INFO("%s\n",__FUNCTION__);
 	return RTW_PHL_STATUS_SUCCESS;
@@ -233,9 +273,20 @@ enum rtw_phl_status phl_msg_hub_start(struct phl_info_t* phl)
 	for(i = 0; i < MAX_MSG_NUM; i++) {
 		pq_push(d, &hub->idle_msg_q, &hub->msg_pool[i].list, _tail, _bh);
 	}
-	_os_thread_init(d, &(hub->msg_notify_thread), msg_thread_hdl, phl,
-						"msg_notify_thread");
+	#ifdef CONFIG_MSG_HUB_THREAD
+	if (RTW_PHL_STATUS_SUCCESS != _os_thread_init(d, &(hub->msg_notify_thread), msg_hub_thread_hdl, phl,
+						"msg_notify_thread")) {
+		PHL_ERR("thread init msg_notify_thread fail.\n");
+		return RTW_PHL_STATUS_FAILURE;
+	}
+
 	_os_thread_schedule(d, &(hub->msg_notify_thread));
+	#endif
+
+	#ifdef CONFIG_MSG_HUB_WORKQUEUE
+	_os_workitem_init(d, &(hub->msg_notify_work), msg_hub_work_hdl, NULL);
+	#endif
+
 	SET_STATUS_FLAG(hub->status, MSG_HUB_STARTED);
 	PHL_INFO("%s\n",__FUNCTION__);
 	return RTW_PHL_STATUS_SUCCESS;
@@ -250,9 +301,14 @@ enum rtw_phl_status phl_msg_hub_stop(struct phl_info_t* phl)
 		return RTW_PHL_STATUS_FAILURE;
 
 	CLEAR_STATUS_FLAG(hub->status, MSG_HUB_STARTED);
+	#ifdef CONFIG_MSG_HUB_THREAD
 	_os_thread_stop(d, &(hub->msg_notify_thread));
 	_os_sema_up(d, &(hub->msg_q_sema));
 	_os_thread_deinit(d, &(hub->msg_notify_thread));
+	#endif
+	#ifdef CONFIG_MSG_HUB_WORKQUEUE
+	_os_workitem_deinit(d, &(hub->msg_notify_work));
+	#endif
 	pq_reset(d, &(hub->idle_msg_q), _bh);
 	pq_reset(d, &(hub->wait_msg_q), _bh);
 
@@ -315,7 +371,7 @@ enum rtw_phl_status phl_msg_hub_register_recver(void* phl,
 }
 
 enum rtw_phl_status phl_msg_hub_update_recver_mask(void* phl,
-		enum phl_msg_recver_layer layer, u8* mdl_id, u32 len, u8 clr)
+		enum phl_msg_recver_layer layer, u8* mdl_id, u8 len, u8 clr)
 {
 	struct phl_info_t* phl_info = (struct phl_info_t*)phl;
 	struct phl_msg_hub* hub = (struct phl_msg_hub*)phl_info->msg_hub;
@@ -331,9 +387,9 @@ enum rtw_phl_status phl_msg_hub_update_recver_mask(void* phl,
 	}
 
 	if(clr == true)
-		_clr_bitmap_bit(recver->bitmap, mdl_id, len);
+		_clr_bitmap_bit(recver->bitmap, MODL_MASK_LEN, mdl_id, len);
 	else
-		_add_bitmap_bit(recver->bitmap, mdl_id, len);
+		_add_bitmap_bit(recver->bitmap, MODL_MASK_LEN, mdl_id, len);
 	PHL_INFO(" %s\n",__FUNCTION__);
 	return RTW_PHL_STATUS_SUCCESS;
 }
@@ -377,22 +433,6 @@ void phl_msg_hub_phy_mgnt_evt_hdlr(struct phl_info_t* phl, u16 evt_id)
 	}
 }
 
-void phl_msg_hub_tx_evt_hdlr(struct phl_info_t *phl, u16 evt_id,
-                             u8 *buf, u32 len)
-{
-	PHL_INFO("%s : evt_id %d.\n", __func__, evt_id);
-
-	switch (evt_id) {
-	case MSG_EVT_LTR_TX_DLY:
-		_os_delay_us(phl_to_drvpriv(phl), 500);
-		rtw_phl_tx_req_notify(phl);
-		break;
-	default:
-		break;
-	}
-
-}
-
 void phl_msg_hub_rx_evt_hdlr(struct phl_info_t* phl, u16 evt_id,
 		u8 *buf, u32 len)
 {
@@ -408,6 +448,16 @@ void phl_msg_hub_rx_evt_hdlr(struct phl_info_t* phl, u16 evt_id,
 	case MSG_EVT_DBG_RX_DUMP:
 		phl_rx_dbg_dump(phl, HW_PHY_0);
 		break;
+#ifdef CONFIG_PHL_TWT
+	case MSG_EVT_TWT_WAIT_ANNOUNCE:
+		rtw_phl_twt_handle_c2h_wait_annc(phl, buf);
+		break;
+#endif
+#ifdef CONFIG_PHL_NAN
+	case MSG_EVT_NAN_ENTRY:
+		phl_nan_c2h_info_parsing(&phl->nan_info, buf);
+		break;
+#endif
 	default:
 		break;
 	}

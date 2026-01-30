@@ -14,11 +14,16 @@
  *****************************************************************************/
 #define _PHL_CUSTOM_C_
 #include "../phl_headers.h"
+#ifdef CONFIG_PHL_CUSTOM_FEATURE_VR
+#include "phl_custom_vr.h"
+#endif
+#ifdef CONFIG_PHL_CUSTOM_FEATURE_FB
 #include "phl_custom_fb.h"
+#endif
+#include "phl_custom_antenna.h"
 
 #ifdef CONFIG_PHL_CUSTOM_FEATURE
 
-#define MAX_DATA_SIZE	(512)
 enum custom_status {
 	CUS_STAT_CMD_USED = BIT0,
 	CUS_STAT_RPT_USED = BIT1,
@@ -28,10 +33,13 @@ enum custom_status {
 struct phl_custom_ctx {
 	struct phl_info_t *phl_info;
 	u8 status; /* refer to enum custom_status*/
-	u8 cmd_buf[MAX_DATA_SIZE];
-	u8 rpt_buf[MAX_DATA_SIZE];
+	u8 cmd_buf[sizeof(struct rtw_custom_decrpt)];
+	u8 rpt_buf[sizeof(struct rtw_custom_decrpt)];
+#ifdef CONFIG_PHL_CUSTOM_FEATURE_VR
+	struct _custom_vr_ctx vr_ctx;
+#endif
 #ifdef CONFIG_PHL_CUSTOM_FEATURE_FB
-	struct _custom_facebook_ctx fb_ctx;
+	struct _custom_fb_ctx fb_ctx;
 #endif
 };
 
@@ -70,7 +78,7 @@ _custom_rpt_notify_start(void* priv,
 	SET_MSG_EVT_ID_FIELD(msg->msg_id, MSG_EVT_CUSTOM_CMD_DONE);
 
 	msg->inbuf = (u8*) evt_rpt;
-	msg->inlen = evt_rpt->len + sizeof(struct rtw_custom_decrpt);
+	msg->inlen = sizeof(struct rtw_custom_decrpt);
 
 	attr->completion.completion = _custom_rpt_notify_complete;
 	attr->completion.priv = ctx;
@@ -110,68 +118,58 @@ _phl_custom_prepare_default_fail_rpt(struct phl_custom_ctx *ctx,
                                    1);
 	return RTW_PHL_STATUS_SUCCESS;
 }
-static enum phl_mdl_ret_code
-_phl_custom_hdl_fail_evt(void* dispr,
-                         struct phl_custom_ctx* ctx,
-                         struct phl_msg* msg)
+
+static enum phl_mdl_ret_code _phl_custom_hdl_fail_evt(
+    void *dispr, struct phl_custom_ctx *ctx, struct phl_msg *msg)
 {
 	enum phl_mdl_ret_code ret = MDL_RET_IGNORE;
 	struct rtw_custom_decrpt *cmd = NULL;
 
 	cmd = (struct rtw_custom_decrpt *)(msg->inbuf);
-	switch (MSG_EVT_ID_FIELD(msg->msg_id)) {
-		case MSG_EVT_EDCA_ADJUST:
-#ifdef CONFIG_PHL_CUSTOM_FEATURE_FB
-			if(cmd->customer_id == CUS_ID_FB) {
-				ret = phl_custom_hdl_fb_fail_evt(dispr,
-				                                 ctx,
-				                                 &(ctx->fb_ctx),
-				                                 msg);
-			}
-#else
-			ret = MDL_RET_IGNORE;
+	switch (cmd->customer_id) {
+	case CUS_ID_VR:
+#ifdef CONFIG_PHL_CUSTOM_FEATURE_VR
+		ret =
+		    phl_custom_hdl_vr_fail_evt(dispr, ctx, &(ctx->vr_ctx), msg);
 #endif
-			break;
-		default:
-			ret = MDL_RET_IGNORE;
-			break;
+		break;
+	case CUS_ID_FB:
+#ifdef CONFIG_PHL_CUSTOM_FEATURE_FB
+		ret =
+		    phl_custom_hdl_fb_fail_evt(dispr, ctx, &(ctx->fb_ctx), msg);
+#endif
+		break;
+	default:
+		ret = MDL_RET_IGNORE;
+		break;
 	}
 	return ret;
 }
-static enum phl_mdl_ret_code
-_phl_custom_hdl_internal_evt(void* dispr,
-			     struct phl_custom_ctx* ctx,
-			     struct phl_msg* msg)
+
+static enum phl_mdl_ret_code _phl_custom_hdl_internal_evt(
+    void *dispr, struct phl_custom_ctx *ctx, struct phl_msg *msg)
 {
 	enum phl_mdl_ret_code ret = MDL_RET_FAIL;
 	struct rtw_custom_decrpt *cmd = NULL;
 
 	cmd = (struct rtw_custom_decrpt *)(msg->inbuf);
-	switch (MSG_EVT_ID_FIELD(msg->msg_id)) {
-		case MSG_EVT_CUSTOME_FEATURE_ENABLE:
-		case MSG_EVT_CUSTOME_FEATURE_QUERY:
-		case MSG_EVT_CUSTOME_TESTMODE_PARAM:
-		case MSG_EVT_CUSTOME_SET_WIFI_ROLE:
-		case MSG_EVT_AMPDU_CFG:
-		case MSG_EVT_AMPDU_QUERY:
-		case MSG_EVT_PDTHR_CFG:
-		case MSG_EVT_PDTHR_QUERY:
-		case MSG_EVT_POP_CFG:
-		case MSG_EVT_POP_QUERY:
-#ifdef CONFIG_PHL_CUSTOM_FEATURE_FB
-			if(cmd->customer_id == CUS_ID_FB) {
-				ret = phl_custom_hdl_fb_evt(dispr,
-				                            ctx,
-				                            &(ctx->fb_ctx),
-				                            msg);
-			}
-#else
-			ret = MDL_RET_IGNORE;
+	switch (cmd->customer_id) {
+	case CUS_ID_VR:
+#ifdef CONFIG_PHL_CUSTOM_FEATURE_VR
+		ret = phl_custom_hdl_vr_evt(dispr, ctx, &(ctx->vr_ctx), msg);
 #endif
-			break;
-		default:
-			ret = MDL_RET_IGNORE;
-			break;
+		break;
+	case CUS_ID_FB:
+#ifdef CONFIG_PHL_CUSTOM_FEATURE_FB
+		ret = phl_custom_hdl_fb_evt(dispr, ctx, &(ctx->fb_ctx), msg);
+#endif
+		break;
+	case CUS_ID_ANT_TOOL:
+		ret = phl_custom_antenna_cmd_hdlr(dispr, ctx, msg);
+		break;
+	default:
+		ret = MDL_RET_IGNORE;
+		break;
 	}
 	return ret;
 }
@@ -273,7 +271,39 @@ _phl_custom_mdl_msg_hdlr(void* dispr,
 	FUNCOUT();
 	return ret;
 }
+
 enum phl_mdl_ret_code
+_phl_custom_feature_set_hdlr(void* dispr,
+                         struct phl_custom_ctx *ctx,
+                         struct phl_module_op_info* info)
+{
+	enum phl_mdl_ret_code ret = MDL_RET_IGNORE;
+	struct rtw_custom_decrpt *cmd = NULL;
+
+	cmd = (struct rtw_custom_decrpt *)info->inbuf;
+
+	switch (cmd->customer_id) {
+	case CUS_ID_VR:
+#ifdef CONFIG_PHL_CUSTOM_FEATURE_VR
+		ret = phl_custom_vr_feature_set_hdlr(dispr, ctx,
+		                                     &(ctx->vr_ctx), cmd);
+#endif
+		break;
+	case CUS_ID_FB:
+#ifdef CONFIG_PHL_CUSTOM_FEATURE_FB
+		ret = phl_custom_fb_feature_set_hdlr(dispr, ctx,
+		                                     &(ctx->fb_ctx), cmd);
+#endif
+		break;
+	default:
+		ret = MDL_RET_IGNORE;
+		break;
+	}
+
+	return ret;
+}
+
+static enum phl_mdl_ret_code
 _phl_custom_mdl_set_info(void* dispr,
                          void* priv,
                          struct phl_module_op_info* info)
@@ -291,7 +321,7 @@ _phl_custom_mdl_set_info(void* dispr,
 	switch (info->op_code) {
 		case BK_MODL_OP_INPUT_CMD:
 			if (TEST_STATUS_FLAG(ctx->status, CUS_STAT_CMD_USED) ||
-				info->inlen > MAX_DATA_SIZE) {
+				info->inlen > sizeof(struct rtw_custom_decrpt)) {
 				PHL_ERR("%s buf len err or used\n", __func__);
 				break;
 			}
@@ -316,11 +346,8 @@ _phl_custom_mdl_set_info(void* dispr,
 				ret = MDL_RET_FAIL;
 			}
 			break;
-		case BK_MODL_OP_CUS_SET_ROLE_CAP:
-			ret = phl_custom_fb_set_role_cap(dispr,
-			                             (void *)ctx,
-			                             &ctx->fb_ctx,
-			                             info);
+		case BK_MODL_OP_CUS_FEATURE_SET:
+			ret = _phl_custom_feature_set_hdlr(dispr, ctx, info);
 			break;
 		default:
 			break;
@@ -328,6 +355,38 @@ _phl_custom_mdl_set_info(void* dispr,
 	FUNCOUT();
 	return ret;
 }
+
+enum phl_mdl_ret_code
+_phl_custom_feature_query_hdlr(void* dispr,
+                         struct phl_custom_ctx *ctx,
+                         struct phl_module_op_info* info)
+{
+	enum phl_mdl_ret_code ret = MDL_RET_IGNORE;
+	struct rtw_custom_decrpt *cmd = NULL;
+
+	cmd = (struct rtw_custom_decrpt *)info->outbuf;
+
+	switch (cmd->customer_id) {
+	case CUS_ID_VR:
+#ifdef CONFIG_PHL_CUSTOM_FEATURE_VR
+		ret = phl_custom_vr_feature_query_hdlr(dispr, ctx,
+		                                     &(ctx->vr_ctx), cmd);
+#endif
+		break;
+	case CUS_ID_FB:
+#ifdef CONFIG_PHL_CUSTOM_FEATURE_FB
+		ret = phl_custom_fb_feature_query_hdlr(dispr, ctx,
+		                                     &(ctx->fb_ctx), cmd);
+#endif
+		break;
+	default:
+		ret = MDL_RET_IGNORE;
+		break;
+	}
+
+	return ret;
+}
+
 enum phl_mdl_ret_code
 _phl_custom_mdl_query_info(void* dispr,
                            void* priv,
@@ -341,11 +400,12 @@ _phl_custom_mdl_query_info(void* dispr,
 	struct rtw_custom_decrpt *cmd = NULL;
 	u8 idx = 0xff;
 
+	phl_dispr_get_idx(dispr, &idx);
 	FUNCIN();
 	switch(info->op_code) {
 		case BK_MODL_OP_INPUT_CMD:
 			if (TEST_STATUS_FLAG(ctx->status, CUS_STAT_CMD_USED) ||
-				info->inlen > MAX_DATA_SIZE) {
+				info->inlen > sizeof(struct rtw_custom_decrpt)) {
 				PHL_ERR("%s buf len err or used\n", __func__);
 				break;
 			}
@@ -373,9 +433,9 @@ _phl_custom_mdl_query_info(void* dispr,
 				ret = MDL_RET_FAIL;
 			}
 			break;
-		case BK_MODL_OP_CUS_UPDATE_ROLE_CAP:
-	   		ret = phl_custom_fb_update_opt_ie(dispr, (void*)ctx, &ctx->fb_ctx, info);
-		break;
+		case BK_MODL_OP_CUS_FEATURE_QUERY:
+			ret = _phl_custom_feature_query_hdlr(dispr, ctx, info);
+			break;
 	default:
 		break;
 	}
@@ -385,10 +445,12 @@ _phl_custom_mdl_query_info(void* dispr,
 }
 
 enum rtw_phl_status
-phl_register_custom_module(struct phl_info_t *phl_info, u8 band_idx)
+phl_register_custom_module(struct phl_info_t *phl_info)
 {
 	enum rtw_phl_status phl_status = RTW_PHL_STATUS_FAILURE;
+	struct phl_cmd_dispatch_engine *disp_eng = &(phl_info->disp_eng);
 	struct phl_bk_module_ops bk_ops = {0};
+	u8 i = 0;
 
 	bk_ops.init = _phl_custom_mdl_init;
 	bk_ops.deinit = _phl_custom_mdl_deinit;
@@ -398,13 +460,17 @@ phl_register_custom_module(struct phl_info_t *phl_info, u8 band_idx)
 	bk_ops.query_info = _phl_custom_mdl_query_info;
 	bk_ops.set_info = _phl_custom_mdl_set_info;
 
-	phl_status = phl_disp_eng_register_module(phl_info,
-	                                          band_idx,
-	                                          PHL_MDL_CUSTOM,
-	                                          &bk_ops);
-	if (RTW_PHL_STATUS_SUCCESS != phl_status)
-		PHL_ERR("%s register Custom module in cmd disp failed\n", __func__);
-
+	for (i = 0; i < disp_eng->phy_num; i++) {
+		phl_status = phl_disp_eng_register_module(
+		    phl_info, i, PHL_MDL_CUSTOM, &bk_ops);
+		if (RTW_PHL_STATUS_SUCCESS != phl_status) {
+			PHL_TRACE(COMP_PHL_DBG, _PHL_ERR_,
+				  "%s register PHL_MDL_CUSTOM in cmd disp "
+				  "failed :%d\n",
+				  __func__, i);
+			break;
+		}
+	}
 	return phl_status;
 
 }
@@ -419,9 +485,9 @@ phl_custom_prepare_evt_rpt(void *custom_ctx,
 	struct phl_custom_ctx *ctx = (struct phl_custom_ctx *)custom_ctx;
 	struct rtw_custom_decrpt *evt_rpt = (struct rtw_custom_decrpt *)ctx->rpt_buf;
 	void *d = phl_to_drvpriv(ctx->phl_info);
-	u8* val = (u8*)(evt_rpt +1);
+	u8* val = evt_rpt->data;
 
-	if ((rpt_len > (MAX_DATA_SIZE - sizeof(struct rtw_custom_decrpt))) ||
+	if ((rpt_len > MAX_DATA_SIZE) ||
 	   TEST_STATUS_FLAG(ctx->status, CUS_STAT_RPT_USED))
 		return RTW_PHL_STATUS_RESOURCE;
 
@@ -432,6 +498,52 @@ phl_custom_prepare_evt_rpt(void *custom_ctx,
 	_os_mem_cpy(d, val, rpt, rpt_len);
 	return RTW_PHL_STATUS_SUCCESS;
 }
+
+enum rtw_phl_status
+rtw_phl_custom_prepare_set_info_evt(u32 evt_id,
+                                    u32 customer_id,
+                                    struct rtw_custom_decrpt *inbuf,
+                                    struct phl_module_op_info *op_info,
+                                    u32 data_len)
+{
+	if ((data_len > MAX_DATA_SIZE)) {
+		PHL_ERR("%s data_len exceeds MAX_DATA_SIZE\n", __func__);
+		return RTW_PHL_STATUS_RESOURCE;
+	}
+
+	inbuf->evt_id = evt_id;
+	inbuf->customer_id = customer_id;
+	inbuf->len = data_len;
+
+	op_info->op_code = BK_MODL_OP_CUS_FEATURE_SET;
+	op_info->inbuf = (u8*)inbuf;
+	op_info->inlen = sizeof(struct rtw_custom_decrpt);
+
+	return RTW_PHL_STATUS_SUCCESS;
+}
+
+enum rtw_phl_status
+rtw_phl_custom_prepare_query_info_evt(u32 evt_id,
+                                      u32 customer_id,
+                                      struct rtw_custom_decrpt *inbuf,
+                                      struct phl_module_op_info *op_info,
+                                      u32 data_len)
+{
+	if ((data_len > MAX_DATA_SIZE)) {
+		PHL_ERR("%s data_len exceeds MAX_DATA_SIZE\n", __func__);
+		return RTW_PHL_STATUS_RESOURCE;
+	}
+	inbuf->evt_id = evt_id;
+	inbuf->customer_id = customer_id;
+	inbuf->len = data_len;
+
+	op_info->op_code = BK_MODL_OP_CUS_FEATURE_QUERY;
+	op_info->outbuf = (u8*)inbuf;
+	op_info->outlen = sizeof(struct rtw_custom_decrpt);
+
+	return RTW_PHL_STATUS_SUCCESS;
+}
+
 struct phl_info_t*
 phl_custom_get_phl_info(void *custom_ctx)
 {
@@ -441,22 +553,71 @@ phl_custom_get_phl_info(void *custom_ctx)
 }
 
 /**
- * phl_custom_init_role_cap
+ * phl_custom_init_role_link_cap
  * 1. role cap customization
  * input:
  * @phl_info: (struct phl_info_t *)
  * @hw_band:hw_band
- * @role_cap: (struct role_cap_t)
+ * @role_link_cap: (struct role_link_cap_t)
  * return: rtw_phl_status
  */
 enum rtw_phl_status
-phl_custom_init_role_cap(struct phl_info_t *phl_info,
+phl_custom_init_role_link_cap(struct phl_info_t *phl_info,
                          u8 hw_band,
-                         struct role_cap_t *role_cap)
+                         struct role_link_cap_t *role_link_cap)
 {
 	enum rtw_phl_status status = RTW_PHL_STATUS_SUCCESS;
 
-	status = phl_custom_fb_init_role_cap(phl_info, hw_band, role_cap);
+#ifdef CONFIG_PHL_CUSTOM_FEATURE_FB
+	status = phl_custom_fb_init_role_link_cap(phl_info, hw_band, role_link_cap);
+#endif
+
+	return status;
+}
+
+/**
+ * phl_custom_init_protocol_cap
+ * 1. protocol cap customization
+ * input:
+ * @phl_info: (struct phl_info_t *)
+ * @hw_band:hw_band
+ * @rtype: role type
+ * @protocol_cap: (struct protocol_cap_t)
+ * return: rtw_phl_status
+ */
+enum rtw_phl_status phl_custom_init_protocol_cap(
+    struct phl_info_t *phl_info, u8 hw_band, enum role_type rtype,
+    struct protocol_cap_t *protocol_cap)
+{
+	enum rtw_phl_status status = RTW_PHL_STATUS_SUCCESS;
+
+#ifdef CONFIG_PHL_CUSTOM_FEATURE_VR
+	status = phl_custom_vr_init_protocol_cap(phl_info, hw_band, rtype,
+						 protocol_cap);
+#endif
+
+	return status;
+}
+
+
+/**
+ * phl_custom_txsts_notify
+ * 1. prepare wp customized rpt
+ * input:
+ * @phl_info: (struct phl_info_t *)
+ * @macid:macid
+ * @ac: ac
+ * @txsts: txsts
+ * return: rtw_phl_status
+ */
+enum rtw_phl_status phl_custom_txsts_notify(struct phl_info_t *phl_info,
+					    u8 macid, u16 ac, u8 txsts)
+{
+	enum rtw_phl_status status = RTW_PHL_STATUS_SUCCESS;
+
+#ifdef CONFIG_PHL_CUSTOM_FRAME_STAT
+	status = phl_custom_vr_txsts_notify(phl_info, macid, ac, txsts);
+#endif
 
 	return status;
 }

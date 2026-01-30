@@ -17,6 +17,76 @@
 #include <drv_types.h>
 #include <rtw_sec_cam.h>
 
+#if 0
+
+#define SEC_CAM_ENT_ID_TITLE_FMT "%-2s"
+#define SEC_CAM_ENT_ID_TITLE_ARG "id"
+#define SEC_CAM_ENT_ID_VALUE_FMT "%2u"
+#define SEC_CAM_ENT_ID_VALUE_ARG(id) (id)
+
+#define SEC_CAM_ENT_TITLE_FMT "%-6s %-17s %-32s %-3s %-8s %-2s %-2s %-5s"
+#define SEC_CAM_ENT_TITLE_ARG "ctrl", "addr", "key", "kid", "type", "MK", "GK", "valid"
+#define SEC_CAM_ENT_VALUE_FMT "0x%04x "MAC_FMT" "KEY_FMT" %3u %-8s %2u %2u %5u"
+#define SEC_CAM_ENT_VALUE_ARG(ent) \
+	(ent)->ctrl \
+	, MAC_ARG((ent)->mac) \
+	, KEY_ARG((ent)->key) \
+	, ((ent)->ctrl) & 0x03 \
+	, (((ent)->ctrl) & 0x200) ? \
+	security_type_str((((ent)->ctrl) >> 2 & 0x7) | _SEC_TYPE_256_) : \
+	security_type_str(((ent)->ctrl) >> 2 & 0x7) \
+	, (((ent)->ctrl) >> 5) & 0x01 \
+	, (((ent)->ctrl) >> 6) & 0x01 \
+	, (((ent)->ctrl) >> 15) & 0x01
+
+void dump_sec_cam_ent(void *sel, struct sec_cam_ent *ent, int id)
+{
+	if (id >= 0) {
+		RTW_PRINT_SEL(sel, SEC_CAM_ENT_ID_VALUE_FMT " " SEC_CAM_ENT_VALUE_FMT"\n"
+			, SEC_CAM_ENT_ID_VALUE_ARG(id), SEC_CAM_ENT_VALUE_ARG(ent));
+	} else
+		RTW_PRINT_SEL(sel, SEC_CAM_ENT_VALUE_FMT"\n", SEC_CAM_ENT_VALUE_ARG(ent));
+}
+
+void dump_sec_cam_ent_title(void *sel, u8 has_id)
+{
+	if (has_id) {
+		RTW_PRINT_SEL(sel, SEC_CAM_ENT_ID_TITLE_FMT " " SEC_CAM_ENT_TITLE_FMT"\n"
+			, SEC_CAM_ENT_ID_TITLE_ARG, SEC_CAM_ENT_TITLE_ARG);
+	} else
+		RTW_PRINT_SEL(sel, SEC_CAM_ENT_TITLE_FMT"\n", SEC_CAM_ENT_TITLE_ARG);
+}
+
+void dump_sec_cam(void *sel, _adapter *adapter)
+{
+	struct dvobj_priv *dvobj = adapter_to_dvobj(adapter);
+	struct cam_ctl_t *cam_ctl = &dvobj->cam_ctl;
+	struct sec_cam_ent ent;
+	int i;
+
+	RTW_PRINT_SEL(sel, "HW sec cam:\n");
+	dump_sec_cam_ent_title(sel, 1);
+	for (i = 0; i < cam_ctl->num; i++) {
+		rtw_hal_sec_read_cam_ent(adapter, i, (u8 *)(&ent.ctrl), ent.mac, ent.key);
+		dump_sec_cam_ent(sel , &ent, i);
+	}
+}
+
+void dump_sec_cam_cache(void *sel, _adapter *adapter)
+{
+	struct dvobj_priv *dvobj = adapter_to_dvobj(adapter);
+	struct cam_ctl_t *cam_ctl = &dvobj->cam_ctl;
+	int i;
+
+	RTW_PRINT_SEL(sel, "SW sec cam cache:\n");
+	dump_sec_cam_ent_title(sel, 1);
+	for (i = 0; i < cam_ctl->num; i++) {
+		if (dvobj->cam_cache[i].ctrl != 0)
+			dump_sec_cam_ent(sel, &dvobj->cam_cache[i], i);
+	}
+
+}
+
 void invalidate_cam_all(_adapter *padapter)
 {
 	struct dvobj_priv *dvobj = adapter_to_dvobj(padapter);
@@ -677,50 +747,44 @@ void rtw_clean_hw_dk_cam(_adapter *adapter)
 		rtw_hal_sec_clr_cam_ent(adapter, i);
 		/*_clear_cam_entry(adapter, i);*/
 }
-
+#endif
 void flush_all_cam_entry(struct _ADAPTER *a, enum phl_cmd_type cmd_type, u32 cmd_timeout)
 {
-	struct mlme_ext_info *pmlmeinfo = &a->mlmeextpriv.mlmext_info;
 	struct sta_priv	*stapriv = &a->stapriv;
 	u8 *mac;
 	struct sta_info	*sta;
+	struct _ADAPTER_LINK *alink;
+	u8 lidx;
 
 
 	if (MLME_IS_STA(a)) {
-		mac = pmlmeinfo->network.MacAddress;
-		sta = rtw_get_stainfo(stapriv, mac);
-		if (sta) {
-			if (sta->state & WIFI_AP_STATE)
-				/*clear cam when ap free per sta_info*/
-				RTW_INFO("%s: sta->state(0x%x) is AP, "
-					 "do nothing\n",
-					 __func__, sta->state);
-			else
-				rtw_hw_del_all_key(a, sta, cmd_type, cmd_timeout);
-		} else {
-			RTW_WARN("%s: cann't find sta for %pM\n", __func__, mac);
-			rtw_warn_on(1);
+		for (lidx = 0; lidx < a->adapter_link_num; lidx++) {
+			alink = GET_LINK(a, lidx);
+			mac = alink->mlmeextpriv.mlmext_info.network.MacAddress;
+			sta = rtw_get_stainfo(stapriv, mac);
+			if (sta) {
+				if (sta->state & WIFI_AP_STATE)
+					/*clear cam when ap free per sta_info*/
+					RTW_INFO("%s: sta->state(0x%x) is AP, "
+					 	"do nothing\n",
+						 __func__, sta->state);
+				else
+					rtw_hw_del_all_key(a, sta, cmd_type, cmd_timeout);
+			} else {
+				RTW_WARN("%s: cann't find sta for " MAC_FMT "\n", __func__, MAC_ARG(mac));
+				rtw_warn_on(1);
+			}
 		}
 	} else if (MLME_IS_AP(a) || MLME_IS_MESH(a)) {
-		mac = adapter_mac_addr(a);
-		sta = rtw_get_stainfo(stapriv, mac);
-		if (sta)
-			rtw_hw_del_all_key(a, sta, cmd_type, cmd_timeout);
+		for (lidx = 0; lidx < a->adapter_link_num; lidx++) {
+			alink = GET_LINK(a, lidx);
+			mac = alink->mac_addr;
+			sta = rtw_get_stainfo(stapriv, mac);
+			if (sta)
+				rtw_hw_del_all_key(a, sta, cmd_type, cmd_timeout);
+		}
 	}
 }
-
-#if defined(DBG_CONFIG_ERROR_RESET) && defined(CONFIG_CONCURRENT_MODE)
-void rtw_iface_bcmc_sec_cam_map_restore(_adapter *adapter)
-{
-	struct dvobj_priv *dvobj = adapter_to_dvobj(adapter);
-	struct cam_ctl_t *cam_ctl = dvobj_to_sec_camctl(dvobj);
-	int cam_id = -1;
-
-	cam_id = rtw_phl_wrole_bcmc_id_get(GET_PHL_INFO(dvobj), adapter->phl_role);
-	if (cam_id != INVALID_SEC_MAC_CAM_ID)
-		rtw_sec_cam_map_set(&cam_ctl->used, cam_id);
-}
-#endif
 
 #ifdef  CONFIG_DBG_AX_CAM
 /*
@@ -973,23 +1037,29 @@ int get_ax_sec_cam(void* sel, struct _ADAPTER *a)
 	return 0;
 }
 
-static void dump_valid_key(void* sel, u8* addr_map, u8* sec_map, u8* bssid_map\
+static void dump_valid_key(void* sel, u8* addr_map, u8* sec_map, u8* bssid_map
 		, u8 sec_entry, u8 key_type, u8 keyid)
 {
 	u8 SMA[ETH_ALEN] = {0}, TMA[ETH_ALEN] = {0};
 	u8 macid = 0, nettype = 0;
+	char mac_addr_str_SMA[MAC_FMT_LEN];
+	char mac_addr_str_TMA[MAC_FMT_LEN];
+	char mac_addr_str[MAC_FMT_LEN];
 
 	macid = GET_AX_ADDR_CAM_MACID(addr_map);
 	nettype = GET_AX_ADDR_CAM_NET_TYPE(addr_map);
 
 	_rtw_memcpy(SMA, &addr_map[8], ETH_ALEN);
 	_rtw_memcpy(TMA,&addr_map[14], ETH_ALEN);
-	RTW_PRINT_SEL(sel, "%-5u %s "MAC_FMT"  " MAC_FMT" " MAC_FMT\
-		" %-5u %-5u %s %-7u %-3u %s "KEY_FMT"\n", macid\
-		, nettype_to_string[nettype], MAC_ARG(SMA), MAC_ARG(TMA)\
-		, MAC_ARG(&bssid_map[2]), keyid, sec_entry\
-		, enc_algo_to_string[GET_AX_SEC_CAM_TYPE(sec_map)] \
-		, GET_AX_SEC_CAM_EXT_KEY(sec_map), GET_AX_SEC_SPP_MODE_(sec_map)\
+
+	RTW_PRINT_SEL(sel, "%-5u %s %s  %s %s %-5u %-5u %s %-7u %-3u %s "KEY_FMT"\n"
+		, macid, nettype_to_string[nettype]
+		, get_macaddr_str(mac_addr_str_SMA, sel, SMA)
+		, get_macaddr_str(mac_addr_str_TMA, sel, TMA)
+		, get_macaddr_str(mac_addr_str, sel, &bssid_map[2])
+		, keyid, sec_entry
+		, enc_algo_to_string[GET_AX_SEC_CAM_TYPE(sec_map)]
+		, GET_AX_SEC_CAM_EXT_KEY(sec_map), GET_AX_SEC_SPP_MODE_(sec_map)
 		, type_to_string[key_type], KEY_ARG(&sec_map[4]));
 }
 

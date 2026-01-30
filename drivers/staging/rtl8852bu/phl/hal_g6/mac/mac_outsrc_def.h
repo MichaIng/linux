@@ -19,6 +19,11 @@
 
 // for other submodule ref definition defined here
 /*--------------------Define -------------------------------------------*/
+#define RTW_MAC_LA_BUF_SEL_256K 0x3
+#define RTW_MAC_LA_BUF_SEL_192K 0x2
+#define RTW_MAC_LA_BUF_SEL_128K 0x1
+#define RTW_MAC_LA_BUF_SEL_64K 0x0
+
 /*--------------------Define MACRO--------------------------------------*/
 /*--------------------Define Enum---------------------------------------*/
 
@@ -61,7 +66,8 @@ enum rtw_mac_src_cmd_ofld {
 enum rtw_mac_cmd_type_ofld {
 	RTW_MAC_WRITE_OFLD = 0,
 	RTW_MAC_COMPARE_OFLD,
-	RTW_MAC_DELAY_OFLD
+	RTW_MAC_DELAY_OFLD,
+	RTW_MAC_MOVE_OFLD
 };
 
 /**
@@ -130,12 +136,51 @@ enum rtw_fw_cap {
 struct rtw_mac_cmd {
 	enum rtw_mac_src_cmd_ofld src;
 	enum rtw_mac_cmd_type_ofld type;
-	u8 lc;
 	enum rtw_mac_rf_path rf_path;
-	u16 offset;
-	u16 id;
+	u32 offset;
 	u32 value;
 	u32 mask;
+	u16 id;
+	u8 lc;
 };
 
+/**
+ * @struct rtw_mac_cmd_v1
+ * @brief rtw_mac_cmd_v1
+ *
+ * @var rtw_mac_cmd::src0
+ * Please Place Description here.
+ * @var rtw_mac_cmd::src1
+ * Please Place Description here.
+ * @var rtw_mac_cmd_v1::type
+ * Please Place Description here.
+ * @var rtw_mac_cmd_v1::lc
+ * Please Place Description here.
+ * @var rtw_mac_cmd_v1::rf_path
+ * Please Place Description here.
+ * @var rtw_mac_cmd_v1::offset0
+ * Please Place Description here.
+ * @var rtw_mac_cmd_v1::value0
+ * Please Place Description here.
+ * @var rtw_mac_cmd_v1::mask0
+ * Please Place Description here.
+ * @var rtw_mac_cmd_v1::offset1
+ * Please Place Description here.
+ * @var rtw_mac_cmd_v1::rsvd0
+ * Please Place Description here.
+ * @var rtw_mac_cmd_v1::mask1
+ * Please Place Description here.
+ */
+struct rtw_mac_cmd_v1 {
+	enum rtw_mac_src_cmd_ofld src0;
+	enum rtw_mac_rf_path rf_path0;
+	enum rtw_mac_src_cmd_ofld src1;
+	enum rtw_mac_rf_path rf_path1;
+	enum rtw_mac_cmd_type_ofld type;
+	u32 offset0;
+	u32 offset1;
+	u32 mask0;
+	u32 value;
+	u8 lc;
+};
 #endif //_MAC_OUTSRC_DEF_H_

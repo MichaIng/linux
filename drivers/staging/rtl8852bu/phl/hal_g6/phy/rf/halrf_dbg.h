@@ -28,16 +28,21 @@
 /*@--------------------------[Define] ---------------------------------------*/
 #define HALRF_WATCHDOG_PERIOD	2 /*second*/
 
+#define RFDBG_DBG_EN
+#ifdef RFDBG_DBG_EN
+#define RF_DBG(rf, comp, fmt, ...)	   \
+	do {\
+		if(rf->dbg_component & comp)\
+			_os_dbgdump("[RF]" fmt, ##__VA_ARGS__);\
+	} while (0)
+#else
+	#define RF_DBG
+#endif
+
 
 
 #define RFDBG_TRACE_EN
 #ifdef RFDBG_TRACE_EN
-	#define RF_DBG(rf, comp, fmt, ...)     \
-		do {\
-			if(rf->dbg_component & comp)\
-				_os_dbgdump("[RF]" fmt, ##__VA_ARGS__);\
-		} while (0)
-		
 	#define RF_TRACE(fmt, ...)     \
 		do {\
 			_os_dbgdump("[RF]" fmt, ##__VA_ARGS__);\
@@ -60,7 +65,6 @@
 				*used_len_tmp += _os_snprintf(buff_addr, remain_len, fmt, ##__VA_ARGS__);\
 		} while (0)
 #else
-	#define RF_DBG
 	#define RF_TRACE
 	#define RF_WARNING
 	#define RF_DBG_CNSL		/*Print on Consol,CLI */
@@ -81,6 +85,7 @@ void halrf_dump_rfk_reg(struct rf_info *rf, char input[][16], u32 *_used, char *
 void halrf_support_ability(struct rf_info *rf, char input[][16], u32 *_used, char *output, u32 *_out_len);
 void halrf_dbg_trace(struct rf_info *rf, char input[][16], u32 *_used, char *output, u32 *_out_len);
 void halrf_dpk_dbg_cmd(struct rf_info *rf, char input[][16], u32 *_used, char *output, u32 *_out_len);
+void halrf_dpk_track_dbg_cmd(struct rf_info *rf, char input[][16], u32 *_used, char *output, u32 *_out_len);
 void halrf_rx_dck_dbg_cmd(struct rf_info *rf, char input[][16], u32 *_used, char *output, u32 *_out_len);
 void halrf_dack_dbg_cmd(struct rf_info *rf, char input[][16], u32 *_used, char *output, u32 *_out_len);
 void halrf_tssi_dbg_cmd(struct rf_info *rf, char input[][16], u32 *_used, char *output, u32 *_out_len);
@@ -99,5 +104,18 @@ void halrf_dump_rf_reg_cmd(struct rf_info *rf, char input[][16], u32 *_used, cha
 void halrf_hwtx_dbg_cmd(struct rf_info *rf, char input[][16], u32 *_used, char *output, u32 *_out_len);
 void halrf_kfree_dbg_cmd(struct rf_info *rf, char input[][16], u32 *_used, char *output, u32 *_out_len);
 void halrf_chl_rfk_dbg_cmd(struct rf_info *rf, char input[][16], u32 *_used, char *output, u32 *_out_len);
+#ifdef HALRF_OP5K_SUPPORT
+void halrf_op5k_dbg_cmd(struct rf_info *rf, char input[][16], u32 *_used, char *output, u32 *_out_len);
+#endif
+void halrf_rfk_dbg_cmd(struct rf_info *rf, char input[][16], u32 *_used, char *output, u32 *_out_len);
+
+#ifdef HALRF_PSD_SUPPORT
+void halrf_psd_cmd(struct rf_info *rf, char input[][16], u32 *_used, char *output, u32 *_out_len);
+#endif	/*HALRF_PSD_SUPPORT*/
+
+void halrf_dz_dbg_cmd(struct rf_info *rf, char input[][16], u32 *_used, char *output, u32 *_out_len);
+void halrf_ft_rfq_cmd(struct rf_info *rf, char input[][16], u32 *_used, char *output, u32 *_out_len);
+void halrf_lps_cfg_cmd(struct rf_info *rf, char input[][16], u32 *_used, char *output, u32 *_out_len);
+void halrf_tas_dbg_cmd(struct rf_info *rf, char input[][16], u32 *_used, char *output, u32 *_out_len);
 
 #endif
