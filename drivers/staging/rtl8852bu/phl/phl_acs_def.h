@@ -23,6 +23,7 @@ struct acs_mntr_rpt {
 	u8 clm_ratio;
 	u8 nhm_ratio;
 	u8 nhm_pwr;
+	u8 nhm_tx_ratio;
 	u8 nhm_rpt[NHM_RPT_NUM];
 };
 struct rtw_acs_info_parm {

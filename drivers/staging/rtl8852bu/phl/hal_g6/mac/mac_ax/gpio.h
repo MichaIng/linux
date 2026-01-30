@@ -35,6 +35,25 @@
 	 0, 0, 0, 0, \
 	 0, 0, 0, 0}
 
+/* LED mode related */
+#define LED_MODE_SW_CTRL 0
+#define LED_MODE_AON 1
+#define LED_MODE_TRX_ON 2
+#define LED_MODE_TRX_OFF 3
+#define LED_MODE_TX_ON 4
+#define LED_MODE_TX_OFF 5
+#define LED_MODE_RX_ON 6
+#define LED_MODE_RX_OFF 7
+/* WL DIS related */
+#define MAC_AX_HCI_SEL_SDIO_UART 0
+#define MAC_AX_HCI_SEL_USB_MULT 1
+#define MAC_AX_HCI_SEL_PCIE_UART 2
+#define MAC_AX_HCI_SEL_PCIE_USB 3
+#define MAC_AX_HCI_SEL_SDIO_MULT 4
+#define MAC_AX_HCI_SEL_RSVD 5
+#define MAC_AX_HCI_SEL_PCIE_GEN1_UART 6
+#define MAC_AX_HCI_SEL_PCIE_GEN1_USB 7
+
 /**
  * @addtogroup Common
  * @{
@@ -315,4 +334,68 @@ u32 mac_cfg_wps(struct mac_ax_adapter *adapter,
 u32 mac_get_gpio_val(struct mac_ax_adapter *adapter, u8 gpio, u8 *val);
 u32 mac_get_wl_dis_val(struct mac_ax_adapter *adapter, u8 *val);
 
+/**
+ * @addtogroup HCI
+ * @{
+ * @addtogroup GPIO
+ * @{
+ */
+
+/**
+ * @brief mac_get_uart_fw_dbg_gpio
+ *
+ * @param *adapter
+ * @param uart_tx_pin
+ * @param uart_rx_pin
+ * @return Please Place Description here.
+ * @retval u32
+ */
+u32 mac_get_uart_fw_dbg_gpio(struct mac_ax_adapter *adapter, u8 *uart_tx_gpio, u8 *uart_rx_gpio);
+/**
+ * @}
+ * @}
+ */
+
+/**
+ * @addtogroup Common
+ * @{
+ * @addtogroup GPIO
+ * @{
+ */
+
+/**
+ * @brief mac_set_eecs_pull
+ *
+ * @param *adapter
+ * @param pull
+ * @return Please Place Description here.
+ * @retval u32
+ */
+u32 mac_set_eecs_pull(struct mac_ax_adapter *adapter,
+             enum mac_ax_gpio_pull pull);
+/**
+ * @}
+ * @}
+ */
+
+/**
+ * @brief mac_set_eesk_pull
+ *
+ * @param *adapter
+ * @param pull
+ * @return Please Place Description here.
+ * @retval u32
+ */
+u32 mac_set_eesk_pull(struct mac_ax_adapter *adapter,
+             enum mac_ax_gpio_pull pull);
+/**
+ * @}
+ * @}
+ */
+
+
+u32 mac_bcn_cnt_gpio(struct mac_ax_adapter *adapter,
+		     struct rtw_hal_mac_bcn_cnt_gpio_info *bcn_cnt_gpio);
+u32 mac_bcn_sync_rpt(struct mac_ax_adapter *adapter,
+		     struct rtw_hal_mac_bcn_sync_rpt *ret_rpt, void *timestamp);
 #endif

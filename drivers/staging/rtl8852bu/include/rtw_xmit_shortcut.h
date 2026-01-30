@@ -74,7 +74,6 @@ struct txsc_entry {
 	u32	txsc_cache_hit;
 };
 
-void _print_txreq_mdata(struct rtw_t_meta_data *mdata, const char *func);
 void _print_txreq_pklist(struct xmit_frame *pxframe, struct rtw_xmit_req *ptxsc_txreq, struct sk_buff *pskb, const char *func);
 void txsc_init(_adapter *padapter);
 void txsc_clear(_adapter *padapter);

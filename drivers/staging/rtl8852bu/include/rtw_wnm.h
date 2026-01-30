@@ -17,32 +17,29 @@
 #define __RTW_WNM_H_
 
 #define RTW_RRM_NB_RPT_EN		BIT(1)
-#define RTW_MAX_NB_RPT_NUM	8
 
 #define RTW_WNM_FEATURE_BTM_REQ_EN		BIT(0)
 
 #define rtw_roam_busy_scan(a, nb)	\
 	(((a)->mlmepriv.LinkDetectInfo.bBusyTraffic == _TRUE) && \
-	(((a)->mlmepriv.ch_cnt) < ((nb)->nb_rpt_ch_list_num)))
+	(((a)->mlmepriv.ch_cnt) < ((nb)->nb_rpt.ch_list_num)))
 
-#define rtw_wnm_btm_preference_cap(a) \
-	((a)->mlmepriv.nb_info.preference_en == _TRUE)
+#define rtw_wnm_btm_preference_cap(b) \
+	(b->preference_en == _TRUE)
 
 #define rtw_wnm_btm_roam_triggered(a) \
 	(((a)->mlmepriv.nb_info.preference_en == _TRUE) \
 	&& (rtw_ft_chk_flags((a), RTW_FT_BTM_ROAM))	\
 	)
 
-#define rtw_wnm_btm_diff_bss(a) \
-	((rtw_wnm_btm_preference_cap(a)) && \
-	(is_zero_mac_addr((a)->mlmepriv.nb_info.roam_target_addr) == _FALSE) && \
-	(_rtw_memcmp((a)->mlmepriv.nb_info.roam_target_addr,\
-		(a)->mlmepriv.cur_network.network.MacAddress, ETH_ALEN) == _FALSE))
+#define rtw_wnm_btm_diff_bss(a, b) \
+	((is_zero_mac_addr(b->roam_target_addr) == _FALSE) && \
+	(_rtw_memcmp(b->roam_target_addr,\
+		(a)->mlmepriv.dev_cur_network.network.MacAddress, ETH_ALEN) == _FALSE))
 
-#define rtw_wnm_btm_roam_candidate(a, c) \
-	((rtw_wnm_btm_preference_cap(a)) && \
-	(is_zero_mac_addr((a)->mlmepriv.nb_info.roam_target_addr) == _FALSE) && \
-	(_rtw_memcmp((a)->mlmepriv.nb_info.roam_target_addr,\
+#define rtw_wnm_btm_roam_candidate(a, b, c) \
+	((is_zero_mac_addr((a)->mlmepriv.nb_info.roam_target_addr) == _FALSE) && \
+	(_rtw_memcmp(b->roam_target_addr,\
 		(c)->network.MacAddress, ETH_ALEN)))
 
 #define rtw_wnm_add_btm_ext_cap(d, l)	rtw_add_ext_cap_info(d, l, BSS_TRANSITION)
@@ -75,17 +72,6 @@ enum rtw_ieee80211_wnm_actioncode {
 	RTW_WLAN_ACTION_WNM_BTM_RSP = 8,
 	RTW_WLAN_ACTION_WNM_NOTIF_REQ = 26,
 	RTW_WLAN_ACTION_WNM_NOTIF_RSP = 27,
-};
-
-/*IEEE Std 80211k Figure 7-95b Neighbor Report element format*/
-struct nb_rpt_hdr {
-	u8 id; /*0x34: Neighbor Report Element ID*/
-	u8 len;
-	u8 bssid[ETH_ALEN];
-	u32 bss_info;
-	u8 reg_class;
-	u8 ch_num;
-	u8 phy_type;
 };
 
 /*IEEE Std 80211v, Figure 7-9 BSS Termination Duration subelement field format */
@@ -153,14 +139,12 @@ enum rtw_btm_req_mod {
 };
 
 struct roam_nb_info {
-	struct nb_rpt_hdr nb_rpt[RTW_MAX_NB_RPT_NUM];
-	struct rtw_ieee80211_channel nb_rpt_ch_list[RTW_MAX_NB_RPT_NUM];
+	struct rrm_nb_rpt nb_rpt;
+
 	struct btm_rpt_cache btm_cache;
 	bool	nb_rpt_valid;
-	u8	nb_rpt_ch_list_num;
 	u8 preference_en;
 	u8 roam_target_addr[ETH_ALEN];
-	u32	last_nb_rpt_entries;
 	u8 nb_rpt_is_same;
 	s8 disassoc_waiting;
 	_timer roam_scan_timer;
@@ -181,7 +165,7 @@ void rtw_wnm_process_btm_query(_adapter *padapter,
 	u8* pframe, u32 frame_len);
 
 void rtw_wnm_process_btm_req(_adapter *padapter,
-	u8* pframe, u32 frame_len);
+	struct sta_info *psta, u8* pframe, u32 frame_len);
 
 void rtw_wnm_process_notification_req(
 	_adapter *padapter, u8* pframe, u32 frame_len);
@@ -202,7 +186,8 @@ void rtw_wnm_issue_btm_req(_adapter *padapter,
 
 void rtw_wnm_reset_btm_cache(_adapter *padapter);
 
-void rtw_wnm_issue_action(_adapter *padapter, u8 action, u8 reason, u8 dialog);
+void rtw_wnm_issue_action(_adapter *padapter,
+	struct roam_nb_info *pnb, u8 action, u8 reason, u8 dialog);
 
 void rtw_wnm_update_reassoc_req_ie(_adapter *padapter);
 
@@ -213,5 +198,13 @@ u8 rtw_roam_nb_scan_list_set(_adapter *padapter,
 
 u32 rtw_wnm_btm_candidates_survey(_adapter *padapter,
 	u8* pframe, u32 elem_len, u8 is_preference);
+
+struct wlan_network *rtw_wnm_btm_candidate_select(
+	_adapter *padapter, struct roam_nb_info *pnb);
+struct wlan_network * rtw_wnm_btm_candidate_check(_adapter *padapter,
+	struct roam_nb_info *pnb, struct wlan_network *pnetwork);
+
+//u8 rtw_wmn_btm_rsp_reason_decision(_adapter *padapter, u8* req_mode);
+u8 rtw_wmn_btm_rsp_reason_decision(_adapter *padapter, struct roam_nb_info *pnb);
 #endif /* __RTW_WNM_H_ */
 

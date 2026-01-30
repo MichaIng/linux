@@ -1,27 +1,35 @@
-/******************************************************************************
+/*
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Copyright(c) 2007 - 2020  Realtek Corporation.
+ * Copyright (c) 2021, Realtek Semiconductor Corp. All rights reserved.
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of version 2 of the GNU General Public License as
- * published by the Free Software Foundation.
+ * Redistribution and use in source and binary forms, with or without modification,
+ * are permitted provided that the following conditions are met:
  *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
- * more details.
+ *   * Redistributions of source code must retain the above copyright notice, this
+ *     list of conditions and the following disclaimer.
  *
- * The full GNU General Public License is included in this distribution in the
- * file called LICENSE.
+ *   * Redistributions in binary form must reproduce the above copyright notice,
+ *     this list of conditions and the following disclaimer in the documentation
+ *     and/or other materials provided with the distribution.
  *
- * Contact Information:
- * wlanfae <wlanfae@realtek.com>
- * Realtek Corporation, No. 2, Innovation Road II, Hsinchu Science Park,
- * Hsinchu 300, Taiwan.
+ *   * Neither the name of the Realtek nor the names of its contributors may
+ *     be used to endorse or promote products derived from this software without
+ *     specific prior written permission.
  *
- * Larry Finger <Larry.Finger@lwfinger.net>
  *
- *****************************************************************************/
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR
+ * ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
+ * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+ * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
+ * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
+
 #include "halbb_precomp.h"
 
 const u32 db_invert_table[12][8] = {
@@ -35,7 +43,7 @@ const u32 db_invert_table[12][8] = {
 	 398107}, /* @U(32,0) */
 	{501187, 630957, 794328, 1000000, 1258925, 1584893, 1995262,
 	 2511886}, /* @U(32,0) */
-	{3162278, 3981072, 5011872, 6309573, 7943282, 1000000, 12589254,
+	{3162278, 3981072, 5011872, 6309573, 7943282, 10000000, 12589254,
 	 15848932}, /* @U(32,0) */
 	{19952623, 25118864, 31622777, 39810717, 50118723, 63095734,
 	 79432823, 100000000}, /* @U(32,0) */
@@ -288,9 +296,32 @@ u64 halbb_gen_mask(u8 up_num, u8 low_num)
 	return (halbb_gen_mask_from_0(up_num - low_num + 1) << low_num);
 }
 
+u8 halbb_bitmask_lsb(struct bb_info *bb, u32 mask)
+{
+	u8 i = 0;
+
+	for (i = 0; i < 32; i++)
+		if ((mask >> i) & BIT(0))
+			break;
+	return i;
+}
+
+u8 halbb_bitmask_msb(struct bb_info *bb, u32 mask)
+{
+	u8 i = 0;
+
+	for (i = 0; i < 32; i++)
+		if ((mask >> i) == 1)
+			break;
+	return i;
+}
+
 u32 halbb_cal_bit_shift(u32 bit_mask)
 {
-	u32 i;
+	u32 i = 0;
+
+	if (bit_mask == 0)
+		return 0;
 
 	for (i = 0; i <= 31; i++) {
 		if ((bit_mask >> i) & BIT0)
@@ -301,7 +332,7 @@ u32 halbb_cal_bit_shift(u32 bit_mask)
 
 s32 halbb_cnvrt_2_sign(u32 val, u8 bit_num)
 {
-	if (bit_num > 32)
+	if (bit_num >= 32)
 		return (s32)val;
 
 	if (val & BIT(bit_num - 1)) /*Sign BIT*/
@@ -322,6 +353,27 @@ s64 halbb_cnvrt_2_sign_64(u64 val, u8 bit_num)
 		val_sign = val - (one << bit_num); /*@2's*/
 
 	return val_sign;
+}
+
+u16 halbb_db_avg2(struct bb_info *bb, u16 val_db_1, u16 val_db_2)
+{
+	/* Input / Output : U(16,2) value */
+	u16 rpt = 0;
+	u16 val_diff = 0;
+	u16 db_ofst[14] = {2,4,7,10,13,16,19,23,26,30,33,37,41,45};
+
+	val_diff = DIFF_2(val_db_1, val_db_2);
+	// Rounding
+	if (val_diff & BIT(1))
+		val_diff += (1 << 2);
+	val_diff >>= 2;
+
+	if (val_diff >= 15)
+		rpt = MAX_2(val_db_1, val_db_2) - (3 << 2);
+	else
+		rpt = MIN_2(val_db_1, val_db_2) + db_ofst[val_diff - 1];
+
+	return rpt;
 }
 
 void halbb_print_sign_frac_digit(struct bb_info *bb, u32 val, u8 total_bit_num,
@@ -424,3 +476,41 @@ void halbb_print_buff_32(struct bb_info *bb, u8 *addr, u16 length) /*unit: Byte*
 	}
 }
 
+void halbb_math_dbg(struct bb_info *bb, char input[][16], u32 *_used,
+		    char *output, u32 *_out_len)
+{
+	s32 var[5] = {0};
+	s32 tmp_32 = 0;
+	u64 tmp_64 = 0;
+	u16 tmp_16 = 0;
+
+	if (_os_strcmp(input[1], "-h") == 0) {
+		BB_DBG_CNSL(*_out_len, *_used, output + *_used, *_out_len - *_used,
+			    "div {a(hex)} {b{hex}}\n");
+		BB_DBG_CNSL(*_out_len, *_used, output + *_used, *_out_len - *_used,
+			    "db_avg2 {a(dec)} {b(dec)}\n");
+		return;
+	}
+	// HALBB_SCAN(input[1], DCMD_DECIMAL, &var[0]);
+
+	if (_os_strcmp(input[1], "div") == 0) {
+		HALBB_SCAN(input[2], DCMD_HEX, &var[0]);
+		HALBB_SCAN(input[3], DCMD_HEX, &var[1]);
+
+		tmp_32 = HALBB_DIV(var[0], var[1]);
+		BB_DBG_CNSL(*_out_len, *_used, output + *_used, *_out_len - *_used,
+			    "(%d/%d) = %d\n", var[0], var[1], tmp_32);
+
+		tmp_64 = HALBB_DIV_U64(var[0], var[1]);
+		BB_DBG_CNSL(*_out_len, *_used, output + *_used, *_out_len - *_used,
+			    "u64 (%d/%d) = %llx\n", var[0], var[1], tmp_64);
+
+	} else if (_os_strcmp(input[1], "db_avg2") == 0) {
+		HALBB_SCAN(input[2], DCMD_DECIMAL, &var[0]);
+		HALBB_SCAN(input[3], DCMD_DECIMAL, &var[1]);
+
+		tmp_16 = halbb_db_avg2(bb, (u16)var[0], (u16)var[1]);
+		BB_DBG_CNSL(*_out_len, *_used, output + *_used, *_out_len - *_used,
+			    "AVG(%d, %d) = U(16,2) 0x%x\n", var[0], var[1], tmp_16);
+	}
+}

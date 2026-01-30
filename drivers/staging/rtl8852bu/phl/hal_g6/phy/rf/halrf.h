@@ -28,6 +28,14 @@
 
 /*@--------------------------[Define] ---------------------------------------*/
 
+#define HALRF_DZ_LOG
+#define HALRF_DBG_CNSL_CMD
+#define HALRF_KIP_CR_CHECK
+#define HALRF_EVENT_DUMP_LOG
+// #define HALRF_FT 
+// #define HALRF_MBIST 
+#define HALRF_MCC_DBCC
+
 /*H2C cmd ID*/
 /*Class 8*/
 /*Class 9*/
@@ -37,8 +45,28 @@
 #define FWCMD_H2C_GET_MCCCH 2
 #define FWCMD_H2C_DPK_OFFLOAD 3
 #define FWCMD_H2C_IQK_OFFLOAD 4
+#define FWCMD_H2C_PWR_TBL_OFFLOAD 5
+#define FWCMD_H2C_FT_RFQ 8
+#define FWCMD_H2C_LPS_CFG 9
+#define FWCMD_H2C_RF_REG_FCS 0xA
+#define FWCMD_H2C_BB_REG_FCS 0xB
+#define FWCMD_H2C_KIP_REG_FCS 0xC
+#define FWCMD_H2C_RF_INIT_CFG 0xE
+
+/*C2H classid*/
+enum halrf_c2h_classid {
+	HALRF_C2H_RFK_LOG		= 0x8,
+	HALRF_MAX_C2HCMD
+};
 
 /*@--------------------------[Enum]------------------------------------------*/
+
+enum halrf_diag_event_level {
+	HALRF_DIAG_EVT_LVL_FATAL = 0,
+	HALRF_DIAG_EVT_LVL_CRITICAL = 1,
+	HALRF_DIAG_EVT_LVL_ERROR = 2
+};
+
 enum halrf_func_idx {
 	RF00_PWR_TRK = 0,
 	RF01_IQK = 1,
@@ -59,7 +87,13 @@ enum halrf_func_idx {
 	RF16_PSD = 16,
 	RF17_TSSI_TRK = 17,
 	RF18_XTAL_TRK = 18,
-	RF19_TX_SHAPE = 19
+	RF19_TX_SHAPE = 19,
+	RF20_OP5K_TRK = 20,
+	RF21_OP5K = 21,
+	RF22_TPE_CTRL = 22,
+	RF23_RXDCK_TRK = 23,
+	RF26_RF_TAS = 26,
+	RF31_WATCHDOG = 31
 };
 
 enum halrf_rf_mode {
@@ -109,7 +143,13 @@ enum halrf_ability {
 	HAL_RF_TSSI_TRIM = BIT(RF15_TSSI_TRIM),
 	HAL_RF_TSSI_TRK = BIT(RF17_TSSI_TRK),
 	HAL_RF_XTAL_TRACK = BIT(RF18_XTAL_TRK),
-	HAL_RF_TX_SHAPE = BIT(RF19_TX_SHAPE)
+	HAL_RF_TX_SHAPE = BIT(RF19_TX_SHAPE),
+	HAL_RF_OP5K_TRACK = BIT(RF20_OP5K_TRK),
+	HAL_RF_OP5K = BIT(RF21_OP5K),
+	HAL_RF_TPE_CTRL = BIT(RF22_TPE_CTRL),
+	HAL_RF_RXDCK_TRACK = BIT(RF23_RXDCK_TRK),
+	HAL_RF_TAS = BIT(RF26_RF_TAS),
+	HAL_RF_WATCHDOG = BIT(RF31_WATCHDOG),
 };
 
 /*@=[HALRF Debug Component]=====================================*/
@@ -131,6 +171,9 @@ enum halrf_dbg_comp {
 	DBG_RF_TSSI_TRIM = BIT(RF15_TSSI_TRIM),
 	DBG_RF_PSD = BIT(RF16_PSD),
 	DBG_RF_XTAL_TRACK = BIT(RF18_XTAL_TRK),
+	DBG_RF_OP5K_TRACK = BIT(RF20_OP5K_TRK),
+	DBG_RF_OP5K = BIT(RF21_OP5K),
+	DBG_RF_TAS = BIT(RF26_RF_TAS),
 	DBG_RF_FW = BIT(28),
 	DBG_RF_MP = BIT(29),
 	DBG_RF_TMP = BIT(30),
@@ -146,14 +189,25 @@ struct rfk_location {
 	u8 cur_ch;
 };
 
-struct halrf_fem_info {
-	u8 elna_2g;		/*@with 2G eLNA  NO/Yes = 0/1*/
-	u8 elna_5g;		/*@with 5G eLNA  NO/Yes = 0/1*/
-	u8 elna_6g;		/*@with 6G eLNA  NO/Yes = 0/1*/
-	u8 epa_2g;		/*@with 2G ePA    NO/Yes = 0/1*/
-	u8 epa_5g;		/*@with 5G ePA    NO/Yes = 0/1*/
-	u8 epa_6g;		/*@with 6G ePA    NO/Yes = 0/1*/
+#define OP5K_RESET_CNT_DATA	16
+#define OP5K_RESET_CNT_ZERO_IDX	2
+#define	OP5K_THERMAL_NUM	2
+#define	OP5K_AVG_THERMAL_NUM	2
+#define OP5K_THER_THRESHOLD	8
+
+#ifdef HALRF_OP5K_SUPPORT
+struct halrf_op5k_info {
+	u32 rst_cnt[MAX_RF_PATH][OP5K_RESET_CNT_DATA];
+	u32 rst_cnt_zero[MAX_RF_PATH][OP5K_RESET_CNT_ZERO_IDX];
+	u32 rst_cnt_final[MAX_RF_PATH];
+	u32 op5k_backup[MAX_RF_PATH];
+	u8 thermal_op5k[MAX_RF_PATH];
+	u8 thermal_op5k_avg[MAX_RF_PATH][OP5K_THERMAL_NUM];
+	u8 thermal_op5k_avg_index;
+	bool op5k_progress;
+	u8 record_bw;
 };
+#endif
 
 #if 1 /* all rf operation usage (header) */
 
@@ -163,6 +217,27 @@ struct halrf_fem_info {
 #define RF_BACKUP_MAC_REG_MAX_NUM (16)
 #define RF_BACKUP_BB_REG_MAX_NUM (16)
 #define RF_BACKUP_RF_REG_MAX_NUM (16)
+#define RF_BACKUP_KIP_REG_MAX_NUM (16)
+
+#define RF_FCS_NUM 20
+#ifdef CONFIG_PHL_RFK_FCS_SUPPPORT
+#define HALRF_FCS_SUPPORT
+#endif
+// #ifdef HALRF_FCS_SUPPORT
+// #define RF_FCS_NUM MAX_RFK_FCS_NUMBER
+// #endif
+
+#define HALRF_FCS_FW_RELOAD 0
+
+#if defined(RF_8852C_SUPPORT) 
+#define RFK_REG 3136
+#elif defined (RF_8852B_SUPPORT)
+#define RFK_REG 2560
+#else
+#define RFK_REG 1	//TBD
+#endif
+
+#define FCS_TO_FW_DATA_SIZE 400
 
 struct halrf_iqk_ops {
 	u8 (*iqk_kpath)(struct rf_info *rf, enum phl_phy_idx phy_idx);	
@@ -172,8 +247,20 @@ struct halrf_iqk_ops {
 	void (*iqk_macbb_setting)(struct rf_info *rf, enum phl_phy_idx phy_idx, u8 path);
 	void (*iqk_start_iqk)(struct rf_info *rf, enum phl_phy_idx phy_idx, u8 path);
 	void (*iqk_restore)(struct rf_info *rf, u8 path);
-	void (*iqk_afebb_restore)(struct rf_info *rf, enum phl_phy_idx phy_idx, u8 path);	
+	void (*iqk_afebb_restore)(struct rf_info *rf, enum phl_phy_idx phy_idx, u8 path);
 };
+
+#ifdef HALRF_FCS_SUPPORT
+struct halrf_fcs_info {
+	u32	bkp_index;
+	u32 rst_index;
+	u32	fcs_ch[RF_FCS_NUM]; // ch
+	u32 lok1[RF_FCS_NUM][2]; // 0x5C ch/path
+	u32 lok2[RF_FCS_NUM][2]; // 0x58 ch/path	
+	u32 lok3[RF_FCS_NUM][2]; // 0x55 ch/path	
+	u32 rf_reg[RF_FCS_NUM][RFK_REG]; // ch/reg
+};
+#endif
 
 struct rfk_iqk_info {
 	struct halrf_iqk_ops *rf_iqk_ops;
@@ -192,31 +279,95 @@ struct rfk_iqk_info {
 /* clang-format off */
 #endif /* all rf operation usage (header) */
 
-#ifdef HALRF_CONFIG_FW_IO_OFLD_SUPPORT
-struct halrf_fw_offload {
-	enum rtw_mac_src_cmd_ofld src;
-	enum rtw_mac_cmd_type_ofld type;
-	u8 lc;
-	enum rtw_mac_rf_path rf_path;
-	u16 offset;
-	u16 id;
-	u32 value;
-	u32 mask;
+struct halrf_rx_dck_info {
+	bool is_afe;
+	bool is_rxdck_track_en;
+	struct rfk_location loc[KPATH]; /*max RF path*/
+	u32 rxdck_time;
+	bool is_auto_res;
+	u8 ther_rxdck[KPATH];
+	u8 rek_cnt[KPATH];
+};
+
+#ifdef HALRF_MCC_DBCC
+struct halrf_mcc_info {
+	u8 ch[2];  
+	u8 band[2];  
+	u8 table_idx;  
+	
+	bool is_init;
 };
 #endif
 
-struct halrf_rx_dck_info {
-	bool is_afe;
-	struct rfk_location loc[KPATH]; /*max RF path*/
-	u32 rxdck_time;
+struct halrf_dbcc_info {
+	u8 ch[2][2]; /*idx : path*/  
+	u8 band[2][2];  
+	u8 table_idx;  
+	bool prek_is_dbcc;
+	bool is_free[2];
 };
 
+struct halrf_rfk_ops {
+	void (*ops_rx_dck)(struct rf_info *rf, enum phl_phy_idx phy, bool is_afe);
+	void (*ops_do_txgapk)(struct rf_info *rf, enum phl_phy_idx phy);
+	void (*ops_tssi_disable)(struct rf_info *rf, enum phl_phy_idx phy);
+	void (*ops_do_tssi)(struct rf_info *rf, enum phl_phy_idx phy, bool hwtx_en);
+	void (*ops_dpk)(struct rf_info *rf, enum phl_phy_idx phy, bool force);
+	void (*ops_dack)(struct rf_info *rf, bool force);
+	void (*ops_lck)(struct rf_info *rf);
+	void (*ops_lck_tracking)(struct rf_info *rf);
+	void (*ops_lo_test)(struct rf_info *rf, bool is_on, enum rf_path path);
+	void (*ops_config_radio_to_fw)(struct rf_info *rf);
+	void (*ops_txgapk_w_table_default)(struct rf_info *rf, enum phl_phy_idx phy);
+	void (*ops_txgapk_enable)(struct rf_info *rf, enum phl_phy_idx phy);
+	void (*ops_txgapk_init)(struct rf_info *rf);
+	void (*ops_adie_pow_ctrl)(struct rf_info *rf, bool rf_off, bool others_off);
+	void (*ops_afe_pow_ctrl)(struct rf_info *rf, bool adda_off, bool pll_off);
+	void (*ops_set_gpio_by_ch)(struct rf_info *rf, enum phl_phy_idx phy, enum band_type band);
+	bool (*ops_chlk_reload_check)(struct rf_info *rf, enum phl_phy_idx phy);
+	void (*ops_long_pkt_comp)(struct rf_info *rf, enum phl_phy_idx phy);	
+};
+
+
+struct halrf_do_ops_info {
+	bool is_do_ops_rxdck;
+	bool is_do_ops_txgapk;
+	bool is_do_ops_tssi_disable;
+	bool is_do_ops_tssi;
+	bool is_do_ops_dpk;
+	bool is_do_ops_dack;
+	bool is_do_ops_lck;
+	bool is_do_ops_lck_trk;
+	bool is_do_ops_lo_test;
+	bool is_do_ops_radio_to_fw;
+	bool is_do_ops_txgapk_default;
+	bool is_do_ops_txgapk_en;
+	bool is_do_ops_txgapk_init;
+	bool is_do_ops_adie_pow_ctrl;
+	bool is_do_ops_afe_pow_ctrl;
+	bool is_do_ops_set_gpio_by_ch;
+	bool is_do_ops_chlk_reload_chk;
+	bool is_do_ops_get_thermal;
+    	bool is_do_ops_dack_sft_rest;
+};
+
+//===========
+
+struct halrf_rfk_ver  {
+	u8 dack_ver;
+	u8 rxdck_ver;
+	u8 txgapk_ver;
+	u8 tssi_ver;
+	u8 dpk_ver;
+};
 struct rf_info {
 	struct rtw_phl_com_t	*phl_com;
 	struct rtw_hal_com_t	*hal_com;
 	/*[Common Info]*/
 	u32			ic_type;
 	u8			num_rf_path;
+	u16 		sub_did;
+	bool		use_sub_did;
 	/*[System Info]*/
 	bool			rf_init_ready;
 	u32			rf_sys_up_time;
@@ -224,6 +375,7 @@ struct rf_info {
 	bool			rf_ic_api_en;
 	/*[DM Info]*/
 	u32			support_ability;
+	u32			hw_rf_ability;
 	u32			manual_support_ability;
 	/*[FW Info]*/
 	u32			fw_dbg_component;
@@ -233,23 +385,35 @@ struct rf_info {
 	u8			cmn_dbg_msg_cnt;
 	/*[BTC / RFK Info ]*/
 	bool 			rfk_is_processing;
+	u32				psd_progress;
 	bool			is_bt_iqk_timeout;
+	bool			is_chl_rfk;
+	u32			rfk_total_time;
 	/*[initial]*/
 	u8 		pre_rxbb_bw[KPATH];
 	/*[TSSI Info]*/
-	bool		is_tssi_mode[4]; /*S0/S1*/
-	/*[Thermal Trigger]*/
+	bool		is_tssi_mode[MAX_RF_PATH]; /*S0/S1*/
+	u8		tssi_slope_type[MAX_RF_PATH];
+	/*[Thermal]*/
 	bool		is_thermal_trigger;
+	u8		cur_ther_s0;
+	u8		cur_ther_s1;
+	/*LCK*/
+	u8		lck_ther_s0;
+	u8		lck_ther_s1;
+	u32		lck_times;
 	/*[Do Coex]*/
 	bool		is_coex;
 	/*[watchdog]*/
 	bool		is_watchdog_stop;
 	/*[thermal rek indictor]*/	
 	bool rfk_do_thr_rek;
+#ifdef HALRF_KIP_CR_CHECK
 	/*reg check*/
-	u32	rfk_reg[2048];
+	u32	rfk_reg[KIP_REG];
 	u32	rfc_reg[2][10];
 	u32	rfk_check_fail_count;
+#endif
 	/*fast channel switch*/
 	u8	ther_init;
 	u32	fcs_rfk_ok_map;
@@ -258,7 +422,21 @@ struct rf_info {
 	/* [Check NCTL Done status Read Times] */
 	u32 nctl_ck_times[2];  /* 0xbff8 0x80fc*/
 	u32	fw_ofld_enable;
-	
+	u32	fw_ofld_start;
+	/*IO/FW offload count*/
+	u32	w_count;
+	u32	r_count;
+	u32	fw_w_count;
+	u32	fw_r_count;
+	u32	sw_trigger_count;
+	u32	pre_fw_w_count;
+	u32 fw_delay_us_count;
+	u32 init_rf_reg_time;
+	u32 set_ch_bw_time;
+
+	_os_mutex	rf_lock;
+	u32 chlk_map;
+	u32 kip_table[2][4];	
 	/*@=== [HALRF Structure] ============================================*/
 	struct halrf_pwr_track_info	pwr_track;
 	struct halrf_tssi_info		tssi;
@@ -269,22 +447,45 @@ struct rf_info {
 	struct halrf_dack_info	dack;
 	struct halrf_gapk_info	gapk;
 	struct halrf_pwr_info	pwr_info;
+	struct halrf_fw_scan_pwr_info pwr_fw_info;
 	struct halrf_radio_info	radio_info;
 	struct halrf_fem_info	fem;
 	struct rf_dbg_cmd_info	rf_dbg_cmd_i;
 	struct halrf_kfree_info	kfree_info;
+#ifdef HALRF_PSD_SUPPORT	
 	struct halrf_psd_data	psd;
+#endif	/*HALRF_PSD_SUPPORT*/
 	struct rfk_location		iqk_loc[2];	/*S0/S1*/
 	struct rfk_location		dpk_loc[2];	/*S0/S1*/
 	struct rfk_location		gapk_loc[2];	/*S0/S1*/
 	struct rfk_iqk_info	*rfk_iqk_info;
-#ifdef HALRF_CONFIG_FW_IO_OFLD_SUPPORT
-	struct halrf_fw_offload fwofld;
+#ifdef HALRF_OP5K_SUPPORT
+	struct halrf_op5k_info op5k_info;
+#endif
+#ifdef HALRF_MCC_DBCC
+	struct halrf_mcc_info mcc_info;
+#endif
+	struct halrf_dbcc_info dbcc_info;
+	struct halrf_rfk_ops *rf_rfk_ops;
+	struct halrf_do_ops_info ops_info;
+#ifdef HALRF_DZ_LOG
+	struct halrf_rt_rpt rf_rt_rpt;
+	struct halrf_rfk_dz_rpt rfk_dz_rpt;
+	struct halrf_ex_dz_info ex_dz_info;
+#endif
+#ifdef HALRF_FCS_SUPPORT
+	struct halrf_fcs_info	fcs_info;
+#endif
+#ifdef PHL_PLATFORM_WINDOWS
+#ifdef HALRF_TAS_SUPPORT
+	struct halrf_tas_info tas_info;
+#endif
 #endif
 };
 
 /*@--------------------------[Prptotype]-------------------------------------*/
-
+void halrf_si_reset(struct rf_info *rf);
+void halrf_bb_reset_trigger(struct rf_info *rf, enum phl_phy_idx phy_idx);
 
 #endif
 

@@ -24,23 +24,22 @@
 #define CSI_MAX_BUFFER_IDX		0xF
 #define SOUNDING_STS_MAX_IDX		0x15
 #define CSI_RRSC_BMAP			0x29292911
-#define BFRP_RX_STANDBY_TIMER		0x0
+#define PATCH_BFRP_RX_STANDBY_TIMER	0x0
 #define NDP_RX_STANDBY_TIMER		0xFF
 #define PATCH_NDP_RX_STANDBY_TIMER	0x0
 #define CSI_INIT_RATE_HE		0x0
 #define CSI_INIT_RATE_VHT		0x0
 #define CSI_INIT_RATE_HT		0x0
-#define HW_SND_RELEASE			0xFFFF
-#define HW_SND_PAUSE			0x0
 #define HT_PAYLOAD_OFFSET		0x10
-#define VHT_PAYLOAD_OFFSET		0x11
-#define HE_PAYLOAD_OFFSET		0x13
+#define VHT_PAYLOAD_OFFSET		0xd
+#define HE_PAYLOAD_OFFSET		0xf
 #define CSI_SH				0x4
 #define SND_SH				0x2
 #define SND_MEE_CFG	 (B_AX_BFMEE_BFPARAM_SEL | B_AX_BFMEE_USE_NSTS | \
 			 B_AX_BFMEE_CSI_FORCE_RETE_EN | B_AX_BFMEE_BFINF0_NR | \
 			 B_AX_BFMEE_BFINFO0_NC)
-#define MAX_SNDTXCMDINFO_NUM		0x4
+#define MAX_SNDTXCMDINFO_NUM		0x7
+#define MAX_FWCMD_SND_LEN 600
 
 enum FrameExchangeType {
 	FRAME_EXCHANGE_SND_AC_SU = 31,
@@ -59,6 +58,12 @@ enum SND_F2P_TYPE {
 	SNDF2P_DEL = 2
 };
 
+enum SND_NDPA_MODE {
+	SND_NDPA_NORM = 0,
+	SND_NDPA_PATCH_STA = 1
+};
+
+#if MAC_FEAT_BFMER
 /**
  * @addtogroup Sounding
  * @{
@@ -161,7 +166,113 @@ u32 mac_init_snd_mer(struct mac_ax_adapter *adapter, u8 band);
 /**
  * @}
  */
+#endif
 
+#if MAC_FEAT_MUMIMO
+/**
+ * @addtogroup Sounding
+ * @{
+ */
+
+/**
+ * @brief mac_set_mu_table
+ *
+ * @param *adapter
+ * @param *mu_table
+ * @return Please Place Description here.
+ * @retval u32
+ */
+
+u32 mac_set_mu_table(struct mac_ax_adapter *adapter,
+		     struct mac_mu_table *mu_table);
+/**
+ * @}
+ */
+#endif
+
+#if MAC_FEAT_BFMER
+/**
+ * @addtogroup Sounding
+ * @{
+ */
+
+/**
+ * @brief mac_hw_snd_pause_release
+ *
+ * @param *adapter
+ * @param band
+ * @param pr
+ * @return Please Place Description here.
+ * @retval u32
+ */
+
+u32 mac_hw_snd_pause_release(struct mac_ax_adapter *adapter, u8 band, u8 pr);
+/**
+ * @}
+ */
+
+/**
+ * @addtogroup Sounding
+ * @{
+ */
+
+/**
+ * @brief mac_bypass_snd_sts
+ *
+ * @param *adapter
+ * @return Please Place Description here.
+ * @retval u32
+ */
+
+u32 mac_bypass_snd_sts(struct mac_ax_adapter *adapter);
+/**
+ * @}
+ */
+#endif
+
+#if MAC_FEAT_BFMER
+/**
+ * @addtogroup Sounding
+ * @{
+ */
+
+/**
+ * @brief mac_snd_sup
+ *
+ * @param *adapter
+ * @param *bf_sup
+ * @return Please Place Description here.
+ * @retval u32
+ */
+u32 mac_snd_sup(struct mac_ax_adapter *adapter, struct mac_bf_sup *bf_sup);
+/**
+ * @}
+ */
+#endif
+
+#if MAC_FEAT_BFMER_F2PSND
+/**
+ * @addtogroup Sounding
+ * @{
+ */
+
+/**
+ * @brief mac_set_snd_para_v1
+ *
+ * @param *adapter
+ * @param *snd_info
+ * @return Please Place Description here.
+ * @retval u32
+ */
+
+u32 mac_set_snd_para(struct mac_ax_adapter *adapter,
+		     struct mac_ax_fwcmd_snd *snd_info);
+/**
+ * @}
+ */
+#endif
+
+#if MAC_FEAT_BFMEE
 /**
  * @addtogroup Sounding
  * @{
@@ -225,42 +336,6 @@ u32 mac_csi_rrsc(struct mac_ax_adapter *adapter, u8 band, u32 rrsc);
  */
 
 /**
- * @addtogroup Sounding
- * @{
- */
-
-/**
- * @brief mac_set_mu_table
- *
- * @param *adapter
- * @param *mu_table
- * @return Please Place Description here.
- * @retval u32
- */
-
-u32 mac_set_mu_table(struct mac_ax_adapter *adapter,
-		     struct mac_mu_table *mu_table);
-/**
- * @}
- */
-
-/**
- * @addtogroup Sounding
- * @{
- */
-
-/**
- * @brief mac_set_snd_para
- *
- * @param *adapter
- * @param *snd_info
- * @return Please Place Description here.
- * @retval u32
- */
-
-u32 mac_set_snd_para(struct mac_ax_adapter *adapter,
-		     struct mac_ax_fwcmd_snd *snd_info);
-/**
  * @}
  */
 
@@ -310,44 +385,6 @@ u32 mac_set_csi_para_cctl(struct mac_ax_adapter *adapter,
  */
 
 /**
- * @brief mac_hw_snd_pause_release
- *
- * @param *adapter
- * @param band
- * @param pr
- * @return Please Place Description here.
- * @retval u32
- */
-
-u32 mac_hw_snd_pause_release(struct mac_ax_adapter *adapter, u8 band, u8 pr);
-/**
- * @}
- */
-
-/**
- * @addtogroup Sounding
- * @{
- */
-
-/**
- * @brief mac_bypass_snd_sts
- *
- * @param *adapter
- * @return Please Place Description here.
- * @retval u32
- */
-
-u32 mac_bypass_snd_sts(struct mac_ax_adapter *adapter);
-/**
- * @}
- */
-
-/**
- * @addtogroup Sounding
- * @{
- */
-
-/**
  * @brief mac_deinit_mee
  *
  * @param *adapter
@@ -360,24 +397,26 @@ u32 mac_deinit_mee(struct mac_ax_adapter *adapter, u8 band);
 /**
  * @}
  */
-
-/**
+ 
+ /**
  * @addtogroup Sounding
  * @{
  */
 
 /**
- * @brief mac_snd_sup
+ * @brief set_csi_release_cfg
  *
  * @param *adapter
- * @param *bf_sup
+ * @param *cfg
  * @return Please Place Description here.
  * @retval u32
  */
-u32 mac_snd_sup(struct mac_ax_adapter *adapter, struct mac_bf_sup *bf_sup);
+u32 set_csi_release_cfg(struct mac_ax_adapter *adapter,
+			struct mac_ax_csi_release_cfg *cfg);
 /**
  * @}
  */
+#endif
 
 /**
  * @addtogroup Sounding

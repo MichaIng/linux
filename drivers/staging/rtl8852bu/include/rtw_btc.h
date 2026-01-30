@@ -17,18 +17,19 @@
 #ifndef __RTW_BTC_H__
 #define __RTW_BTC_H__
 
-#include <drv_types.h>
+enum rtw_core_btc_cmd_id {
+	RTW_CORE_BTC_CMD_TRXSS_LMT,
+	RTW_CORE_BTC_CMD_TRXSS_NO_LMT,
+	RTW_CORE_BTC_CMD_MAX
+};
 
-#define GET_STATUS_CODE_FROM_BT_MP_OPER_RET(RetCode)				(RetCode & 0x0F)
-#define CHECK_STATUS_CODE_FROM_BT_MP_OPER_RET(RetCode, StatusCode)	(GET_STATUS_CODE_FROM_BT_MP_OPER_RET(RetCode) == StatusCode)
+enum rtw_btc_esoc_type rtw_btc_update_ext_soc_type(u8 esoc_type);
 
-void rtw_btc_disp_btc_info(_adapter *, void* p_msgprn_hdl, u8 info_type);
-void rtw_btc_set_dbg(_adapter *, u32 *pDbgModule);
-u32 rtw_btc_get_dbg(_adapter *, u8 *pStrBuf, u32 bufSize);
+u8 rtw_core_btc_hdl(_adapter *padapter, enum rtw_core_btc_cmd_id btc_cmd_id);
+u8 rtw_core_btc_cmd(_adapter *padapter, enum rtw_core_btc_cmd_id btc_cmd_id, u8 flags);
 
-#if 0
-u16 rtw_btc_btreg_read(_adapter *padapter, u8 type, u16 addr, u32 *data);
-u16 rtw_btc_btreg_write(_adapter *padapter, u8 type, u16 addr, u16 val);
+#ifdef CONFIG_BTC_TRXSS_CHG
+u8 rtw_btc_trxss_chg_hdl(struct dvobj_priv *dvobj, struct phl_msg *msg, u16 evt_id);
 #endif
 
 #endif /* __RTW_BTC_H__ */

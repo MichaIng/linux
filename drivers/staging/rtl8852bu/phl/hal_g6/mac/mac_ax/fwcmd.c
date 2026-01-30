@@ -15,6 +15,9 @@
 
 #include "fwcmd.h"
 #include "mcc.h"
+#include "mac_priv.h"
+#include "twt.h"
+#include "sta_diag.h"
 
 #if MAC_AX_FEATURE_HV
 #include "../hv_ax/dbgpkg_hv.h"
@@ -28,53 +31,189 @@
  * WD_BODY_LEN_V1 = RX descriptor max len = 32 bytes
  */
 
-#define H2CB_CMD_HDR_SIZE	(FWCMD_HDR_LEN + WD_BODY_LEN_V1)
-#define H2CB_CMD_SIZE		(H2C_CMD_LEN - FWCMD_HDR_LEN)
-#define H2CB_CMD_QLEN		8
+static struct c2h_proc_class c2h_proc_sys[] = {
+#if MAC_AX_FEATURE_DBGPKG
+	{c2h_sys_cmd_path, FWCMD_C2H_CL_CMD_PATH},
+	{c2h_sys_plat_autotest, FWCMD_H2C_CL_PLAT_AUTO_TEST},
+#if MAC_AX_FEATURE_HV
+	{c2h_sys_fw_autotest, FWCMD_C2H_CL_FW_AUTO},
+#endif
+	{c2h_fw_status, FWCMD_C2H_CL_FW_STATUS},
+#endif
+	{NULL, FWCMD_C2H_CL_NULL},
+};
 
-#define H2CB_DATA_HDR_SIZE	(FWCMD_HDR_LEN + WD_BODY_LEN_V1)
-#define H2CB_DATA_SIZE		(H2C_DATA_LEN - FWCMD_HDR_LEN)
-#define H2CB_DATA_QLEN		4
+static struct c2h_proc_class c2h_proc_mac[] = {
+	{c2h_fw_info, FWCMD_C2H_CL_FW_INFO},
+	{c2h_fw_ofld, FWCMD_C2H_CL_FW_OFLD},
+	{c2h_twt, FWCMD_C2H_CL_TWT},
+	{c2h_wow, FWCMD_C2H_CL_WOW},
+#if MAC_FEAT_MCC
+	{c2h_mcc, FWCMD_C2H_CL_MCC},
+#endif /* MAC_FEAT_MCC */
+	{c2h_fw_dbg, FWCMD_C2H_CL_FW_DBG},
+	{c2h_sys_flash_pkt, FWCMD_C2H_CL_FLASH},
+	{c2h_cl_misc, FWCMD_C2H_CL_MISC},
+	{c2h_fast_ch_sw, FWCMD_C2H_CL_FCS},
+	{c2h_cl_mport, FWCMD_C2H_CL_MPORT},
+#if MAC_FEAT_NAN
+	{c2h_nan, FWCMD_C2H_CL_NAN},
+#endif
+#if MAC_SELF_DIAG_INFO
+	{c2h_wow_diag, FWCMD_C2H_CL_WOW_DIAG},
+	{c2h_wow_tri_evt, FWCMD_C2H_CL_WOW_TRI_EVT},
+	{c2h_sta_diag, FWCMD_C2H_CL_STA_DIAG},
+#endif //#if MAC_SELF_DIAG_INFO
+	{NULL, FWCMD_C2H_CL_NULL},
+};
 
-#define H2CB_LONG_DATA_HDR_SIZE	(FWCMD_HDR_LEN + WD_BODY_LEN)
-#define H2CB_LONG_DATA_SIZE	(H2C_LONG_DATA_LEN - FWCMD_HDR_LEN)
-#define H2CB_LONG_DATA_QLEN	1
+static struct c2h_proc_func c2h_proc_fw_info_cmd[] = {
+	{c2h_fwi_rev_ack, FWCMD_C2H_FUNC_REC_ACK},
+	{c2h_fwi_done_ack_parse, FWCMD_C2H_FUNC_DONE_ACK},
+#if MAC_AX_FEATURE_DBGPKG
+	{c2h_fwi_cmd_log, FWCMD_C2H_FUNC_C2H_LOG},
+#endif
+	{c2h_fwi_bcn_stats, FWCMD_C2H_FUNC_BCN_CNT},
+	{c2h_fwi_bcn_csazero, FWCMD_C2H_FUNC_BCN_CSAZERO},
+	{c2h_fwi_bcn_upd_done, FWCMD_C2H_FUNC_BCN_UPD_DONE},
+	{c2h_fwdx_info_handler, FWCMD_C2H_FUNC_FW_SELF_DX_INFO},
+	{c2h_fwi_bcn_bc_chg_zero, FWCMD_C2H_FUNC_BCN_BC_CHG_ZERO},
+	{NULL, FWCMD_C2H_FUNC_NULL},
+};
 
-#define FWCMD_WQ_MAX_JOB_NUM	5
+static struct c2h_proc_func c2h_proc_fw_ofld_cmd[] = {
+	{c2h_dump_efuse_hdl, FWCMD_C2H_FUNC_EFUSE_DUMP},
+	{c2h_read_rsp_hdl, FWCMD_C2H_FUNC_READ_RSP},
+	{c2h_pkt_ofld_rsp_hdl, FWCMD_C2H_FUNC_PKT_OFLD_RSP},
+	{c2h_beacon_resend_hdl, FWCMD_C2H_FUNC_BEACON_RESEND},
+	{c2h_macid_pause_hdl, FWCMD_C2H_FUNC_MACID_PAUSE},
+#if MAC_FEAT_P2P
+	{c2h_tsf32_togl_rpt_hdl, FWCMD_C2H_FUNC_TSF32_TOGL_RPT},
+#endif
+	{c2h_cmd_ofld_rsp_hdl, FWCMD_C2H_FUNC_CMD_OFLD_RSP},
+	{c2h_scanofld_rsp_hdl, FWCMD_C2H_FUNC_SCANOFLD_RSP},
+	{c2h_tx_duty_hdl, FWCMD_C2H_FUNC_TX_DUTY_RPT},
+	{c2h_ch_switch_rpt_hdl, FWCMD_C2H_FUNC_CH_SWITCH_RPT},
+	{c2h_bcn_filter_rpt_hdl, FWCMD_C2H_FUNC_BCNFLTR_RPT},
+	{c2h_csi_tx_result_hdl, FWCMD_C2H_FUNC_WIFI_SENSING_CSI_TX_RESULT},
+	{c2h_bcn_erly_notify, FWCMD_C2H_FUNC_BCNERLYNTFY},
+	{c2h_usr_tx_rpt_info, FWCMD_C2H_FUNC_USR_TX_RPT_INFO},
+	{c2h_frame_to_act_rpt, FWCMD_C2H_FUNC_FRAME_TO_ACT_RPT},
+#if	MAC_FEAT_BCN_CNT
+	{c2h_bcn_sync_rpt_info, FWCMD_C2H_FUNC_BCN_SYNC_RPT},
+#endif
+	{NULL, FWCMD_C2H_FUNC_NULL},
+};
 
-#define FWCMD_LMT		12
+static struct c2h_proc_func c2h_proc_twt_cmd[] = {
+	{c2h_wait_announ_hdl, FWCMD_C2H_FUNC_WAIT_ANNOUNCE},
+	{c2h_stat_rpt_hdl, FWCMD_C2H_FUNC_STAT_RPT},
+#if MAC_FEAT_TWT_OFDMA_EN
+	{c2h_twt_notify_evt_hdl, FWCMD_C2H_FUNC_TWT_NOTIFY_EVT},
+#endif
+	{NULL, FWCMD_C2H_FUNC_NULL}
+};
 
-#define MAC_AX_H2C_LMT_EN	0
+static struct c2h_proc_func c2h_proc_wow_cmd[] = {
+	{c2h_wow_aoac_report_hdl, FWCMD_C2H_FUNC_AOAC_REPORT},
+	{c2h_wow_apf_report_hdl, FWCMD_C2H_FUNC_APF_RPT},
+	{NULL, FWCMD_C2H_FUNC_NULL},
+};
 
-#define FWCMD_H2CREG_BYTE0_SH 0
-#define FWCMD_H2CREG_BYTE0_MSK 0xFF
-#define FWCMD_H2CREG_BYTE1_SH 8
-#define FWCMD_H2CREG_BYTE1_MSK 0xFF
-#define FWCMD_H2CREG_BYTE2_SH 16
-#define FWCMD_H2CREG_BYTE2_MSK 0xFF
-#define FWCMD_H2CREG_BYTE3_SH 24
-#define FWCMD_H2CREG_BYTE3_MSK 0xFF
+#if MAC_FEAT_MCC
+static struct c2h_proc_func c2h_proc_mcc_cmd[] = {
+	{c2h_mcc_rcv_ack_hdl, FWCMD_C2H_FUNC_MCC_RCV_ACK},
+	{c2h_mcc_req_ack_hdl, FWCMD_C2H_FUNC_MCC_REQ_ACK},
+	{c2h_mcc_tsf_rpt_hdl, FWCMD_C2H_FUNC_MCC_TSF_RPT},
+	{c2h_mcc_status_rpt_hdl, FWCMD_C2H_FUNC_MCC_STATUS_RPT},
+	{NULL, FWCMD_C2H_FUNC_NULL},
+};
 
-#define BCN_GRPIE_OFST_EN BIT(7)
+#endif /* MAC_FEAT_MCC */
 
-#define SCANOFLD_RSP_EVT_ID 0
-#define SCANOFLD_RSP_EVT_PARSE 0
+static struct c2h_proc_func c2h_proc_fw_dbg_cmd[] = {
+	{c2h_rx_dbg_hdl, FWCMD_C2H_FUNC_RX_DBG},
+	{NULL, FWCMD_C2H_FUNC_NULL},
+};
+
+static struct c2h_proc_func c2h_proc_misc[] = {
+	{c2h_wps_rpt, FWCMD_C2H_FUNC_WPS_RPT},
+	{c2h_misc_ccxrpt, FWCMD_C2H_FUNC_CCXRPT},
+	{NULL, FWCMD_C2H_FUNC_NULL},
+};
+
+static struct c2h_proc_func c2h_proc_fast_ch_sw_cmd[] = {
+	{c2h_fast_ch_sw_rpt_hdl, FWCMD_C2H_FUNC_FCS_RPT},
+	{NULL, FWCMD_C2H_FUNC_NULL},
+};
+
+static struct c2h_proc_func c2h_proc_mport[] = {
+	{c2h_port_init_stat, FWCMD_C2H_FUNC_PORT_INIT_STAT},
+	{c2h_port_cfg_stat, FWCMD_C2H_FUNC_PORT_CFG_STAT},
+	{NULL, FWCMD_C2H_FUNC_NULL},
+};
+#if MAC_FEAT_NAN
+static struct c2h_proc_func c2h_proc_nan_cmd[] = {
+	{c2h_nan_cluster_info_hdl, FWCMD_C2H_FUNC_NAN_INFO_NOTIFY_CLUSTER_INFO},
+	{c2h_nan_tsf_info_hdl, FWCMD_C2H_FUNC_NAN_INFO_NOTIFY_TSF_INFO},
+	{c2h_nan_cluster_join_hdl, FWCMD_C2H_FUNC_NAN_INFO_NOTIFY_CLUSTER_JOIN},
+	{NULL, FWCMD_C2H_FUNC_NULL},
+};
+#endif
+static struct c2h_event_id_proc event_proc[] = {
+	/* cat, class, func, hdl */
+	{get_wps_rpt_event_id, FWCMD_C2H_CAT_MAC, FWCMD_C2H_CL_MISC,
+	 FWCMD_C2H_FUNC_WPS_RPT},
+	{get_bcn_resend_event, FWCMD_C2H_CAT_MAC, FWCMD_C2H_CL_FW_OFLD,
+	 FWCMD_C2H_FUNC_BEACON_RESEND},
+	{get_tsf32_togl_rpt_event, FWCMD_C2H_CAT_MAC, FWCMD_C2H_CL_FW_OFLD,
+	 FWCMD_C2H_FUNC_TSF32_TOGL_RPT},
+#if MAC_FEAT_FWOFLD
+	{get_ccxrpt_event, FWCMD_C2H_CAT_MAC, FWCMD_C2H_CL_MISC,
+	 FWCMD_C2H_FUNC_CCXRPT},
+	{get_sensing_csi_event, FWCMD_C2H_CAT_MAC, FWCMD_C2H_CL_FW_OFLD,
+	 FWCMD_C2H_FUNC_WIFI_SENSING_CSI_TX_RESULT},
+	{get_bcn_erly_event, FWCMD_C2H_CAT_MAC, FWCMD_C2H_CL_FW_OFLD,
+	 FWCMD_C2H_FUNC_BCNERLYNTFY},
+#endif //#if MAC_FEAT_FWOFLD
+	{get_fw_rx_dbg_event, FWCMD_C2H_CAT_MAC, FWCMD_C2H_CL_FW_DBG,
+	 FWCMD_C2H_FUNC_RX_DBG},
+	{get_bcn_stats_event, FWCMD_C2H_CAT_MAC, FWCMD_C2H_CL_FW_INFO,
+	 FWCMD_C2H_FUNC_BCN_CNT},
+	{get_bcn_csa_event, FWCMD_C2H_CAT_MAC, FWCMD_C2H_CL_FW_INFO,
+	 FWCMD_C2H_FUNC_BCN_CSAZERO},
+	{get_scanofld_event, FWCMD_C2H_CAT_MAC, FWCMD_C2H_CL_FW_OFLD,
+	 FWCMD_C2H_FUNC_SCANOFLD_RSP},
+	{get_usr_txrpt_info_event, FWCMD_C2H_CAT_MAC, FWCMD_C2H_CL_FW_OFLD,
+	 FWCMD_C2H_FUNC_USR_TX_RPT_INFO},
+	{get_frame_to_act_rpt_event, FWCMD_C2H_CAT_MAC, FWCMD_C2H_CL_FW_OFLD,
+	 FWCMD_C2H_FUNC_FRAME_TO_ACT_RPT},
+#if MAC_FEAT_NAN
+	{get_nan_cluster_info_event, FWCMD_C2H_CAT_MAC, FWCMD_C2H_CL_NAN,
+	 FWCMD_C2H_FUNC_NAN_INFO_NOTIFY_CLUSTER_INFO},
+	{get_nan_tsf_info_event, FWCMD_C2H_CAT_MAC, FWCMD_C2H_CL_NAN,
+	 FWCMD_C2H_FUNC_NAN_INFO_NOTIFY_TSF_INFO},
+	{get_nan_cluster_join_event, FWCMD_C2H_CAT_MAC, FWCMD_C2H_CL_NAN,
+	 FWCMD_C2H_FUNC_NAN_INFO_NOTIFY_CLUSTER_JOIN},
+#endif
+	{get_bcn_bc_chg_event, FWCMD_C2H_CAT_MAC, FWCMD_C2H_CL_FW_INFO,
+	 FWCMD_C2H_FUNC_BCN_BC_CHG_ZERO},
+#if MAC_FEAT_TWT_OFDMA_EN
+	{get_twt_notify_event, FWCMD_C2H_CAT_MAC, FWCMD_C2H_CL_TWT,
+	 FWCMD_C2H_FUNC_TWT_NOTIFY_EVT},
+#endif
+	{get_twt_wait_announ_event, FWCMD_C2H_CAT_MAC, FWCMD_C2H_CL_TWT,
+	 FWCMD_C2H_FUNC_WAIT_ANNOUNCE},
+	{NULL, FWCMD_C2H_CAT_NULL, FWCMD_C2H_CL_NULL,
+	 FWCMD_C2H_FUNC_NULL},
+};
 
 static struct h2c_buf_head h2cb_head[H2CB_CLASS_MAX];
 static struct fwcmd_wkb_head fwcmd_wq_head;
-
-struct fwcmd_outsrc_info {
-#define MAX_OUTSRC_LEN 60 //need to extend if needed
-	u32 dword0[MAX_OUTSRC_LEN];
-};
-
-struct c2h_event_id_proc {
-	u8 cat;
-	u8 cls;
-	u8 func;
-	u32 (*hdl)(struct mac_ax_adapter *adapter, struct rtw_c2h_info *c2h,
-		   enum phl_msg_evt_id *id, u8 *c2h_info);
-};
+#if MAC_AX_PHL_H2C
+#else
+static u16 h2cb_counter[H2CB_CLASS_MAX] = {0};
+#endif
 
 static inline u32 h2cb_queue_len(struct h2c_buf_head *list)
 {
@@ -144,49 +283,6 @@ static inline struct h2c_buf *h2cb_peek(struct h2c_buf_head *list)
 }
 
 #if MAC_AX_PHL_H2C
-u32 h2c_agg_enqueue(struct mac_ax_adapter *adapter, struct rtw_h2c_pkt *h2cb)
-#else
-u32 h2c_agg_enqueue(struct mac_ax_adapter *adapter, struct h2c_buf *h2cb)
-#endif
-{
-	struct mac_ax_h2c_agg_node *h2c_agg_node = NULL;
-	u32 ret = MACSUCCESS;
-
-	PLTFM_MUTEX_LOCK(&adapter->h2c_agg_info.h2c_agg_lock);
-
-	if (!adapter->h2c_agg_info.h2c_agg_en) {
-		/* return fall and send the H2C pkt by the orginal function*/
-		ret = MACNOITEM;
-		goto fail;
-	}
-
-	h2c_agg_node = (struct mac_ax_h2c_agg_node *)
-				   PLTFM_MALLOC(sizeof(struct mac_ax_h2c_agg_node));
-	if (!h2c_agg_node) {
-		/* return fall and send the H2C pkt by the orginal function*/
-		ret = MACBUFALLOC;
-		goto fail;
-	}
-
-	PLTFM_MEMSET(h2c_agg_node, 0, sizeof(struct mac_ax_h2c_agg_node));
-	h2c_agg_node->h2c_pkt = (u8 *)h2cb;
-	h2c_agg_node->next = NULL;
-	adapter->h2c_agg_info.h2c_agg_pkt_num++;
-
-	if (!adapter->h2c_agg_info.h2c_agg_queue_head) {
-		adapter->h2c_agg_info.h2c_agg_queue_head = h2c_agg_node;
-		adapter->h2c_agg_info.h2c_agg_queue_last = h2c_agg_node;
-	} else {
-		adapter->h2c_agg_info.h2c_agg_queue_last->next = h2c_agg_node;
-		adapter->h2c_agg_info.h2c_agg_queue_last = h2c_agg_node;
-	}
-
-fail:
-	PLTFM_MUTEX_UNLOCK(&adapter->h2c_agg_info.h2c_agg_lock);
-	return ret;
-}
-
-#if MAC_AX_PHL_H2C
 static inline u8 *h2cb_tail_pointer(const struct rtw_h2c_pkt *h2cb)
 {
 	return h2cb->vir_tail;
@@ -198,7 +294,7 @@ static inline u8 *h2cb_tail_pointer(const struct h2c_buf *h2cb)
 }
 #endif
 
-static inline struct h2c_buf *h2cb_dequeue(struct h2c_buf_head *list)
+static struct h2c_buf *h2cb_dequeue(struct h2c_buf_head *list)
 {
 	struct h2c_buf *h2cb = h2cb_peek(list);
 
@@ -214,6 +310,8 @@ static u8 *__h2cb_alloc_buf_pool(struct mac_ax_adapter *adapter,
 	u8 *ptr;
 
 	ptr = (u8 *)PLTFM_MALLOC(block_size);
+	if (!ptr)
+		PLTFM_MSG_ERR("%s malloc fail\n", __func__);
 	list->pool = ptr;
 	list->size = block_size;
 
@@ -394,8 +492,51 @@ u32 h2c_end_flow(struct mac_ax_adapter *adapter)
 }
 
 #if MAC_AX_PHL_H2C
+u32 h2c_agg_enqueue(struct mac_ax_adapter *adapter, struct rtw_h2c_pkt *h2cb)
+#else
+u32 h2c_agg_enqueue(struct mac_ax_adapter *adapter, struct h2c_buf *h2cb)
+#endif
+{
+	struct mac_ax_h2c_agg_node *h2c_agg_node = NULL;
+	u32 ret = MACSUCCESS;
+
+	PLTFM_MUTEX_LOCK(&adapter->h2c_agg_info.h2c_agg_lock);
+
+	if (!adapter->h2c_agg_info.h2c_agg_en) {
+		/* return fall and send the H2C pkt by the orginal function*/
+		ret = MACNOITEM;
+		goto fail;
+	}
+
+	h2c_agg_node = (struct mac_ax_h2c_agg_node *)
+				   PLTFM_MALLOC(sizeof(struct mac_ax_h2c_agg_node));
+	if (!h2c_agg_node) {
+		/* return fall and send the H2C pkt by the orginal function*/
+		ret = MACBUFALLOC;
+		goto fail;
+	}
+
+	PLTFM_MEMSET(h2c_agg_node, 0, sizeof(struct mac_ax_h2c_agg_node));
+	h2c_agg_node->h2c_pkt = (u8 *)h2cb;
+	h2c_agg_node->next = NULL;
+	adapter->h2c_agg_info.h2c_agg_pkt_num++;
+
+	if (!adapter->h2c_agg_info.h2c_agg_queue_head) {
+		adapter->h2c_agg_info.h2c_agg_queue_head = h2c_agg_node;
+		adapter->h2c_agg_info.h2c_agg_queue_last = h2c_agg_node;
+	} else {
+		adapter->h2c_agg_info.h2c_agg_queue_last->next = h2c_agg_node;
+		adapter->h2c_agg_info.h2c_agg_queue_last = h2c_agg_node;
+	}
+
+fail:
+	PLTFM_MUTEX_UNLOCK(&adapter->h2c_agg_info.h2c_agg_lock);
+	return ret;
+}
+
+#if MAC_AX_PHL_H2C
 struct rtw_h2c_pkt *h2cb_alloc(struct mac_ax_adapter *adapter,
-			       enum h2c_buf_class buf_class)
+			       enum rtw_h2c_pkt_type buf_class)
 {
 	struct rtw_h2c_pkt *h2cb;
 #if MAC_AX_H2C_LMT_EN
@@ -404,7 +545,7 @@ struct rtw_h2c_pkt *h2cb_alloc(struct mac_ax_adapter *adapter,
 	u8 cnt = 100;
 #endif
 
-	if (buf_class >= H2CB_CLASS_LAST) {
+	if (buf_class >= H2CB_TYPE_MAX) {
 		PLTFM_MSG_ERR("[ERR]unknown class\n");
 		return NULL;
 	}
@@ -449,21 +590,6 @@ u8 *h2cb_push(struct rtw_h2c_pkt *h2cb, u32 len)
 	return h2cb->vir_data;
 }
 
-u8 *h2cb_pull(struct rtw_h2c_pkt *h2cb, u32 len)
-{
-	h2cb->vir_data += len;
-
-	if (h2cb->vir_data > h2cb->vir_end)
-		return NULL;
-
-	if (h2cb->data_len < len)
-		return NULL;
-
-	h2cb->data_len -= len;
-
-	return h2cb->vir_data;
-}
-
 u8 *h2cb_put(struct rtw_h2c_pkt *h2cb, u32 len)
 {
 	u8 *tmp = h2cb_tail_pointer(h2cb);
@@ -492,8 +618,10 @@ u32 h2c_pkt_set_hdr(struct mac_ax_adapter *adapter, struct rtw_h2c_pkt *h2cb,
 	}
 
 	hdr = (struct fwcmd_hdr *)h2cb_push(h2cb, FWCMD_HDR_LEN);
-	if (!hdr)
+	if (!hdr) {
+		PLTFM_MSG_TRACE("H2C len not enough for set h2c header\n");
 		return MACNPTR;
+	}
 
 	hdr->hdr0 = cpu_to_le32(SET_WORD(type, H2C_HDR_DEL_TYPE) |
 				SET_WORD(cat, H2C_HDR_CAT) |
@@ -502,12 +630,37 @@ u32 h2c_pkt_set_hdr(struct mac_ax_adapter *adapter, struct rtw_h2c_pkt *h2cb,
 				SET_WORD(fwinfo->h2c_seq, H2C_HDR_H2C_SEQ));
 
 	hdr->hdr1 = cpu_to_le32(SET_WORD(h2cb->data_len, H2C_HDR_TOTAL_LEN) |
-				(rack || !(fwinfo->h2c_seq & 3) ?
-				 H2C_HDR_REC_ACK : 0) |
+				(rack ?	H2C_HDR_REC_ACK : 0) |
 				(dack ? H2C_HDR_DONE_ACK : 0));
 
 	h2cb->id = SET_FWCMD_ID(type, cat, _class_, func);
+#ifdef CONFIG_PHL_H2C_PKT_POOL_STATS_CHECK
+	if (cat == FWCMD_H2C_CAT_OUTSRC ) {
+		if (_class_ <= H2C_CLASS_PHYDM_MAX) {
+			h2cb->pkt_src = RTW_MODULE_BB;
+		} else if (_class_ <= H2C_CLASS_RF_MAX) {
+			h2cb->pkt_src = RTW_MODULE_RF;
+		} else if (_class_ <= H2C_CLASS_BTC_MAX) {
+			h2cb->pkt_src = RTW_MODULE_BTC;
+		}
+	} else {
+		h2cb->pkt_src = RTW_MODULE_MAC;
+	}
+#endif
 	h2cb->h2c_seq = fwinfo->h2c_seq;
+
+	if (adapter->sm.h2c_c2h_mon == MAC_AX_H2C_C2H_MON_ON) {
+		if (h2cb->data_len >= FWCMD_HDR_LEN + 4) {
+			PLTFM_MSG_TRACE("[h2c_c2h_mon] H2C CAT: %d, CLASS: %d, FUNC: %d, "\
+					"SEQ: %d, Len: %d, 1'st DW: %08x\n",
+					cat, _class_, func, h2cb->h2c_seq, h2cb->data_len,
+					*(u32 *)(((u8 *)hdr) + FWCMD_HDR_LEN));
+		} else {
+			PLTFM_MSG_TRACE("[h2c_c2h_mon] H2C CAT: %d, CLASS: %d, FUNC: %d, "\
+					"SEQ: %d, Len: %d\n",
+					cat, _class_, func, h2cb->h2c_seq, h2cb->data_len);
+		}
+	}
 
 	return MACSUCCESS;
 }
@@ -534,20 +687,21 @@ u32 h2c_pkt_set_hdr_fwdl(struct mac_ax_adapter *adapter,
 				(dack ? H2C_HDR_DONE_ACK : 0));
 
 	h2cb->id = SET_FWCMD_ID(type, cat, _class_, func);
+#ifdef CONFIG_PHL_H2C_PKT_POOL_STATS_CHECK
+	if (cat == FWCMD_H2C_CAT_OUTSRC ) {
+		if (_class_ <= H2C_CLASS_PHYDM_MAX) {
+			h2cb->pkt_src = RTW_MODULE_BB;
+		} else if (_class_ <= H2C_CLASS_RF_MAX) {
+			h2cb->pkt_src = RTW_MODULE_RF;
+		} else if (_class_ <= H2C_CLASS_BTC_MAX) {
+			h2cb->pkt_src = RTW_MODULE_BTC;
+		}
+	} else {
+		h2cb->pkt_src = RTW_MODULE_MAC;
+	}
+#endif
 	h2cb->h2c_seq = fwinfo->h2c_seq;
 
-	return MACSUCCESS;
-}
-
-u32 h2c_pkt_set_cmd(struct mac_ax_adapter *adapter, struct rtw_h2c_pkt *h2cb,
-		    u8 *cmd, u32 len)
-{
-	u8 *buf;
-
-	buf = h2cb_put(h2cb, len);
-	if (!buf)
-		return MACNPTR;
-	PLTFM_MEMCPY(buf, cmd, len);
 	return MACSUCCESS;
 }
 
@@ -562,7 +716,7 @@ u32 h2c_pkt_build_txd(struct mac_ax_adapter *adapter, struct rtw_h2c_pkt *h2cb)
 	info.type = RTW_PHL_PKT_TYPE_H2C;
 	info.pktlen = (u16)h2cb->data_len;
 	txd_len = ops->txdesc_len(adapter, &info);
-	if (adapter->hw_info->intf == MAC_AX_INTF_USB) {
+	if (adapter->env_info.intf == MAC_AX_INTF_USB) {
 		if (((info.pktlen + txd_len) & (512 - 1)) == 0) {
 			buf = h2cb_put(h2cb, 4);
 			if (!buf) {
@@ -582,11 +736,6 @@ u32 h2c_pkt_build_txd(struct mac_ax_adapter *adapter, struct rtw_h2c_pkt *h2cb)
 	if (ret)
 		return ret;
 
-	return MACSUCCESS;
-}
-
-u32 fwcmd_wq_idle(struct mac_ax_adapter *adapter, u32 id)
-{
 	return MACSUCCESS;
 }
 
@@ -615,7 +764,7 @@ struct h2c_buf *h2cb_alloc(struct mac_ax_adapter *adapter,
 		PLTFM_FREE(h2cb, sizeof(struct h2c_buf));
 		goto h2cb_fail;
 	}
-
+	h2cb_counter[buf_class]++;
 	h2cb->flags &= ~H2CB_FLAGS_FREED;
 	PLTFM_MUTEX_UNLOCK(&list_head->lock);
 
@@ -640,6 +789,7 @@ void h2cb_free(struct mac_ax_adapter *adapter, struct h2c_buf *h2cb)
 	}
 
 	list_head = &h2cb_head[h2cb->_class_];
+	h2cb_counter[h2cb->_class_]--;
 
 	h2cb->len = 0;
 	h2cb->data = h2cb->head + h2cb->hdr_len;
@@ -658,21 +808,6 @@ u8 *h2cb_push(struct h2c_buf *h2cb, u32 len)
 
 	if (h2cb->data < h2cb->head)
 		return NULL;
-
-	return h2cb->data;
-}
-
-u8 *h2cb_pull(struct h2c_buf *h2cb, u32 len)
-{
-	h2cb->data += len;
-
-	if (h2cb->data > h2cb->end)
-		return NULL;
-
-	if (h2cb->len < len)
-		return NULL;
-
-	h2cb->len -= len;
 
 	return h2cb->data;
 }
@@ -715,12 +850,24 @@ u32 h2c_pkt_set_hdr(struct mac_ax_adapter *adapter, struct h2c_buf *h2cb,
 				SET_WORD(fwinfo->h2c_seq, H2C_HDR_H2C_SEQ));
 
 	hdr->hdr1 = cpu_to_le32(SET_WORD(h2cb->len, H2C_HDR_TOTAL_LEN) |
-				(rack || !(fwinfo->h2c_seq & 3) ?
-				 H2C_HDR_REC_ACK : 0) |
+				(rack ? H2C_HDR_REC_ACK : 0) |
 				(dack ? H2C_HDR_DONE_ACK : 0));
 
 	h2cb->id = SET_FWCMD_ID(type, cat, _class_, func);
 	h2cb->h2c_seq = fwinfo->h2c_seq;
+
+	if (adapter->sm.h2c_c2h_mon == MAC_AX_H2C_C2H_MON_ON) {
+		if (h2cb->len >= FWCMD_HDR_LEN + 4) {
+			PLTFM_MSG_TRACE("[h2c_c2h_mon] H2C CAT: %d, CLASS: %d, FUNC: %d, "\
+					"SEQ: %d, Len: %d, 1'st DW: %08x\n",
+					cat, _class_, func, h2cb->h2c_seq, h2cb->len,
+					*(u32 *)(((u8 *)hdr) + FWCMD_HDR_LEN));
+		} else {
+			PLTFM_MSG_TRACE("[h2c_c2h_mon] H2C CAT: %d, CLASS: %d, FUNC: %d, "\
+					"SEQ: %d, Len: %d\n",
+					cat, _class_, func, h2cb->h2c_seq, h2cb->len);
+		}
+	}
 
 	return 0;
 }
@@ -752,18 +899,6 @@ u32 h2c_pkt_set_hdr_fwdl(struct mac_ax_adapter *adapter,
 	return 0;
 }
 
-u32 h2c_pkt_set_cmd(struct mac_ax_adapter *adapter, struct h2c_buf *h2cb,
-		    u8 *cmd, u32 len)
-{
-	u8 *buf;
-
-	buf = h2cb_put(h2cb, len);
-	if (!buf)
-		return MACNPTR;
-	PLTFM_MEMCPY(buf, cmd, len);
-	return MACSUCCESS;
-}
-
 u32 h2c_pkt_build_txd(struct mac_ax_adapter *adapter, struct h2c_buf *h2cb)
 {
 	u8 *buf;
@@ -775,7 +910,7 @@ u32 h2c_pkt_build_txd(struct mac_ax_adapter *adapter, struct h2c_buf *h2cb)
 	info.type = RTW_PHL_PKT_TYPE_H2C;
 	info.pktlen = (u16)h2cb->len;
 	txd_len = ops->txdesc_len(adapter, &info);
-	if (adapter->hw_info->intf == MAC_AX_INTF_USB) {
+	if (adapter->env_info.intf == MAC_AX_INTF_USB) {
 		if (((info.pktlen + txd_len) & (512 - 1)) == 0) {
 			buf = h2cb_put(h2cb, 4);
 			if (!buf) {
@@ -798,120 +933,12 @@ u32 h2c_pkt_build_txd(struct mac_ax_adapter *adapter, struct h2c_buf *h2cb)
 	return MACSUCCESS;
 }
 
-static inline void __fwcmd_wq_insert(struct h2c_buf *new_h2cb,
-				     struct h2c_buf *prev, struct h2c_buf *next,
-				     struct fwcmd_wkb_head *list)
-{
-	new_h2cb->next = next;
-	new_h2cb->prev = prev;
-	next->prev  = new_h2cb;
-	prev->next = new_h2cb;
-	list->qlen++;
-}
-
-static inline void __fwcmd_wq_before(struct fwcmd_wkb_head *list,
-				     struct h2c_buf *next,
-				     struct h2c_buf *new_h2cb)
-{
-	__fwcmd_wq_insert(new_h2cb, next->prev, next, list);
-}
-
-static inline void __fwcmd_wq_tail(struct fwcmd_wkb_head *list,
-				   struct h2c_buf *new_h2cb)
-{
-	__fwcmd_wq_before(list, (struct h2c_buf *)list, new_h2cb);
-}
-
-u32 fwcmd_wq_enqueue(struct mac_ax_adapter *adapter, struct h2c_buf *h2cb)
-{
-	struct fwcmd_wkb_head *list_head = &fwcmd_wq_head;
-
-	if (list_head->qlen > FWCMD_WQ_MAX_JOB_NUM) {
-		PLTFM_MSG_WARN("[WARN]fwcmd work queue full\n");
-		return MACBUFALLOC;
-	}
-
-	/* worq queue doesn't need wd body */
-	h2cb_pull(h2cb, WD_BODY_LEN);
-	PLTFM_MUTEX_LOCK(&list_head->lock);
-	__fwcmd_wq_tail(list_head, h2cb);
-	PLTFM_MUTEX_UNLOCK(&list_head->lock);
-
-	return MACSUCCESS;
-}
-
-static inline void __fwcmd_wq_unlink(struct h2c_buf *h2cb,
-				     struct fwcmd_wkb_head *list)
-{
-	struct h2c_buf *next, *prev;
-
-	list->qlen--;
-	next = h2cb->next;
-	prev = h2cb->prev;
-	h2cb->prev = NULL;
-	h2cb->next = NULL;
-	next->prev = prev;
-	prev->next = next;
-}
-
-struct h2c_buf *fwcmd_wq_dequeue(struct mac_ax_adapter *adapter, u32 id)
-{
-	struct fwcmd_wkb_head *list_head = &fwcmd_wq_head;
-	struct h2c_buf *h2cb;
-	u32 hdr0;
-	u16 type = GET_FWCMD_TYPE(id);
-	u16 cat = GET_FWCMD_CAT(id);
-	u16 _class_ = GET_FWCMD_CLASS(id);
-	u16 func = GET_FWCMD_FUNC(id);
-
-	PLTFM_MUTEX_LOCK(&list_head->lock);
-
-	for (h2cb = list_head->next; h2cb->next != list_head->next;
-	     h2cb = h2cb->next) {
-		hdr0 = ((struct fwcmd_hdr *)h2cb->data)->hdr0;
-		hdr0 = le32_to_cpu(hdr0);
-		if (type == GET_FIELD(hdr0, H2C_HDR_DEL_TYPE) &&
-		    cat == GET_FIELD(hdr0, H2C_HDR_CAT) &&
-		    _class_ == GET_FIELD(hdr0, H2C_HDR_CLASS) &&
-		    func == GET_FIELD(hdr0, H2C_HDR_FUNC)) {
-			__fwcmd_wq_unlink(h2cb, list_head);
-			PLTFM_MUTEX_UNLOCK(&list_head->lock);
-			return h2cb;
-		}
-	}
-
-	PLTFM_MUTEX_UNLOCK(&list_head->lock);
-
-	PLTFM_MSG_ERR("[ERR]cannot find wq item: %X\n", id);
-
-	return NULL;
-}
-
-u32 fwcmd_wq_idle(struct mac_ax_adapter *adapter, u32 id)
-{
-	struct fwcmd_wkb_head *list_head = &fwcmd_wq_head;
-	struct h2c_buf *h2cb;
-
-	PLTFM_MUTEX_LOCK(&list_head->lock);
-
-	for (h2cb = list_head->next; h2cb->next != list_head->next;
-	     h2cb = h2cb->next) {
-		if (h2cb->id == id) {
-			PLTFM_MUTEX_UNLOCK(&list_head->lock);
-			return MACWQBUSY;
-		}
-	}
-
-	PLTFM_MUTEX_UNLOCK(&list_head->lock);
-
-	return MACSUCCESS;
-}
 #endif
 
+#if MAC_AX_FEATURE_DBGPKG
 static u32 c2h_fwi_cmd_log(struct mac_ax_adapter *adapter, u8 *buf, u32 len,
 			   struct rtw_c2h_info *info)
 {
-#if MAC_AX_FEATURE_DBGDEC
 	u8 syntax_1 = 0, syntax_2 = 0;
 
 	if ((len - FWCMD_HDR_LEN) >= 11) {
@@ -927,13 +954,10 @@ static u32 c2h_fwi_cmd_log(struct mac_ax_adapter *adapter, u8 *buf, u32 len,
 			buf[len - 1] = '\0';
 		PLTFM_MSG_WARN("C2H log: %s", (char *)(buf + FWCMD_HDR_LEN));
 	}
-#else
-	if (buf[len - 1] != '\0')
-		buf[len - 1] = '\0';
-	PLTFM_MSG_WARN("C2H log: %s", (char *)(buf + FWCMD_HDR_LEN));
-#endif
+
 	return MACSUCCESS;
 }
+#endif
 
 static u32 c2h_wow_rcv_ack_hdl(struct mac_ax_adapter *adapter,
 			       struct rtw_c2h_info *info)
@@ -962,21 +986,9 @@ static u32 c2h_fwofld_rcv_ack_hdl(struct mac_ax_adapter *adapter,
 	u8 *state;
 
 	switch (info->c2h_func) {
-	case FWCMD_H2C_FUNC_WRITE_OFLD:
-		state = &adapter->sm.write_h2c;
-		break;
-
-	case FWCMD_H2C_FUNC_CONF_OFLD:
-		state = &adapter->sm.conf_h2c;
-		break;
-
 	case FWCMD_H2C_FUNC_PACKET_OFLD:
-		PLTFM_MSG_TRACE("pktofld rcv ack\n");
+		PLTFM_MSG_TRACE("[pktofld] rcv ack\n");
 		state = &adapter->sm.pkt_ofld;
-		break;
-
-	case FWCMD_H2C_FUNC_READ_OFLD:
-		state = &adapter->sm.read_h2c;
 		break;
 
 	case FWCMD_H2C_FUNC_DUMP_EFUSE:
@@ -985,6 +997,15 @@ static u32 c2h_fwofld_rcv_ack_hdl(struct mac_ax_adapter *adapter,
 	case FWCMD_H2C_FUNC_CH_SWITCH:
 		state = &adapter->sm.ch_switch;
 		break;
+	case FWCMD_H2C_FUNC_STA_CSA:
+		state = &adapter->sm.sta_csa_st;
+		PLTFM_MSG_TRACE("sta_csa rcv ack success\n");
+		if (*state == MAC_AX_STA_CSA_SENDING)
+			*state = MAC_AX_STA_CSA_BUSY;
+		else
+			PLTFM_MSG_ERR("sta_csa fw state err: curr st(%d) ret(%d)\n", *state,
+				      adapter->sm.sta_csa_ret);
+		return MACSUCCESS;
 
 	default:
 		return MACSUCCESS;
@@ -996,32 +1017,51 @@ static u32 c2h_fwofld_rcv_ack_hdl(struct mac_ax_adapter *adapter,
 	return MACSUCCESS;
 }
 
-static u32 c2h_proxy_ack(struct mac_ax_adapter *adapter, struct rtw_c2h_info *info, u8 is_rcv) {
+static u32 c2h_proxy_rcv_ack_hdl(struct mac_ax_adapter *adapter,
+				 struct rtw_c2h_info *info)
+{
+	PLTFM_MSG_ERR("[Proxy][DoneAck] Proxy not support Recv Ack(%d) H2C failed\n"
+			, info->c2h_func);
+	return MACSUCCESS;
+}
+
+static u32 c2h_proxy_done_ack_hdl(struct mac_ax_adapter *adapter,
+				  struct rtw_c2h_info *info)
+{
 	struct mac_ax_state_mach *sm = &adapter->sm;
-	switch (is_rcv) {
-	case 0:
-		if (sm->proxy_st != MAC_AX_PROXY_BUSY) {
-			PLTFM_MSG_ERR("[Proxy][DoneAck] is_rcv (%d) doesn't match sm (%d)\n", is_rcv, sm->proxy_st);
-			return MACPROCERR;
-		}
-		sm->proxy_st = MAC_AX_PROXY_IDLE;
-		sm->proxy_ret = info->h2c_return;
+
+	switch (info->c2h_func) {
+	case FWCMD_H2C_FUNC_PROXY:
+	case FWCMD_H2C_FUNC_MDNS:
+	case FWCMD_H2C_FUNC_SNMP:
+	case FWCMD_H2C_FUNC_LLMNR:
+	case FWCMD_H2C_FUNC_MDNS_OFLD:
+	case FWCMD_H2C_FUNC_PTCL_PATTERN:
+	case FWCMD_H2C_FUNC_APF_SET:
+	case FWCMD_H2C_FUNC_APF_GET:
 		if (info->h2c_return != MACSUCCESS)
-			PLTFM_MSG_ERR("[Proxy][DoneAck] h2c return not success (%d)\n", info->h2c_return);
+			PLTFM_MSG_ERR("[Proxy][DoneAck] Proxy FUNC(%d) H2C failed\n"
+					, info->c2h_func);
 		else
-			PLTFM_MSG_TRACE("[Proxy][DoneAck]\n");
-		break;
-	case 1:
-		if (sm->proxy_st != MAC_AX_PROXY_SENDING) {
-			PLTFM_MSG_ERR("[Proxy][RecvAck] is_rcv (%d) doesn't match sm (%d)\n", is_rcv, sm->proxy_st);
-			return MACPROCERR;
-		}
-		PLTFM_MSG_TRACE("[Proxy][RecvAck]\n");
-		sm->proxy_st = MAC_AX_PROXY_BUSY;
+			PLTFM_MSG_TRACE("[Proxy][DoneAck] Proxy FUNC(%d) H2C Success\n"
+					, info->c2h_func);
 		break;
 	default:
-		PLTFM_MSG_ERR("[Proxy][Ack] is_rcv bad value (%d)\n", is_rcv);
+		return MACNOITEM;
 	}
+
+	if (sm->proxy_st != MAC_AX_PROXY_BUSY) {
+		PLTFM_MSG_ERR("[Proxy][DoneAck] doesn't match sm (%d)\n", sm->proxy_st);
+		return MACPROCERR;
+	}
+	sm->proxy_st = MAC_AX_PROXY_IDLE;
+	sm->proxy_ret = info->h2c_return;
+	if (info->h2c_return != MACSUCCESS)
+		PLTFM_MSG_ERR("[Proxy][DoneAck] h2c return not success (%d)\n"
+				, info->h2c_return);
+	else
+		PLTFM_MSG_TRACE("[Proxy][DoneAck]\n");
+
 	return MACSUCCESS;
 }
 
@@ -1030,18 +1070,27 @@ static u32 c2h_fwi_rev_ack(struct mac_ax_adapter *adapter, u8 *buf, u32 len,
 {
 	u32 data = *(u32 *)(buf + FWCMD_HDR_LEN);
 	u32 ret;
-	u32 cat;
+	u8 cat, _class, func, seq;
 
 	data = le32_to_cpu(data);
 
 	cat = GET_FIELD(data, FWCMD_C2H_REC_ACK_CAT);
-	if (cat == FWCMD_H2C_CAT_OUTSRC)
+	_class = GET_FIELD(data, FWCMD_C2H_REC_ACK_CLASS);
+	func = GET_FIELD(data, FWCMD_C2H_REC_ACK_FUNC);
+	seq = GET_FIELD(data, FWCMD_C2H_REC_ACK_H2C_SEQ);
+
+	if (adapter->sm.h2c_c2h_mon == MAC_AX_H2C_C2H_MON_ON) {
+		PLTFM_MSG_TRACE("[h2c_c2h_mon] REC_ACK CAT: %d, CLASS: %d, FUNC: %d, SEQ: %d\n",
+				cat, _class, func, seq);
+	}
+
+	if (cat == FWCMD_H2C_CAT_OUTSRC || cat == FWCMD_H2C_CAT_TEST)
 		return MACSUCCESS;
 
-	info->c2h_cat = GET_FIELD(data, FWCMD_C2H_REC_ACK_CAT);
-	info->c2h_class = GET_FIELD(data, FWCMD_C2H_REC_ACK_CLASS);
-	info->c2h_func = GET_FIELD(data, FWCMD_C2H_REC_ACK_FUNC);
-	info->h2c_seq = GET_FIELD(data, FWCMD_C2H_REC_ACK_H2C_SEQ);
+	info->c2h_cat = cat;
+	info->c2h_class = _class;
+	info->c2h_func = func;
+	info->h2c_seq = seq;
 	adapter->fw_info.rec_seq = info->h2c_seq;
 	info->type_rec_ack = 1;
 
@@ -1059,7 +1108,7 @@ static u32 c2h_fwi_rev_ack(struct mac_ax_adapter *adapter, u8 *buf, u32 len,
 				return ret;
 			break;
 		case FWCMD_H2C_CL_PROXY:
-			ret = c2h_proxy_ack(adapter, info, 1);
+			ret = c2h_proxy_rcv_ack_hdl(adapter, info);
 			if (ret)
 				return ret;
 			break;
@@ -1072,99 +1121,134 @@ static u32 c2h_fwi_rev_ack(struct mac_ax_adapter *adapter, u8 *buf, u32 len,
 	return MACSUCCESS;
 }
 
+static u32 c2h_fw_info_done_ack_hdl(struct mac_ax_adapter *adapter,
+				    struct rtw_c2h_info *info)
+{
+	switch (info->c2h_func) {
+	case FWCMD_H2C_FUNC_FW_SELF_DX:
+		if (info->h2c_return == MACSUCCESS)
+			adapter->fw_info.fwdx_info.fwdx_exist = 1;
+		else
+			adapter->fw_info.fwdx_info.fwdx_exist = 0;
+		break;
+	default:
+		break;
+	}
+	return MACSUCCESS;
+}
+
 static u32 c2h_fwofld_done_ack_hdl(struct mac_ax_adapter *adapter,
 				   struct rtw_c2h_info *info)
 {
 	struct mac_ax_state_mach *sm = &adapter->sm;
 	struct mac_ax_pkt_ofld_info *ofld_info = &adapter->pkt_ofld_info;
 	struct mac_ax_scanofld_info *scanofld_info = &adapter->scanofld_info;
+	struct sensing_csi_info *csi_info = &adapter->csi_info;
+	u8 scanofld_band;
+	u8 scanofld_return;
+	u8 *pfw_scan_busy;
+	u8 *pfw_chlist_busy;
+	u8 *state;
+	u8 *ret;
+	u8 done_ret = info->h2c_return;
 
 	switch (info->c2h_func) {
-	case FWCMD_H2C_FUNC_WRITE_OFLD:
-		if (sm->write_h2c == MAC_AX_OFLD_H2C_RCVD) {
-			if (info->h2c_return == MACSUCCESS)
-				sm->write_h2c = MAC_AX_OFLD_H2C_IDLE;
-			else
-				sm->write_h2c = MAC_AX_OFLD_H2C_ERROR;
-		}
-		break;
-
-	case FWCMD_H2C_FUNC_CONF_OFLD:
-		if (sm->conf_h2c == MAC_AX_OFLD_H2C_RCVD) {
-			if (info->h2c_return == MACSUCCESS)
-				sm->conf_h2c = MAC_AX_OFLD_H2C_IDLE;
-			else
-				sm->conf_h2c = MAC_AX_OFLD_H2C_ERROR;
-		}
-		break;
-
 	case FWCMD_H2C_FUNC_PACKET_OFLD:
 		if (sm->pkt_ofld == MAC_AX_OFLD_H2C_RCVD) {
 			if (info->h2c_return == MACSUCCESS) {
-				PLTFM_MSG_TRACE("pktofld done ack ok\n");
-
+				PLTFM_MSG_TRACE("[pktofld] done ack ok\n");
 				if (ofld_info->last_op == PKT_OFLD_OP_READ)
 					sm->pkt_ofld = MAC_AX_OFLD_H2C_DONE;
 				else
 					sm->pkt_ofld = MAC_AX_OFLD_H2C_IDLE;
 			} else {
-				PLTFM_MSG_TRACE("pktofld done ack fail (%d)\n", info->h2c_return);
-
+				PLTFM_MSG_TRACE("[pktofld] done ack fail (%d)\n", info->h2c_return);
 				sm->pkt_ofld = MAC_AX_OFLD_H2C_ERROR;
 			}
 		} else {
-			PLTFM_MSG_ERR("cant set pkt ofld state since no recv ack is received.");
+			PLTFM_MSG_ERR("[pktofld] cant set pkt ofld state (no recv ack is rcved)\n");
 		}
 		break;
 
-	case FWCMD_H2C_FUNC_READ_OFLD:
-		if (sm->read_h2c == MAC_AX_OFLD_H2C_RCVD) {
-			if (info->h2c_return == MACSUCCESS)
-				sm->read_h2c = MAC_AX_OFLD_H2C_DONE;
-			else
-				sm->read_h2c = MAC_AX_OFLD_H2C_ERROR;
-		}
-		break;
-
-	case FWCMD_H2C_FUNC_DUMP_EFUSE:
-		if (sm->efuse_ofld == MAC_AX_OFLD_H2C_RCVD) {
-			if (info->h2c_return == MACSUCCESS)
-				sm->efuse_ofld = MAC_AX_OFLD_H2C_DONE;
-			else
-				sm->efuse_ofld = MAC_AX_OFLD_H2C_ERROR;
-		}
-		break;
 	case FWCMD_H2C_FUNC_ADD_SCANOFLD_CH:
-		if (scanofld_info->clear_drv_ch_list && scanofld_info->list->head)
-			mac_scanofld_ch_list_clear(adapter, scanofld_info->list);
-		PLTFM_MSG_TRACE("[scnofld] got add scanofld done ack. clear chlist busy\n");
+		scanofld_band = info->h2c_return >> SCANOFLD_ACK_BAND_SHIFT;
+		scanofld_return = info->h2c_return & SCANOFLD_ACK_RETURN_MASK;
+		PLTFM_MSG_ALWAYS("[scnofld](%d) got add scanofld done ack. clear fw chlist busy\n",
+				scanofld_band);
 
-		PLTFM_MUTEX_LOCK(&scanofld_info->drv_chlist_state_lock);
-		adapter->scanofld_info.drv_chlist_busy = 0;
-		PLTFM_MUTEX_UNLOCK(&scanofld_info->drv_chlist_state_lock);
+		adapter->scanofld_info.fw_chlist_busy[scanofld_band] = 0;
 
-		PLTFM_MUTEX_LOCK(&scanofld_info->fw_chlist_state_lock);
-		adapter->scanofld_info.fw_chlist_busy = 0;
-		PLTFM_MUTEX_UNLOCK(&scanofld_info->fw_chlist_state_lock);
-
-		PLTFM_MSG_TRACE("[scnofld] drv_chlist_state = %d, fw_chlist_state = %d\n",
-				adapter->scanofld_info.drv_chlist_busy,
-				adapter->scanofld_info.fw_chlist_busy);
+		PLTFM_MSG_ALWAYS("[scnofld][%d] drv_chlist_state = %d, fw_chlist_state = %d\n",
+				scanofld_band,
+				adapter->scanofld_info.drv_chlist_busy[scanofld_band],
+				adapter->scanofld_info.fw_chlist_busy[scanofld_band]);
 		break;
 	case FWCMD_H2C_FUNC_SCANOFLD:
-		if (info->h2c_return != MACSUCCESS) {
-			PLTFM_MSG_TRACE("[scnofld] scan func fail,revert fwchlist and fw status\n");
+		scanofld_band = info->h2c_return >> SCANOFLD_ACK_BAND_SHIFT;
+		scanofld_return = info->h2c_return & SCANOFLD_ACK_RETURN_MASK;
+		if (scanofld_return != MACSUCCESS) {
+			PLTFM_MSG_ERR("[scnofld][%d] scan func fail,revert fw related status\n",
+				      scanofld_band);
 
-			PLTFM_MUTEX_LOCK(&scanofld_info->fw_chlist_state_lock);
-			scanofld_info->fw_chlist_busy = scanofld_info->last_fw_chlist_busy;
-			PLTFM_MUTEX_UNLOCK(&scanofld_info->fw_chlist_state_lock);
+			pfw_chlist_busy = &scanofld_info->fw_chlist_busy[scanofld_band];
+			*pfw_chlist_busy = scanofld_info->last_fw_chlist_busy[scanofld_band];
 
-			scanofld_info->fw_scan_busy = scanofld_info->last_fw_scan_busy;
+			pfw_scan_busy = &scanofld_info->fw_scan_busy[scanofld_band];
+			*pfw_scan_busy = scanofld_info->last_fw_scan_busy[scanofld_band];
 		}
-		PLTFM_MSG_TRACE("[scnofld] fw_scan_busy = %d, fw_chlist_state = %d\n",
-				scanofld_info->fw_scan_busy,
-				scanofld_info->fw_chlist_busy);
+		PLTFM_MSG_ALWAYS("[scnofld][%d] fw_scan_busy = %d, fw_chlist_state = %d\n",
+				 scanofld_band,
+				 scanofld_info->fw_scan_busy[scanofld_band],
+				 scanofld_info->fw_chlist_busy[scanofld_band]);
 		break;
+
+	case FWCMD_H2C_FUNC_WIFI_SENSING_CSI:
+		if (csi_info->start_cmd_send && csi_info->stop_cmd_send)
+			PLTFM_MSG_ERR("[ERR][csi][DoneAck] state machine error!\n");
+
+		if (csi_info->start_cmd_send) {
+			if (info->h2c_return == MACSUCCESS)
+				csi_info->func_en = 1;
+
+			csi_info->start_cmd_send = 0;
+		}
+
+		if (csi_info->stop_cmd_send) {
+			if (info->h2c_return == MACSUCCESS)
+				csi_info->func_en = 0;
+
+			csi_info->stop_cmd_send = 0;
+		}
+
+		//Remove mutex lock since it's guaranteed to ATOMIC
+		sm->sensing_csi_st = MAC_AX_SENSING_CSI_IDLE;
+		break;
+
+	case FWCMD_H2C_FUNC_SCH_TX_EN_PKT:
+		if (sm->sch_tx_en_ofld == MAC_AX_OFLD_H2C_SENDING) {
+			if (info->h2c_return == MACSUCCESS)
+				sm->sch_tx_en_ofld = MAC_AX_OFLD_H2C_DONE;
+			else
+				sm->sch_tx_en_ofld = MAC_AX_OFLD_H2C_ERROR;
+		}
+		break;
+
+	case FWCMD_H2C_FUNC_STA_CSA:
+		state = &adapter->sm.sta_csa_st;
+		ret = &adapter->sm.sta_csa_ret;
+		PLTFM_MSG_TRACE("sta_csa done ack with ret (%d)\n", done_ret);
+		if (*state == MAC_AX_STA_CSA_BUSY) {
+			*state = MAC_AX_STA_CSA_IDLE;
+			*ret = done_ret;
+		} else {
+			PLTFM_MSG_ERR("sta_csa fw state err: curr st(%d) ret(%d)\n", *state, *ret);
+		}
+		break;
+	case FWCMD_H2C_FUNC_RX_FWD:
+		if (info->h2c_return == MACSUCCESS)
+			PLTFM_MSG_TRACE("[RXFWD] done ack success.\n");
+		else
+			PLTFM_MSG_ERR("[RXFWD] done ack fail (%d)\n", info->h2c_return);
 	default:
 		break;
 	}
@@ -1174,6 +1258,7 @@ static u32 c2h_fwofld_done_ack_hdl(struct mac_ax_adapter *adapter,
 static u32 c2h_role_done_ack_hdl(struct mac_ax_adapter *adapter,
 				 struct rtw_c2h_info *info)
 {
+	struct mac_ax_dbcc_info *dbcc_info = adapter->dbcc_info;
 	struct mac_ax_state_mach *sm = &adapter->sm;
 
 	if (info->c2h_class == FWCMD_H2C_CL_MEDIA_RPT &&
@@ -1194,6 +1279,15 @@ static u32 c2h_role_done_ack_hdl(struct mac_ax_adapter *adapter,
 			sm->role_stat = MAC_AX_ROLE_INIT_FAIL;
 			return MACROLEINITFL;
 		}
+	} else if (info->c2h_class == FWCMD_H2C_CL_MEDIA_RPT &&
+		   info->c2h_func == FWCMD_H2C_FUNC_NOTIFY_DBCC) {
+		if (info->h2c_return == MACSUCCESS) {
+			dbcc_info->notify_fw_flag = 0;
+		} else {
+			PLTFM_MSG_ERR("[ERR]dbcc notify ack fail %d\n",
+				      info->h2c_return);
+			return MACSUCCESS;
+		}
 	} else if (info->c2h_class == FWCMD_H2C_CL_ADDR_CAM_UPDATE &&
 		   info->c2h_func == FWCMD_H2C_FUNC_ADDRCAM_INFO) {
 		if (info->h2c_return == MACSUCCESS) {
@@ -1211,10 +1305,13 @@ static u32 c2h_ps_done_ack_hdl(struct mac_ax_adapter *adapter,
 			       struct rtw_c2h_info *info)
 {
 	struct mac_ax_state_mach *sm = &adapter->sm;
+#if MAC_FEAT_P2P
 	u8 p2pid;
 	u32 ret;
+#endif
 
 	switch (info->c2h_func) {
+#if MAC_FEAT_P2P
 	case FWCMD_H2C_FUNC_P2P_ACT:
 		if (sm->p2p_stat != MAC_AX_P2P_ACT_BUSY) {
 			PLTFM_MSG_ERR("[ERR]p2p act dack stat err %d\n",
@@ -1235,16 +1332,24 @@ static u32 c2h_ps_done_ack_hdl(struct mac_ax_adapter *adapter,
 			PLTFM_MSG_ERR("[ERR]p2p act dack get wait id %d\n", ret);
 			return ret;
 		}
-		if (p2pid != P2PID_INVALID) {
-			if (adapter->p2p_info[p2pid].run) {
-				PLTFM_MEMSET(&adapter->p2p_info[p2pid], 0,
-					     sizeof(struct mac_ax_p2p_info));
-			} else {
-				adapter->p2p_info[p2pid].run = 1;
-				adapter->p2p_info[p2pid].wait_dack = 0;
-			}
-		} else {
+		if (p2pid == P2PID_INVALID) {
 			PLTFM_MSG_ERR("[ERR]p2p act dack no wait id\n");
+			sm->p2p_stat = MAC_AX_P2P_ACT_IDLE;
+			return MACPROCERR;
+		}
+
+		if (adapter->p2p_info[p2pid].wait_term &&
+		    adapter->p2p_info[p2pid].wait_init) {
+			PLTFM_MSG_ERR("[ERR]p2p act dack wait term & init\n");
+		} else if (adapter->p2p_info[p2pid].wait_term) {
+			PLTFM_MEMSET(&adapter->p2p_info[p2pid], 0,
+				     sizeof(struct mac_ax_p2p_info));
+		} else if (adapter->p2p_info[p2pid].wait_init) {
+			adapter->p2p_info[p2pid].run = 1;
+			adapter->p2p_info[p2pid].wait_init = 0;
+			adapter->p2p_info[p2pid].wait_dack = 0;
+		} else {
+			adapter->p2p_info[p2pid].wait_dack = 0;
 		}
 		sm->p2p_stat = MAC_AX_P2P_ACT_IDLE;
 		break;
@@ -1281,6 +1386,7 @@ static u32 c2h_ps_done_ack_hdl(struct mac_ax_adapter *adapter,
 		}
 		sm->p2p_stat = MAC_AX_P2P_ACT_IDLE;
 		break;
+#endif
 	case FWCMD_H2C_FUNC_IPS_CFG:
 		if (info->h2c_return != MACSUCCESS)
 			PLTFM_MSG_ERR("[ERR]fwips dack ret %d\n", info->h2c_return);
@@ -1289,53 +1395,198 @@ static u32 c2h_ps_done_ack_hdl(struct mac_ax_adapter *adapter,
 		if (info->h2c_return != MACSUCCESS)
 			PLTFM_MSG_ERR("[ERR]ps advanced parm dack ret %d\n", info->h2c_return);
 		break;
+	case FWCMD_H2C_FUNC_PERIODIC_WAKE:
+		if (info->h2c_return != MACSUCCESS)
+			PLTFM_MSG_ERR("[ERR] periodic wake dack ret %d\n", info->h2c_return);
+		break;
 	default:
 		break;
 	}
 
 	return MACSUCCESS;
 }
+#if MAC_FEAT_NAN
+static u32 c2h_nan_done_ack_hdl(struct mac_ax_adapter *adapter, struct rtw_c2h_info *info)
+{
+	struct mac_ax_state_mach *sm = &adapter->sm;
 
-static u32 c2h_fwi_done_ack(struct mac_ax_adapter *adapter, u8 *buf, u32 len,
-			    struct rtw_c2h_info *info)
+	switch (info->c2h_func) {
+	case FWCMD_H2C_FUNC_ACT_SCHEDULE_REQ:
+
+		PLTFM_MSG_ERR("[ERR] nan current state %d\n", sm->nan_stat);
+		if (info->h2c_return == MACSUCCESS) {
+			PLTFM_MSG_ERR("[ERR]nan act dack ret %d\n", info->h2c_return);
+			sm->nan_stat = MAX_AX_NAN_ACT_H2C_FAIL;
+			break;
+		}
+	}
+	return MACSUCCESS;
+}
+#endif
+static u32 c2h_wow_done_ack_hdl(struct mac_ax_adapter* adapter, struct rtw_c2h_info* info)
+{
+	switch (info->c2h_func) {
+	case FWCMD_H2C_FUNC_KEEP_ALIVE:
+		if (info->h2c_return != MACSUCCESS)
+			PLTFM_MSG_ERR("[ERR] WoW KEEP_ALIVE failed\n");
+		else
+			PLTFM_MSG_TRACE("[TRACE] WoW KEEP_ALIVE Success\n");
+		break;
+	case FWCMD_H2C_FUNC_DISCONNECT_DETECT:
+		if (info->h2c_return != MACSUCCESS)
+			PLTFM_MSG_ERR("[ERR] WoW DISCONNECT_DETECT failed\n");
+		else
+			PLTFM_MSG_TRACE("[TRACE] WoW DISCONNECT_DETECT Success\n");
+		break;
+	case FWCMD_H2C_FUNC_WOW_GLOBAL:
+		if (info->h2c_return != MACSUCCESS)
+			PLTFM_MSG_ERR("[ERR] WoW WOW_GLOBAL failed\n");
+		else
+			PLTFM_MSG_TRACE("[TRACE] WoW WOW_GLOBAL Success\n");
+		break;
+	case FWCMD_H2C_FUNC_GTK_OFLD:
+		if (info->h2c_return != MACSUCCESS)
+			PLTFM_MSG_ERR("[ERR] WoW GTK_OFLD failed\n");
+		else
+			PLTFM_MSG_TRACE("[TRACE] WoW GTK_OFLD Success\n");
+		break;
+	case FWCMD_H2C_FUNC_ARP_OFLD:
+		if (info->h2c_return != MACSUCCESS)
+			PLTFM_MSG_ERR("[ERR] WoW ARP_OFLD failed\n");
+		else
+			PLTFM_MSG_TRACE("[TRACE] WoW ARP_OFLD Success\n");
+		break;
+	case FWCMD_H2C_FUNC_NDP_OFLD:
+		if (info->h2c_return != MACSUCCESS)
+			PLTFM_MSG_ERR("[ERR] WoW NDP_OFLD failed\n");
+		else
+			PLTFM_MSG_TRACE("[TRACE] WoW NDP_OFLD Success\n");
+		break;
+	case FWCMD_H2C_FUNC_REALWOW:
+		if (info->h2c_return != MACSUCCESS)
+			PLTFM_MSG_ERR("[ERR] WoW REALWOW failed\n");
+		else
+			PLTFM_MSG_TRACE("[TRACE] WoW REALWOW Success\n");
+		break;
+	case FWCMD_H2C_FUNC_NLO:
+		if (info->h2c_return != MACSUCCESS)
+			PLTFM_MSG_ERR("[ERR] WoW NLO failed\n");
+		else
+			PLTFM_MSG_TRACE("[TRACE] WoW NLO Success\n");
+		break;
+	case FWCMD_H2C_FUNC_WAKEUP_CTRL:
+		if (info->h2c_return != MACSUCCESS)
+			PLTFM_MSG_ERR("[ERR] WoW WAKEUP_CTRL failed\n");
+		else
+			PLTFM_MSG_TRACE("[TRACE] WoW WAKEUP_CTRL Success\n");
+		break;
+	case FWCMD_H2C_FUNC_NEGATIVE_PATTERN:
+		if (info->h2c_return != MACSUCCESS)
+			PLTFM_MSG_ERR("[ERR] WoW NEGATIVE_PATTERN failed\n");
+		else
+			PLTFM_MSG_TRACE("[TRACE] WoW NEGATIVE_PATTERN Success\n");
+		break;
+	case FWCMD_H2C_FUNC_DEV2HST_GPIO:
+		if (info->h2c_return != MACSUCCESS)
+			PLTFM_MSG_ERR("[ERR] WoW DEV2HST_GPIO failed\n");
+		else
+			PLTFM_MSG_TRACE("[TRACE] WoW DEV2HST_GPIO Success\n");
+		break;
+	case FWCMD_H2C_FUNC_HST2DEV_CTRL:
+		if (info->h2c_return != MACSUCCESS)
+			PLTFM_MSG_ERR("[ERR] WoW HST2DEV_CTRL failed\n");
+		else
+			PLTFM_MSG_TRACE("[TRACE] WoW HST2DEV_CTRL Success\n");
+		break;
+	case FWCMD_H2C_FUNC_WOW_CAM_UPD:
+		if (info->h2c_return != MACSUCCESS)
+			PLTFM_MSG_ERR("[ERR] WoW WOW_CAM_UPD failed\n");
+		else
+			PLTFM_MSG_TRACE("[TRACE] WoW WOW_CAM_UPD Success\n");
+		break;
+	case FWCMD_H2C_FUNC_MAGIC_WAKER_FILTER:
+		if (info->h2c_return != MACSUCCESS) {
+			PLTFM_MSG_ERR("[ERR] WoW MAGIC_WAKER_FILTER failed\n");
+		}
+		else {
+			PLTFM_MSG_TRACE("[TRACE] WoW MAGIC_WAKER_FILTER Success\n");
+		}
+		break;
+	case FWCMD_H2C_FUNC_TCP_KEEPALIVE:
+		if (info->h2c_return != MACSUCCESS) {
+			PLTFM_MSG_ERR("[ERR] WoW TCP_KEEPALIVE failed\n");
+		}
+		else {
+			PLTFM_MSG_TRACE("[TRACE] WoW TCP_KEEPALIVE Success\n");
+		}
+		break;
+	default:
+		break;
+	}
+	return MACSUCCESS;
+}
+
+static u32 c2h_sec_done_ack_hdl(struct mac_ax_adapter *adapter, struct rtw_c2h_info *info)
+{
+	switch (info->c2h_func) {
+	case FWCMD_H2C_FUNC_SECCAM_INFO:
+		if (info->h2c_return == MACSUCCESS)
+			PLTFM_MSG_TRACE("[Security] done ack success\n");
+		else
+			PLTFM_MSG_ERR("[Security] send update security cam fail %d\n",
+				      info->h2c_return);
+		break;
+	default:
+		break;
+	}
+	return MACSUCCESS;
+}
+
+static u32 c2h_ser_done_ack_hdl(struct mac_ax_adapter *adapter, struct rtw_c2h_info *info)
+{
+	switch (info->c2h_func) {
+	case FWCMD_H2C_FUNC_SER_DBG_CASE_SET:
+		if (info->h2c_return == MACSUCCESS)
+			PLTFM_MSG_TRACE("[SER] debug mode done ack success\n");
+		else
+			PLTFM_MSG_ERR("[SER] debug mode err flag set fail %d\n",
+				      info->h2c_return);
+		break;
+	default:
+		break;
+	}
+	return MACSUCCESS;
+}
+
+static u32 c2h_fwi_done_ack_parse(struct mac_ax_adapter *adapter, u8 *buf, u32 len,
+				  struct rtw_c2h_info *info)
 {
 	u32 data = *(u32 *)(buf + FWCMD_HDR_LEN);
-	u32 ret;
-	u32 cat;
+	u8 cat, _class, func, _return, seq;
 
 	data = le32_to_cpu(data);
 
 	cat = GET_FIELD(data, FWCMD_C2H_REC_ACK_CAT);
-	if (cat == FWCMD_H2C_CAT_OUTSRC)
+	_class = GET_FIELD(data, FWCMD_C2H_DONE_ACK_CLASS);
+	func = GET_FIELD(data, FWCMD_C2H_DONE_ACK_FUNC);
+	_return = GET_FIELD(data, FWCMD_C2H_DONE_ACK_H2C_RETURN);
+	seq = GET_FIELD(data, FWCMD_C2H_DONE_ACK_H2C_SEQ);
+
+	if (adapter->sm.h2c_c2h_mon == MAC_AX_H2C_C2H_MON_ON) {
+		PLTFM_MSG_TRACE("[h2c_c2h_mon] DONE_ACK CAT: %d, CLASS: %d, FUNC: %d, "\
+				"SEQ: %d, return: %d\n",
+				cat, _class, func, seq, _return);
+	}
+
+	if (cat == FWCMD_H2C_CAT_OUTSRC || cat == FWCMD_H2C_CAT_TEST)
 		return MACSUCCESS;
 
-	info->c2h_cat = GET_FIELD(data, FWCMD_C2H_DONE_ACK_CAT);
-	info->c2h_class = GET_FIELD(data, FWCMD_C2H_DONE_ACK_CLASS);
-	info->c2h_func = GET_FIELD(data, FWCMD_C2H_DONE_ACK_FUNC);
-	info->h2c_return = GET_FIELD(data, FWCMD_C2H_DONE_ACK_H2C_RETURN);
-	info->h2c_seq = GET_FIELD(data, FWCMD_C2H_DONE_ACK_H2C_SEQ);
+	info->c2h_cat = cat;
+	info->c2h_class = _class;
+	info->c2h_func = func;
+	info->h2c_return = _return;
+	info->h2c_seq = seq;
 	info->type_done_ack = 1;
-
-	if (info->c2h_cat == FWCMD_H2C_CAT_MAC) {
-		if (info->c2h_class == FWCMD_H2C_CL_FW_OFLD) {
-			ret = c2h_fwofld_done_ack_hdl(adapter, info);
-			if (ret != MACSUCCESS)
-				return ret;
-		} else if (info->c2h_class == FWCMD_H2C_CL_PS) {
-			ret = c2h_ps_done_ack_hdl(adapter, info);
-			if (ret != MACSUCCESS)
-				return ret;
-		} else if (info->c2h_class == FWCMD_H2C_CL_MEDIA_RPT ||
-			   info->c2h_class == FWCMD_H2C_CL_ADDR_CAM_UPDATE) {
-			ret = c2h_role_done_ack_hdl(adapter, info);
-			if (ret != MACSUCCESS)
-				return ret;
-		} else if (info->c2h_class == FWCMD_H2C_CL_PROXY) {
-			ret = c2h_proxy_ack(adapter, info, 0);
-			if (ret != MACSUCCESS)
-				return ret;
-		}
-	}
 
 	return MACSUCCESS;
 }
@@ -1352,14 +1603,43 @@ static u32 c2h_fwi_bcn_csazero(struct mac_ax_adapter *adapter, u8 *buf, u32 len,
 	return MACSUCCESS;
 }
 
-static struct c2h_proc_func c2h_proc_fw_info_cmd[] = {
-	{FWCMD_C2H_FUNC_REC_ACK, c2h_fwi_rev_ack},
-	{FWCMD_C2H_FUNC_DONE_ACK, c2h_fwi_done_ack},
-	{FWCMD_C2H_FUNC_C2H_LOG, c2h_fwi_cmd_log},
-	{FWCMD_C2H_FUNC_BCN_CNT, c2h_fwi_bcn_stats},
-	{FWCMD_C2H_FUNC_BCN_CSAZERO, c2h_fwi_bcn_csazero},
-	{FWCMD_C2H_FUNC_NULL, NULL},
-};
+static u32 c2h_fwi_bcn_bc_chg_zero(struct mac_ax_adapter *adapter, u8 *buf, u32 len,
+				   struct rtw_c2h_info *info)
+{
+	return MACSUCCESS;
+}
+
+static u32 c2h_fwi_bcn_upd_done(struct mac_ax_adapter *adapter, u8 *buf, u32 len,
+				struct rtw_c2h_info *info)
+{
+	u32 c2h_content = *(u32 *)(buf + FWCMD_HDR_LEN);
+	u8 band, port, mbssid, portl;
+
+	c2h_content = le32_to_cpu(c2h_content);
+
+	port = GET_FIELD(c2h_content, FWCMD_C2H_BCN_UPD_DONE_PORT);
+	mbssid = GET_FIELD(c2h_content, FWCMD_C2H_BCN_UPD_DONE_MBSSID);
+	band = ((c2h_content & FWCMD_C2H_BCN_UPD_DONE_BAND_IDX) == 0) ? 0 : 1;
+	portl = (port == 0) ? mbssid : port + MAC_AX_P0_MBID_LAST - 1;
+	if (band == 0)
+		adapter->hw_info->c2h_bcn_upd_done_band0 = adapter->hw_info->c2h_bcn_upd_done_band0
+							   | BIT(portl);
+	else if (band == 1)
+		adapter->hw_info->c2h_bcn_upd_done_band1 = adapter->hw_info->c2h_bcn_upd_done_band1
+							   | BIT(portl);
+
+	return MACSUCCESS;
+}
+
+static u32 c2h_fwdx_info_handler(struct mac_ax_adapter *adapter, u8 *buf, u32 len,
+				 struct rtw_c2h_info *info)
+{
+#if MAC_SELF_DIAG_INFO
+	return adapter->ops->fwdx_c2h_handler(adapter, buf + FWCMD_HDR_LEN, len - FWCMD_HDR_LEN);
+#else
+	return MACNOTSUP;
+#endif
+}
 
 u32 c2h_fw_info(struct mac_ax_adapter *adapter, u8 *buf, u32 len,
 		struct rtw_c2h_info *info)
@@ -1405,11 +1685,9 @@ static u32 c2h_dump_efuse_hdl(struct mac_ax_adapter *adapter, u8 *buf,
 	size = adapter->hw_info->efuse_size;
 
 	if (!ofld_info->buf) {
-		ofld_info->buf = (u8 *)PLTFM_MALLOC(size);
-		if (!ofld_info->buf) {
-			adapter->sm.efuse = MAC_AX_EFUSE_IDLE;
-			return MACBUFALLOC;
-		}
+		PLTFM_MSG_ERR("[ERR]ofld_info->buf no malloc\n");
+		adapter->sm.efuse = MAC_AX_EFUSE_IDLE;
+		return MACBUFALLOC;
 	}
 
 	PLTFM_MEMCPY(ofld_info->buf, buf + FWCMD_HDR_LEN, size);
@@ -1452,6 +1730,7 @@ static u32 c2h_pkt_ofld_rsp_hdl(struct mac_ax_adapter *adapter, u8 *buf,
 {
 	struct mac_ax_pkt_ofld_info *ofld_info = &adapter->pkt_ofld_info;
 	struct mac_ax_pkt_ofld_pkt *ofld_pkt = &adapter->pkt_ofld_pkt;
+	struct mac_ax_state_mach *sm = &adapter->sm;
 	u32 c2h_content = *(u32 *)(buf + FWCMD_HDR_LEN);
 	u16 pkt_len;
 	u8 id, pkt_op;
@@ -1464,24 +1743,32 @@ static u32 c2h_pkt_ofld_rsp_hdl(struct mac_ax_adapter *adapter, u8 *buf,
 	pkt_len = GET_FIELD(c2h_content, FWCMD_C2H_PKT_OFLD_RSP_PKT_LENGTH);
 	id = GET_FIELD(c2h_content, FWCMD_C2H_PKT_OFLD_RSP_PKT_ID);
 
-	PLTFM_MSG_TRACE("get pktofld rsp. pkt_op: %d, pkt_len: %d, id: %d\n", pkt_op, pkt_len, id);
+	PLTFM_MSG_TRACE("[pktofld] get rsp. op: %d, len: %d, id: %d\n", pkt_op, pkt_len, id);
+	if (id == PKT_OFLD_NOT_EXISTS_ID) {
+		PLTFM_MSG_ERR("[pktofld] id %d is for NOT_EXISTS and shouldn't be rpt from fw\n",
+			      PKT_OFLD_NOT_EXISTS_ID);
+		return MACNOITEM;
+	}
 
 	switch (pkt_op) {
 	case PKT_OFLD_OP_ADD:
 		if (pkt_len != 0) {
+			if (!(ofld_info->id_bitmap[id >> 3] & (1 << (id & 7)))) {
+				ofld_info->free_id_count--;
+				ofld_info->used_id_count++;
+			}
 			ofld_info->id_bitmap[id >> 3] |= (1 << (id & 7));
-			ofld_info->free_id_count--;
-			ofld_info->used_id_count++;
 		}
 
 		break;
 
 	case PKT_OFLD_OP_DEL:
-		if (pkt_len != 0) {
-			ofld_info->id_bitmap[id >> 3] &= ~(1 << (id & 7));
+		if (mac_pkt_ofld_get_bitmap(ofld_info->id_bitmap, id)) {
 			ofld_info->free_id_count++;
 			ofld_info->used_id_count--;
 		}
+		mac_pkt_ofld_unset_bitmap(adapter, ofld_info->id_bitmap, id);
+		mac_pkt_ofld_unset_bitmap(adapter, ofld_info->id_to_del_bitmap, id);
 
 		break;
 
@@ -1504,8 +1791,14 @@ static u32 c2h_pkt_ofld_rsp_hdl(struct mac_ax_adapter *adapter, u8 *buf,
 		break;
 
 	default:
-		PLTFM_MSG_ERR("[ERR]invalid packet offload op: %d", pkt_op);
+		PLTFM_MSG_ERR("[pktofld] invalid packet offload op: %d", pkt_op);
 		break;
+	}
+	if (sm->pkt_ofld == MAC_AX_OFLD_H2C_ERROR) {
+		if (ofld_info->last_op == PKT_OFLD_OP_READ)
+			sm->pkt_ofld = MAC_AX_OFLD_H2C_DONE;
+		else
+			sm->pkt_ofld = MAC_AX_OFLD_H2C_IDLE;
 	}
 
 	return MACSUCCESS;
@@ -1540,6 +1833,7 @@ static u32 c2h_tx_duty_hdl(struct mac_ax_adapter *adapter, u8 *buf,
 	return MACSUCCESS;
 }
 
+#if MAC_FEAT_P2P
 static u32 c2h_tsf32_togl_rpt_hdl(struct mac_ax_adapter *adapter, u8 *buf,
 				  u32 len, struct rtw_c2h_info *info)
 {
@@ -1579,6 +1873,7 @@ static u32 c2h_tsf32_togl_rpt_hdl(struct mac_ax_adapter *adapter, u8 *buf,
 
 	return MACSUCCESS;
 }
+#endif
 
 static u32 c2h_cmd_ofld_rsp_hdl(struct mac_ax_adapter *adapter, u8 *buf,
 				u32 len, struct rtw_c2h_info *info)
@@ -1616,9 +1911,7 @@ static u32 c2h_cmd_ofld_rsp_hdl(struct mac_ax_adapter *adapter, u8 *buf,
 static u32 c2h_scanofld_rsp_hdl(struct mac_ax_adapter *adapter, u8 *buf,
 				u32 len, struct rtw_c2h_info *info)
 {
-#if SCANOFLD_RSP_EVT_PARSE
-	return 0;
-#else
+#if defined(CONFIG_HVTOOL)
 	struct fwcmd_scanofld_rsp *pkg;
 	struct mac_ax_scanofld_rsp rsp;
 	struct mac_ax_scanofld_chrpt chrpt_struct;
@@ -1643,15 +1936,15 @@ static u32 c2h_scanofld_rsp_hdl(struct mac_ax_adapter *adapter, u8 *buf,
 	rsp.pri_ch = GET_FIELD(pkg->dword0, FWCMD_C2H_SCANOFLD_RSP_PRI_CH);
 	rsp.notify_reason = GET_FIELD(pkg->dword0, FWCMD_C2H_SCANOFLD_RSP_NOTIFY_REASON);
 	rsp.status = GET_FIELD(pkg->dword0, FWCMD_C2H_SCANOFLD_RSP_STATUS);
-	PLTFM_MSG_TRACE("[scnofld][rsp]: Reason %d, ch %d, status %d\n",
-			rsp.notify_reason, rsp.pri_ch, rsp.status);
+	rsp.ch_band = GET_FIELD(pkg->dword3, FWCMD_C2H_SCANOFLD_RSP_CH_BAND);
+	rsp.band = (pkg->dword3 & FWCMD_C2H_SCANOFLD_RSP_BAND) ? 1 : 0;
+	PLTFM_MSG_ALWAYS("[scnofld][rsp][%d]: Reason %d, ch %d (band %d), status %d\n",
+			 rsp.band, rsp.notify_reason, rsp.pri_ch, rsp.ch_band, rsp.status);
 
 	switch (rsp.notify_reason) {
 	case MAC_AX_SCAN_END_SCAN_NOTIFY:
-		PLTFM_MUTEX_LOCK(&adapter->scanofld_info.fw_chlist_state_lock);
-		adapter->scanofld_info.fw_chlist_busy = 0;
-		PLTFM_MUTEX_UNLOCK(&adapter->scanofld_info.fw_chlist_state_lock);
-		adapter->scanofld_info.fw_scan_busy = 0;
+		adapter->scanofld_info.fw_chlist_busy[rsp.band] = 0;
+		adapter->scanofld_info.fw_scan_busy[rsp.band] = 0;
 		/* fall through */
 
 	case MAC_AX_SCAN_GET_RPT_NOTIFY:
@@ -1664,13 +1957,13 @@ static u32 c2h_scanofld_rsp_hdl(struct mac_ax_adapter *adapter, u8 *buf,
 		rsp.num_ch_rpt = GET_FIELD(pkg->dword3, FWCMD_C2H_SCANOFLD_RSP_NUM_CH_RPT);
 		rsp.ch_rpt_size = GET_FIELD(pkg->dword3, FWCMD_C2H_SCANOFLD_RSP_CH_RPT_SIZE);
 
-		PLTFM_MSG_TRACE("[scnofld][rsp][end] scan for %d rnd in %llu us, last slot %d us\n",
-				rsp.scanned_round, ((u64)rsp.spent_high << 32) + rsp.spent_low,
-				rsp.actual_period);
-		PLTFM_MSG_TRACE("[scnofld][rsp][end] airDense %d, txFail %d\n",
-				rsp.air_density, rsp.tx_fail_cnt);
-		PLTFM_MSG_TRACE("[scnofld][rsp][end] %d ch rpt (size %d)\n",
-				rsp.num_ch_rpt, rsp.ch_rpt_size);
+		PLTFM_MSG_ALWAYS("[scnofld][rsp][%d][end] scan %d rnd in %llu us (last slot %d)\n",
+				 rsp.band, rsp.scanned_round,
+				 ((u64)rsp.spent_high << 32) + rsp.spent_low, rsp.actual_period);
+		PLTFM_MSG_ALWAYS("[scnofld][rsp][%d][end] airDense %d, txFail %d\n",
+				 rsp.band, rsp.air_density, rsp.tx_fail_cnt);
+		PLTFM_MSG_ALWAYS("[scnofld][rsp][%d][end] %d ch rpt (size %d)\n",
+				 rsp.band, rsp.num_ch_rpt, rsp.ch_rpt_size);
 
 		if (!rsp.num_ch_rpt || !rsp.ch_rpt_size)
 			break;
@@ -1682,9 +1975,9 @@ static u32 c2h_scanofld_rsp_hdl(struct mac_ax_adapter *adapter, u8 *buf,
 				PLTFM_MEMCPY(chrpt++, chrpt_in++, sizeof(u32));
 			}
 			chrpt_in += (rsp.ch_rpt_size - chrpt_size_h_dw);
-			PLTFM_MSG_TRACE("[scnofld][rsp][end] ch %d, rx %d, txfail %x, parsed %d\n",
-					chrpt_struct.pri_ch, chrpt_struct.rx_cnt,
-					chrpt_struct.tx_fail, chrpt_struct.parsed);
+			PLTFM_MSG_ALWAYS("[scnofld][rsp][%d][end] ch%d, rx %d, txfail %x, hit %d\n",
+					 rsp.band, chrpt_struct.pri_ch, chrpt_struct.rx_cnt,
+					 chrpt_struct.tx_fail, chrpt_struct.parsed);
 		}
 		break;
 
@@ -1693,15 +1986,15 @@ static u32 c2h_scanofld_rsp_hdl(struct mac_ax_adapter *adapter, u8 *buf,
 					      FWCMD_C2H_SCANOFLD_RSP_ACTUAL_PERIOD);
 		rsp.tx_fail_cnt = GET_FIELD(pkg->dword3,
 					    FWCMD_C2H_SCANOFLD_RSP_TX_FAIL_CNT);
-		PLTFM_MSG_TRACE("[scnofld][rsp][leave] pd %d, txfail %d\n",
-				rsp.actual_period, rsp.tx_fail_cnt);
+		PLTFM_MSG_ALWAYS("[scnofld][rsp][%d][leave] pd %d, txfail %d\n",
+				 rsp.band, rsp.actual_period, rsp.tx_fail_cnt);
 		break;
 
 	default:
 		break;
 	}
+#endif //#if defined(CONFIG_HVTOOL)
 	return 0;
-#endif
 }
 
 static u32 c2h_ch_switch_rpt_hdl(struct mac_ax_adapter *adapter, u8 *buf,
@@ -1709,18 +2002,13 @@ static u32 c2h_ch_switch_rpt_hdl(struct mac_ax_adapter *adapter, u8 *buf,
 {
 	u32 *content = (u32 *)(buf + FWCMD_HDR_LEN);
 	u8 *state;
-	u32 rpt_size;
 	struct mac_ax_ch_switch_rpt *rpt;
 
 	state = &adapter->sm.ch_switch;
 	if (*state != MAC_AX_OFLD_H2C_SENDING && *state != MAC_AX_OFLD_H2C_RCVD)
 		return MACPROCERR;
-	rpt_size = sizeof(struct mac_ax_ch_switch_rpt);
-	if (!adapter->ch_switch_rpt)
-		adapter->ch_switch_rpt = (struct mac_ax_ch_switch_rpt *)PLTFM_MALLOC(rpt_size);
-	if (!adapter->ch_switch_rpt)
-		return MACPROCERR;
-	rpt = adapter->ch_switch_rpt;
+
+	rpt = &adapter->ch_switch_rpt;
 	rpt->result = (u8)GET_FIELD(le32_to_cpu(*content), FWCMD_C2H_CH_SWITCH_RPT_RESULT);
 	*state = MAC_AX_CH_SWITCH_GET_RPT;
 	return MACSUCCESS;
@@ -1732,6 +2020,7 @@ static u32 c2h_bcn_filter_rpt_hdl(struct mac_ax_adapter *adapter, u8 *buf,
 	struct fwcmd_bcnfltr_rpt *rpt = (struct fwcmd_bcnfltr_rpt *)(buf + FWCMD_HDR_LEN);
 	u32 dword;
 	u8 macid, type, rssi_evt, rssi_ma;
+	struct mac_ax_bcn_fltr_rpt *adp_rpt;
 
 	dword = le32_to_cpu(rpt->dword0);
 	macid = GET_FIELD(dword, FWCMD_C2H_BCNFLTR_RPT_MACID);
@@ -1739,6 +2028,9 @@ static u32 c2h_bcn_filter_rpt_hdl(struct mac_ax_adapter *adapter, u8 *buf,
 	rssi_evt = GET_FIELD(dword, FWCMD_C2H_BCNFLTR_RPT_RSSI_EVT);
 	rssi_ma = GET_FIELD(dword, FWCMD_C2H_BCNFLTR_RPT_RSSI_MA);
 
+	adp_rpt = &adapter->bcn_fltr_rpt;
+	adp_rpt->macid = macid;
+	adp_rpt->type = type;
 	switch (type) {
 	case BCNFLTR_NOTI_BCN_LOSS:
 		PLTFM_MSG_TRACE("[BCNFLTR] bcn loss\n");
@@ -1747,26 +2039,83 @@ static u32 c2h_bcn_filter_rpt_hdl(struct mac_ax_adapter *adapter, u8 *buf,
 		PLTFM_MSG_TRACE("[BCNFLTR] deny scan\n");
 		break;
 	case BCNFLTR_NOTI_RSSI:
+		adp_rpt->rssi_evt = rssi_evt;
+		adp_rpt->rssi_ma = rssi_ma;
 		PLTFM_MSG_TRACE("[BCNFLTR] rssi: ma=%d, evt=%d\n", rssi_ma, rssi_evt);
 		break;
 	}
+	adp_rpt->notified = 1;
 	return MACSUCCESS;
 }
 
-static struct c2h_proc_func c2h_proc_fw_ofld_cmd[] = {
-	{FWCMD_C2H_FUNC_EFUSE_DUMP, c2h_dump_efuse_hdl},
-	{FWCMD_C2H_FUNC_READ_RSP, c2h_read_rsp_hdl},
-	{FWCMD_C2H_FUNC_PKT_OFLD_RSP, c2h_pkt_ofld_rsp_hdl},
-	{FWCMD_C2H_FUNC_BEACON_RESEND, c2h_beacon_resend_hdl},
-	{FWCMD_C2H_FUNC_MACID_PAUSE, c2h_macid_pause_hdl},
-	{FWCMD_C2H_FUNC_TSF32_TOGL_RPT, c2h_tsf32_togl_rpt_hdl},
-	{FWCMD_C2H_FUNC_CMD_OFLD_RSP, c2h_cmd_ofld_rsp_hdl},
-	{FWCMD_C2H_FUNC_TX_DUTY_RPT, c2h_tx_duty_hdl},
-	{FWCMD_C2H_FUNC_SCANOFLD_RSP, c2h_scanofld_rsp_hdl},
-	{FWCMD_C2H_FUNC_CH_SWITCH_RPT, c2h_ch_switch_rpt_hdl},
-	{FWCMD_C2H_FUNC_BCNFLTR_RPT, c2h_bcn_filter_rpt_hdl},
-	{FWCMD_C2H_FUNC_NULL, NULL},
-};
+static u32 c2h_csi_tx_result_hdl(struct mac_ax_adapter *adapter, u8 *buf,
+				 u32 len, struct rtw_c2h_info *info)
+{
+	return MACSUCCESS;
+}
+
+static u32 c2h_bcn_erly_notify(struct mac_ax_adapter *adapter, u8 *buf, u32 len,
+			       struct rtw_c2h_info *info)
+{
+	return MACSUCCESS;
+}
+
+static u32 c2h_usr_tx_rpt_info(struct mac_ax_adapter *adapter, u8 *buf, u32 len,
+			       struct rtw_c2h_info *info)
+{
+	return MACSUCCESS;
+}
+
+static u32 c2h_frame_to_act_rpt(struct mac_ax_adapter *adapter, u8 *buf, u32 len,
+				struct rtw_c2h_info *info)
+{
+	return MACSUCCESS;
+}
+
+
+
+#if	MAC_FEAT_BCN_CNT
+
+static u32 c2h_bcn_sync_rpt_info(struct mac_ax_adapter *adapter, u8 *buf,
+				 u32 len, struct rtw_c2h_info *info)
+{
+	struct fwcmd_bcn_sync_rpt rpt;
+	struct rtw_hal_mac_bcn_sync_rpt *out_rpt;
+	mac_ax_raw_time *raw_time = &adapter->bcn_sync_info.raw_time;
+	u8 band, port;
+
+	if (!buf) {
+		PLTFM_MSG_ERR("[ERR]tsf32 togl rpt no buf\n");
+		return MACNPTR;
+	}
+
+	rpt.dword0 = le32_to_cpu(*(u32 *)(buf + FWCMD_HDR_LEN));
+	rpt.dword1 = le32_to_cpu(*(u32 *)(buf + FWCMD_HDR_LEN + 4));
+	rpt.dword2 = le32_to_cpu(*(u32 *)(buf + FWCMD_HDR_LEN + 8));
+
+	band = rpt.dword0 & FWCMD_C2H_BCN_SYNC_RPT_BAND;
+	if (band >= MAC_AX_BAND_NUM) {
+		PLTFM_MSG_ERR("[ERR]invalid band %d in tsf32 togl rpt\n", band);
+		return MACNOITEM;
+	}
+
+	port = GET_FIELD(rpt.dword0, FWCMD_C2H_BCN_SYNC_RPT_PORT);
+	if (port >= MAC_AX_PORT_NUM) {
+		PLTFM_MSG_ERR("[ERR]invalid port %d in tsf32 togl rpt\n", port);
+		return MACNOITEM;
+	}
+
+	out_rpt = &adapter->bcn_sync_rpt;
+	adapter->pltfm_cb->rtl_get_raw_time(raw_time);
+	out_rpt->band = band;
+	out_rpt->port = port;
+	out_rpt->tsf_l = GET_FIELD(rpt.dword1, FWCMD_C2H_BCN_SYNC_RPT_TSF_L);
+	out_rpt->tsf_h = GET_FIELD(rpt.dword2, FWCMD_C2H_BCN_SYNC_RPT_TSF_H);
+	out_rpt->seq_num = GET_FIELD(rpt.dword0, FWCMD_C2H_BCN_SYNC_RPT_SEQ_NUM);
+	out_rpt->valid = 1;
+	return MACSUCCESS;
+}
+#endif
 
 u32 c2h_fw_ofld(struct mac_ax_adapter *adapter, u8 *buf, u32 len,
 		struct rtw_c2h_info *info)
@@ -1798,10 +2147,101 @@ u32 c2h_fw_ofld(struct mac_ax_adapter *adapter, u8 *buf, u32 len,
 	return handler(adapter, buf, len, info);
 }
 
+static u32 c2h_wait_announ_hdl(struct mac_ax_adapter *adapter, u8 *buf,
+			       u32 len, struct rtw_c2h_info *info)
+{
+	struct fwcmd_wait_announce rpt;
+
+	if (!buf) {
+		PLTFM_MSG_ERR("[ERR]wait announce no buf\n");
+		return MACNPTR;
+	}
+
+	rpt.dword0 = le32_to_cpu(*(u32 *)(buf + FWCMD_HDR_LEN));
+
+	return MACSUCCESS;
+}
+
+static u32 c2h_stat_rpt_hdl(struct mac_ax_adapter *adapter, u8 *buf,
+			    u32 len, struct rtw_c2h_info *info)
+{
+	struct fwcmd_stat_rpt rpt;
+	struct mac_ax_twt_info *twt_info = adapter->twt_info;
+	u32 i, buff_sh;
+
+	if (!buf || !info->content) {
+		PLTFM_MSG_ERR("[ERR]stat rpt no buf\n");
+		return MACNPTR;
+	}
+
+	if (!twt_info) {
+		PLTFM_MSG_ERR("[ERR]no twt info\n");
+		return MACNPTR;
+	}
+
+	rpt.dword0 = le32_to_cpu(*(u32 *)info->content);
+
+	twt_info->err_rec = GET_FIELD(rpt.dword0, FWCMD_C2H_STAT_RPT_TWT_ERR_REC);
+	for (i = 0; i < TWT_DBG_INFO_SIZE; i += 4) {
+		buff_sh = 4 + i;
+		if (buff_sh >= info->content_len) {
+			*(u32 *)(twt_info->pdbg_info + i) = MAC_AX_R32_FF;
+		} else {
+			*(u32 *)(twt_info->pdbg_info + i) =
+				le32_to_cpu(*(u32 *)(info->content + buff_sh));
+		}
+	}
+
+	return MACSUCCESS;
+}
+
+#if MAC_FEAT_TWT_OFDMA_EN
+static u32 c2h_twt_notify_evt_hdl(struct mac_ax_adapter *adapter, u8 *buf,
+				  u32 len, struct rtw_c2h_info *info)
+{
+	struct fwcmd_twt_notify_evt rpt;
+
+	if (!buf) {
+		PLTFM_MSG_ERR("[ERR]twt notify evt no buf\n");
+		return MACNPTR;
+	}
+
+	rpt.dword0 = le32_to_cpu(*(u32 *)(buf + FWCMD_HDR_LEN));
+	rpt.dword1 = le32_to_cpu(*(u32 *)(buf + FWCMD_HDR_LEN + 4));
+	rpt.dword2 = le32_to_cpu(*(u32 *)(buf + FWCMD_HDR_LEN + 8));
+
+	return MACSUCCESS;
+}
+#endif
+
 u32 c2h_twt(struct mac_ax_adapter *adapter, u8 *buf, u32 len,
 	    struct rtw_c2h_info *info)
 {
-	return MACSUCCESS;
+	struct c2h_proc_func *proc = c2h_proc_twt_cmd;
+	u32 (*handler)(struct mac_ax_adapter *adapter, u8 *buf, u32 len,
+		       struct rtw_c2h_info *info) = NULL;
+	u32 hdr0;
+	u32 func;
+
+	hdr0 = ((struct fwcmd_hdr *)buf)->hdr0;
+	hdr0 = le32_to_cpu(hdr0);
+
+	func = GET_FIELD(hdr0, C2H_HDR_FUNC);
+
+	while (proc->id != FWCMD_C2H_FUNC_NULL) {
+		if (func == proc->id) {
+			handler = proc->handler;
+			break;
+		}
+		proc++;
+	}
+
+	if (!handler) {
+		PLTFM_MSG_ERR("[ERR]null func handler id: %X", func);
+		return MACNOITEM;
+	}
+
+	return handler(adapter, buf, len, info);
 }
 
 u32 c2h_wow_aoac_report_hdl(struct mac_ax_adapter *adapter, u8 *buf, u32 len,
@@ -1823,10 +2263,28 @@ u32 c2h_wow_aoac_report_hdl(struct mac_ax_adapter *adapter, u8 *buf, u32 len,
 	return MACSUCCESS;
 }
 
-static struct c2h_proc_func c2h_proc_wow_cmd[] = {
-	{FWCMD_C2H_FUNC_AOAC_REPORT, c2h_wow_aoac_report_hdl},
-	{FWCMD_C2H_FUNC_NULL, NULL},
-};
+u32 c2h_wow_apf_report_hdl(struct mac_ax_adapter *adapter, u8 *buf, u32 len,
+			   struct rtw_c2h_info *info)
+{
+	u8 *c2h_content = buf + FWCMD_HDR_LEN;
+	struct rtw_hal_mac_apf_report *apf_rpt;
+	u32 ram_len, prog_len, data_len;
+
+	if (adapter->sm.proxy_st != MAC_AX_PROXY_BUSY)
+		return MACPROCERR;
+	apf_rpt = (struct rtw_hal_mac_apf_report *)c2h_content;
+	prog_len = (u32)apf_rpt->prog_info.prog_len;
+	data_len = (u32)apf_rpt->prog_info.data_len;
+	ram_len = prog_len + data_len;
+
+	if (adapter->apf_info.ptr[apf_rpt->program_num] != 0x0) {
+		PLTFM_MEMCPY(adapter->apf_info.ptr[apf_rpt->program_num],
+			     &apf_rpt->program_ptr, ram_len);
+	}
+
+	adapter->sm.proxy_st = MAC_AX_PROXY_IDLE;
+	return MACSUCCESS;
+}
 
 u32 c2h_wow(struct mac_ax_adapter *adapter, u8 *buf, u32 len,
 	    struct rtw_c2h_info *info)
@@ -1858,6 +2316,7 @@ u32 c2h_wow(struct mac_ax_adapter *adapter, u8 *buf, u32 len,
 	return handler(adapter, buf, len, info);
 }
 
+#if MAC_FEAT_MCC
 u32 c2h_mcc_rcv_ack_hdl(struct mac_ax_adapter *adapter, u8 *buf, u32 len,
 			struct rtw_c2h_info *info)
 {
@@ -1921,11 +2380,13 @@ u32 c2h_mcc_req_ack_hdl(struct mac_ax_adapter *adapter, u8 *buf, u32 len,
 		return MACNOITEM;
 	}
 
+	sm->mcc_request_state[group] = (enum mac_ax_mcc_req_status)h2c_return;
+
 	PLTFM_MSG_TRACE("[TRACE]%s: group %d curr req state: %d\n",
 			__func__, group, sm->mcc_request[group]);
 
 	if (sm->mcc_request[group] == MAC_AX_MCC_REQ_H2C_RCVD) {
-		if (h2c_return == 0) {
+		if (h2c_return == MAC_AX_MCC_REQ_OK) {
 			if (h2c_func == FWCMD_H2C_FUNC_MCC_REQ_TSF)
 				sm->mcc_request[group] = MAC_AX_MCC_REQ_DONE;
 			else
@@ -2019,6 +2480,8 @@ u32 c2h_mcc_status_rpt_hdl(struct mac_ax_adapter *adapter, u8 *buf, u32 len,
 	PLTFM_MSG_TRACE("[TRACE]%s: mcc group: %d, macid: %d, status: %d\n",
 			__func__, group, macid, status);
 
+	sm->mcc_group_state[group] = (enum mac_ax_mcc_status)status;
+
 	switch (status) {
 	case MAC_AX_MCC_ADD_ROLE_OK:
 		if (sm->mcc_group[group] == MAC_AX_MCC_STATE_H2C_RCVD) {
@@ -2056,11 +2519,16 @@ u32 c2h_mcc_status_rpt_hdl(struct mac_ax_adapter *adapter, u8 *buf, u32 len,
 		}
 		break;
 
-	case MAC_AX_MCC_ADD_ROLE_FAIL:
-	case MAC_AX_MCC_START_GROUP_FAIL:
-	case MAC_AX_MCC_STOP_GROUP_FAIL:
-	case MAC_AX_MCC_DEL_GROUP_FAIL:
-	case MAC_AX_MCC_RESET_GROUP_FAIL:
+	case MAC_AX_MCC_EMPTY_GRP_FAIL:
+	case MAC_AX_MCC_ROLE_NOT_EXIST_FAIL:
+	case MAC_AX_MCC_DATA_NOT_FOUND_FAIL:
+	case MAC_AX_MCC_ACT_INVALID_FAIL:
+	case MAC_AX_MCC_BANDTYPE_INVALID_FAIL:
+	case MAC_AX_MCC_ADD_PSTIMER_FAIL:
+	case MAC_AX_MCC_MALLOC_FAIL:
+	case MAC_AX_MCC_SWITCH_CH_FAIL:
+	case MAC_AX_MCC_TXNULL0_FAIL:
+	case MAC_AX_MCC_PORT_FUNC_EN_FAIL:
 		if (sm->mcc_group[group] == MAC_AX_MCC_STATE_H2C_RCVD) {
 			PLTFM_MSG_ERR("[ERR]%s: mcc group %d fail status: %d\n",
 				      __func__, group, status);
@@ -2085,14 +2553,6 @@ u32 c2h_mcc_status_rpt_hdl(struct mac_ax_adapter *adapter, u8 *buf, u32 len,
 
 	return MACSUCCESS;
 }
-
-static struct c2h_proc_func c2h_proc_mcc_cmd[] = {
-	{FWCMD_C2H_FUNC_MCC_RCV_ACK, c2h_mcc_rcv_ack_hdl},
-	{FWCMD_C2H_FUNC_MCC_REQ_ACK, c2h_mcc_req_ack_hdl},
-	{FWCMD_C2H_FUNC_MCC_TSF_RPT, c2h_mcc_tsf_rpt_hdl},
-	{FWCMD_C2H_FUNC_MCC_STATUS_RPT, c2h_mcc_status_rpt_hdl},
-	{FWCMD_C2H_FUNC_NULL, NULL},
-};
 
 u32 c2h_mcc(struct mac_ax_adapter *adapter, u8 *buf, u32 len,
 	    struct rtw_c2h_info *info)
@@ -2127,6 +2587,8 @@ u32 c2h_mcc(struct mac_ax_adapter *adapter, u8 *buf, u32 len,
 	return handler(adapter, buf, len, info);
 }
 
+#endif /* MAC_FEAT_MCC */
+
 u32 c2h_rx_dbg_hdl(struct mac_ax_adapter *adapter, u8 *buf, u32 len,
 		   struct rtw_c2h_info *info)
 {
@@ -2134,11 +2596,6 @@ u32 c2h_rx_dbg_hdl(struct mac_ax_adapter *adapter, u8 *buf, u32 len,
 
 	return MACSUCCESS;
 }
-
-static struct c2h_proc_func c2h_proc_fw_dbg_cmd[] = {
-	{FWCMD_C2H_FUNC_RX_DBG, c2h_rx_dbg_hdl},
-	{FWCMD_C2H_FUNC_NULL, NULL},
-};
 
 u32 c2h_fw_dbg(struct mac_ax_adapter *adapter, u8 *buf, u32 len,
 	       struct rtw_c2h_info *info)
@@ -2186,12 +2643,6 @@ static u32 c2h_misc_ccxrpt(struct mac_ax_adapter *adapter, u8 *buf, u32 len,
 	return MACSUCCESS;
 }
 
-static struct c2h_proc_func c2h_proc_misc[] = {
-	{FWCMD_C2H_FUNC_WPS_RPT, c2h_wps_rpt},
-	{FWCMD_C2H_FUNC_CCXRPT, c2h_misc_ccxrpt},
-	{FWCMD_C2H_FUNC_NULL, NULL},
-};
-
 static u32 c2h_cl_misc(struct mac_ax_adapter *adapter, u8 *buf, u32 len,
 		       struct rtw_c2h_info *info)
 {
@@ -2237,11 +2688,6 @@ u32 c2h_fast_ch_sw_rpt_hdl(struct mac_ax_adapter *adapter, u8 *buf, u32 len,
 
 	return MACSUCCESS;
 }
-
-static struct c2h_proc_func c2h_proc_fast_ch_sw_cmd[] = {
-	{FWCMD_C2H_FUNC_FCS_RPT, c2h_fast_ch_sw_rpt_hdl},
-	{FWCMD_C2H_FUNC_NULL, NULL},
-};
 
 u32 c2h_fast_ch_sw(struct mac_ax_adapter *adapter, u8 *buf, u32 len,
 		   struct rtw_c2h_info *info)
@@ -2370,12 +2816,6 @@ u32 c2h_port_cfg_stat(struct mac_ax_adapter *adapter, u8 *buf, u32 len,
 	return MACSUCCESS;
 }
 
-static struct c2h_proc_func c2h_proc_mport[] = {
-	{FWCMD_C2H_FUNC_PORT_INIT_STAT, c2h_port_init_stat},
-	{FWCMD_C2H_FUNC_PORT_CFG_STAT, c2h_port_cfg_stat},
-	{FWCMD_C2H_FUNC_NULL, NULL},
-};
-
 static u32 c2h_cl_mport(struct mac_ax_adapter *adapter, u8 *buf, u32 len,
 			struct rtw_c2h_info *info)
 {
@@ -2405,33 +2845,132 @@ static u32 c2h_cl_mport(struct mac_ax_adapter *adapter, u8 *buf, u32 len,
 
 	return handler(adapter, buf, len, info);
 }
+#if MAC_FEAT_NAN
 
-static struct c2h_proc_class c2h_proc_sys[] = {
-#if MAC_AX_FEATURE_DBGPKG
-	{FWCMD_C2H_CL_CMD_PATH, c2h_sys_cmd_path},
-	{FWCMD_H2C_CL_PLAT_AUTO_TEST, c2h_sys_plat_autotest},
-#if MAC_AX_FEATURE_HV
-	{FWCMD_C2H_CL_FW_AUTO, c2h_sys_fw_autotest},
+u32 c2h_nan_cluster_info_hdl(struct mac_ax_adapter *adapter, u8 *buf, u32 len,
+			     struct rtw_c2h_info *info)
+{
+	struct fwcmd_nan_info_notify_cluster_info cluster_info;
+	struct mac_ax_nan_info *nan_info;
+
+	if (!buf) {
+		PLTFM_MSG_ERR("[ERR]nan cluster info ack no buf\n");
+		return MACNPTR;
+	}
+
+	cluster_info.dword0 = le32_to_cpu(*(u32 *)(buf + FWCMD_HDR_LEN));
+	cluster_info.dword1 = le32_to_cpu(*(u32 *)(buf + FWCMD_HDR_LEN + 4));
+	cluster_info.dword2 = le32_to_cpu(*(u32 *)(buf + FWCMD_HDR_LEN + 8));
+	cluster_info.dword3 = le32_to_cpu(*(u32 *)(buf + FWCMD_HDR_LEN + 12));
+	cluster_info.dword4 = le32_to_cpu(*(u32 *)(buf + FWCMD_HDR_LEN + 16));
+	cluster_info.dword5 = le32_to_cpu(*(u32 *)(buf + FWCMD_HDR_LEN + 20));
+	cluster_info.dword6 = le32_to_cpu(*(u32 *)(buf + FWCMD_HDR_LEN + 24));
+
+	nan_info = &adapter->nan_info;
+
+	nan_info->rpt_cluster_id[0] = GET_FIELD(cluster_info.dword1,
+						FWCMD_C2H_NAN_INFO_NOTIFY_CLUSTER_INFO_CLUSTER_ID0);
+	nan_info->rpt_cluster_id[1] = GET_FIELD(cluster_info.dword1,
+						FWCMD_C2H_NAN_INFO_NOTIFY_CLUSTER_INFO_CLUSTER_ID1);
+	nan_info->rpt_cluster_id[2] = GET_FIELD(cluster_info.dword1,
+						FWCMD_C2H_NAN_INFO_NOTIFY_CLUSTER_INFO_CLUSTER_ID2);
+	nan_info->rpt_cluster_id[3] = GET_FIELD(cluster_info.dword1,
+						FWCMD_C2H_NAN_INFO_NOTIFY_CLUSTER_INFO_CLUSTER_ID3);
+	nan_info->rpt_cluster_id[4] = GET_FIELD(cluster_info.dword2,
+						FWCMD_C2H_NAN_INFO_NOTIFY_CLUSTER_INFO_CLUSTER_ID4);
+	nan_info->rpt_cluster_id[5] = GET_FIELD(cluster_info.dword2,
+						FWCMD_C2H_NAN_INFO_NOTIFY_CLUSTER_INFO_CLUSTER_ID5);
+	nan_info->rpt_master_pref = GET_FIELD(cluster_info.dword2,
+					      FWCMD_C2H_NAN_INFO_NOTIFY_CLUSTER_INFO_MASTERPREF);
+	nan_info->rpt_random_factor =
+		GET_FIELD(cluster_info.dword2, FWCMD_C2H_NAN_INFO_NOTIFY_CLUSTER_INFO_RANDOMFACTOR);
+	nan_info->rpt_amr = GET_FIELD(cluster_info.dword6,
+				      FWCMD_C2H_NAN_INFO_NOTIFY_CLUSTER_INFO_AMR_HIGH);
+	nan_info->rpt_amr <<= 32;
+	nan_info->rpt_amr += GET_FIELD(cluster_info.dword3,
+				       FWCMD_C2H_NAN_INFO_NOTIFY_CLUSTER_INFO_AMR);
+	nan_info->rpt_ambtt = GET_FIELD(cluster_info.dword4,
+					FWCMD_C2H_NAN_INFO_NOTIFY_CLUSTER_INFO_AMBTT);
+	nan_info->rpt_hop_count = GET_FIELD(cluster_info.dword5,
+					    FWCMD_C2H_NAN_INFO_NOTIFY_CLUSTER_INFO_HOPCOUNT);
+
+	PLTFM_MSG_TRACE("[test]nan rpt_ambtt %d\n", nan_info->rpt_ambtt);
+	return MACSUCCESS;
+}
+
+u32 c2h_nan_tsf_info_hdl(struct mac_ax_adapter *adapter, u8 *buf, u32 len,
+			 struct rtw_c2h_info *info)
+{
+	struct fwcmd_nan_info_notify_tsf_info tsf_info;
+	struct mac_ax_nan_info *nan_info;
+
+	if (!buf) {
+		PLTFM_MSG_ERR("[ERR]nan tsf info ack no buf\n");
+		return MACNPTR;
+	}
+
+	tsf_info.dword0 = le32_to_cpu(*(u32 *)(buf + FWCMD_HDR_LEN));
+	tsf_info.dword1 = le32_to_cpu(*(u32 *)(buf + FWCMD_HDR_LEN + 4));
+	tsf_info.dword2 = le32_to_cpu(*(u32 *)(buf + FWCMD_HDR_LEN + 8));
+
+	nan_info = &adapter->nan_info;
+
+	nan_info->rpt_port_dwst_low = GET_FIELD(tsf_info.dword1,
+						FWCMD_C2H_NAN_INFO_NOTIFY_TSF_INFO_PORT_DWST_LOW);
+	nan_info->rpt_fr_dwst_low = GET_FIELD(tsf_info.dword2,
+					      FWCMD_C2H_NAN_INFO_NOTIFY_TSF_INFO_FR_DWST_LOW);
+
+	return MACSUCCESS;
+}
+
+u32 c2h_nan_cluster_join_hdl(struct mac_ax_adapter *adapter, u8 *buf, u32 len,
+			     struct rtw_c2h_info *info)
+{
+	struct mac_ax_nan_info *nan_info;
+
+	if (!buf) {
+		PLTFM_MSG_ERR("[ERR]nan cluster join no buf\n");
+		return MACNPTR;
+	}
+
+	nan_info = &adapter->nan_info;
+
+	nan_info->rpt_nan_c2h_type = NAN_C2H_TYPE_CLUSTER_JOIN;
+
+	return MACSUCCESS;
+}
+
+u32 c2h_nan(struct mac_ax_adapter *adapter, u8 *buf, u32 len, struct rtw_c2h_info *info)
+{
+	struct c2h_proc_func *proc = c2h_proc_nan_cmd;
+	u32(*handler)(struct mac_ax_adapter *adapter, u8 *buf, u32 len,
+		      struct rtw_c2h_info *info) = NULL;
+	u32 hdr0;
+	u32 func;
+
+	hdr0 = ((struct fwcmd_hdr *)buf)->hdr0;
+	hdr0 = le32_to_cpu(hdr0);
+
+	func = GET_FIELD(hdr0, C2H_HDR_FUNC);
+
+	PLTFM_MSG_TRACE("[TRACE]%s: func: %d\n", __func__, func);
+
+	while (proc->id != FWCMD_C2H_FUNC_NULL) {
+		if (func == proc->id) {
+			handler = proc->handler;
+			break;
+		}
+		proc++;
+	}
+
+	if (!handler) {
+		PLTFM_MSG_ERR("[ERR]%s: null func handler id: %X", __func__, func);
+		return MACNOITEM;
+	}
+
+	return handler(adapter, buf, len, info);
+}
 #endif
-#endif
-	{FWCMD_C2H_CL_FW_STATUS, c2h_fw_status},
-	{FWCMD_C2H_CL_NULL, NULL},
-};
-
-static struct c2h_proc_class c2h_proc_mac[] = {
-	{FWCMD_C2H_CL_FW_INFO, c2h_fw_info},
-	{FWCMD_C2H_CL_FW_OFLD, c2h_fw_ofld},
-	{FWCMD_C2H_CL_TWT, c2h_twt},
-	{FWCMD_C2H_CL_WOW, c2h_wow},
-	{FWCMD_C2H_CL_MCC, c2h_mcc},
-	{FWCMD_C2H_CL_FW_DBG, c2h_fw_dbg},
-	{FWCMD_C2H_CL_FLASH, c2h_sys_flash_pkt},
-	{FWCMD_C2H_CL_MISC, c2h_cl_misc},
-	{FWCMD_C2H_CL_FCS, c2h_fast_ch_sw},
-	{FWCMD_C2H_CL_MPORT, c2h_cl_mport},
-	{FWCMD_C2H_CL_NULL, NULL},
-};
-
 static inline struct c2h_proc_class *c2h_proc_sel(u8 cat)
 {
 	struct c2h_proc_class *proc;
@@ -2451,19 +2990,37 @@ static inline struct c2h_proc_class *c2h_proc_sel(u8 cat)
 	return proc;
 }
 
-u8 c2h_field_parsing(struct fwcmd_hdr *hdr, struct rtw_c2h_info *info)
+u8 c2h_field_parsing(struct mac_ax_adapter *adapter,
+		     struct fwcmd_hdr *hdr, struct rtw_c2h_info *info)
 {
 	u32 val;
+	u8 c2h_seq;
 
 	val = le32_to_cpu(hdr->hdr0);
 	info->c2h_cat = GET_FIELD(val, C2H_HDR_CAT);
 	info->c2h_class = GET_FIELD(val, C2H_HDR_CLASS);
 	info->c2h_func = GET_FIELD(val, C2H_HDR_FUNC);
+	c2h_seq = GET_FIELD(val, C2H_HDR_C2H_SEQ);
 
 	val = le32_to_cpu(hdr->hdr1);
 	info->content_len = GET_FIELD(val, C2H_HDR_TOTAL_LEN) -
 				FWCMD_HDR_LEN;
 	info->content = (u8 *)(hdr + 1);
+
+	if (adapter->sm.h2c_c2h_mon == MAC_AX_H2C_C2H_MON_ON) {
+		if (info->content_len >= 4) {
+			PLTFM_MSG_TRACE("[h2c_c2h_mon] C2H CAT: %d, CLASS: %d, FUNC: %d, "\
+					"SEQ: %d, Len: %d, 1'st DW: %08x\n",
+					info->c2h_cat, info->c2h_class, info->c2h_func,
+					c2h_seq, info->content_len + FWCMD_HDR_LEN,
+					*((u32 *)(hdr + 1)));
+		} else {
+			PLTFM_MSG_TRACE("[h2c_c2h_mon] C2H CAT: %d, CLASS: %d, FUNC: %d, "\
+					"SEQ: %d, Len: %d\n",
+					info->c2h_cat, info->c2h_class, info->c2h_func,
+					c2h_seq, info->content_len + FWCMD_HDR_LEN);
+		}
+	}
 
 	return MACSUCCESS;
 }
@@ -2485,7 +3042,7 @@ u32 mac_process_c2h(struct mac_ax_adapter *adapter, u8 *buf, u32 len,
 	info = (struct rtw_c2h_info *)ret;
 	val = le32_to_cpu(hdr->hdr0);
 
-	result = c2h_field_parsing(hdr, info);
+	result = c2h_field_parsing(adapter, hdr, info);
 	if (result) {
 		PLTFM_MSG_ERR("[ERR]parsing c2h hdr error: %X\n", val);
 		return MACNOITEM;
@@ -2528,407 +3085,51 @@ u32 mac_outsrc_h2c_common(struct mac_ax_adapter *adapter,
 			  struct rtw_g6_h2c_hdr *hdr, u32 *pvalue)
 {
 	u32 ret = 0;
-	u8 *buf;
-	#if MAC_AX_PHL_H2C
-	struct rtw_h2c_pkt *h2cb;
-	#else
-	struct h2c_buf *h2cb;
-	#endif
-	struct fwcmd_outsrc_info *info;
 
-	/*temp workaround for h2cb no functionality and outsrc has its timer*/
-	if (adapter->sm.fwdl != MAC_AX_FWDL_INIT_RDY) {
-		PLTFM_MSG_ERR("FW is not ready\n");
-		return MACFWNONRDY;
-	}
+	struct h2c_info h2c_info = {0};
 
-	h2cb = h2cb_alloc(adapter, (enum h2c_buf_class)hdr->type);
-	if (!h2cb)
-		return MACNPTR;
+	h2c_info.agg_en = 1;
+	h2c_info.content_len = hdr->content_len;
+	h2c_info.h2c_cat = FWCMD_H2C_CAT_OUTSRC;
+	h2c_info.h2c_class = hdr->h2c_class;
+	h2c_info.h2c_func = hdr->h2c_func;
+	h2c_info.rec_ack = (u8)hdr->rec_ack;
+	h2c_info.done_ack = (u8)hdr->done_ack;
 
-	buf = h2cb_put(h2cb, hdr->content_len);
-	if (!buf) {
-		ret = MACNOBUF;
-		goto fail;
-	}
-	info = (struct fwcmd_outsrc_info *)buf;
-	PLTFM_MEMCPY(info->dword0, pvalue, hdr->content_len);
-
-	ret = h2c_pkt_set_hdr(adapter, h2cb,
-			      FWCMD_TYPE_H2C,
-			      FWCMD_H2C_CAT_OUTSRC,
-			      hdr->h2c_class,
-			      hdr->h2c_func,
-			      hdr->rec_ack,
-			      hdr->done_ack);
-	if (ret)
-		goto fail;
-
-	// return MACSUCCESS if h2c aggregation is enabled and enqueued successfully.
-	// H2C shall be sent by mac_h2c_agg_tx.
-	ret = h2c_agg_enqueue(adapter, h2cb);
-	if (ret == MACSUCCESS)
-		return MACSUCCESS;
-
-	ret = h2c_pkt_build_txd(adapter, h2cb);
-	if (ret)
-		goto fail;
-
-	#if MAC_AX_PHL_H2C
-	ret = PLTFM_TX(h2cb);
-	#else
-	ret = PLTFM_TX(h2cb->data, h2cb->len);
-	#endif
-	if (ret)
-		goto fail;
-
-	h2cb_free(adapter, h2cb);
-
-	h2c_end_flow(adapter);
-
-	return MACSUCCESS;
-fail:
-	h2cb_free(adapter, h2cb);
+	ret = mac_h2c_common(adapter, &h2c_info, pvalue);
 
 	return ret;
 }
 
-u32 mac_fw_log_cfg(struct mac_ax_adapter *adapter,
-		   struct mac_ax_fw_log *log_cfg)
-{
-	u32 ret = 0;
-	u8 *buf;
-	#if MAC_AX_PHL_H2C
-	struct rtw_h2c_pkt *h2cb;
-	#else
-	struct h2c_buf *h2cb;
-	#endif
-	struct fwcmd_log_cfg *log;
-
-	h2cb = h2cb_alloc(adapter, H2CB_CLASS_CMD);
-	if (!h2cb)
-		return MACNPTR;
-
-	buf = h2cb_put(h2cb, sizeof(struct fwcmd_log_cfg));
-	if (!buf) {
-		ret = MACNOBUF;
-		goto fail;
-	}
-	PLTFM_MEMSET(buf, 0, sizeof(struct fwcmd_log_cfg));
-
-	log = (struct fwcmd_log_cfg *)buf;
-
-	log->dword0 = cpu_to_le32(SET_WORD(log_cfg->level,
-					   FWCMD_H2C_LOG_CFG_DBG_LV) |
-				  SET_WORD(log_cfg->output,
-					   FWCMD_H2C_LOG_CFG_PATH));
-	log->dword1 = cpu_to_le32(log_cfg->comp);
-
-	log->dword2 = cpu_to_le32(log_cfg->comp_ext);
-
-	ret = h2c_pkt_set_hdr(adapter, h2cb,
-			      FWCMD_TYPE_H2C,
-			      FWCMD_H2C_CAT_MAC,
-			      FWCMD_H2C_CL_FW_INFO,
-			      FWCMD_H2C_FUNC_LOG_CFG,
-			      0,
-			      1);
-	if (ret)
-		goto fail;
-
-	ret = h2c_pkt_build_txd(adapter, h2cb);
-	if (ret)
-		goto fail;
-
-	#if MAC_AX_PHL_H2C
-	ret = PLTFM_TX(h2cb);
-	#else
-	ret = PLTFM_TX(h2cb->data, h2cb->len);
-	#endif
-	if (ret)
-		goto fail;
-
-	h2cb_free(adapter, h2cb);
-
-	h2c_end_flow(adapter);
-
-	return MACSUCCESS;
-fail:
-	h2cb_free(adapter, h2cb);
-
-	return ret;
-}
-
-u32 mac_send_bcn_h2c(struct mac_ax_adapter *adapter,
-		     struct mac_ax_bcn_info *info)
-{
-	#if MAC_AX_PHL_H2C
-	struct rtw_h2c_pkt *h2cb;
-	#else
-	struct h2c_buf *h2cb;
-	#endif
-	u8 *buf;
-	struct fwcmd_bcn_upd *hdr;
-	u32 ret = MACSUCCESS;
-
-	h2cb = h2cb_alloc(adapter, H2CB_CLASS_LONG_DATA);
-	if (!h2cb)
-		return MACNPTR;
-
-	hdr = (struct fwcmd_bcn_upd *)
-		h2cb_put(h2cb, sizeof(struct fwcmd_bcn_upd));
-	if (!hdr) {
-		ret = MACNOBUF;
-		goto fail;
-	}
-
-	info->grp_ie_ofst |= info->grp_ie_ofst ? BCN_GRPIE_OFST_EN : 0;
-
-	hdr->dword0 =
-		cpu_to_le32(SET_WORD(info->port,
-				     FWCMD_H2C_BCN_UPD_PORT) |
-			    SET_WORD(info->mbssid,
-				     FWCMD_H2C_BCN_UPD_MBSSID) |
-			    SET_WORD(info->band,
-				     FWCMD_H2C_BCN_UPD_BAND) |
-			    SET_WORD(info->grp_ie_ofst,
-				     FWCMD_H2C_BCN_UPD_GRP_IE_OFST));
-
-	hdr->dword1 =
-		cpu_to_le32(SET_WORD(info->macid,
-				     FWCMD_H2C_BCN_UPD_MACID) |
-			    SET_WORD(info->ssn_sel,
-				     FWCMD_H2C_BCN_UPD_SSN_SEL) |
-			    SET_WORD(info->ssn_mode,
-				     FWCMD_H2C_BCN_UPD_SSN_MODE) |
-			    SET_WORD(info->rate_sel,
-				     FWCMD_H2C_BCN_UPD_RATE) |
-			    SET_WORD(info->txpwr,
-				     FWCMD_H2C_BCN_UPD_TXPWR));
-
-	hdr->dword2 =
-		cpu_to_le32((info->txinfo_ctrl_en ?
-			     FWCMD_H2C_BCN_UPD_TXINFO_CTRL_EN : 0) |
-			    SET_WORD(info->ntx_path_en,
-				     FWCMD_H2C_BCN_UPD_NTX_PATH_EN) |
-			    SET_WORD(info->path_map_a,
-				     FWCMD_H2C_BCN_UPD_PATH_MAP_A) |
-			    SET_WORD(info->path_map_b,
-				     FWCMD_H2C_BCN_UPD_PATH_MAP_B) |
-			    SET_WORD(info->path_map_c,
-				     FWCMD_H2C_BCN_UPD_PATH_MAP_C) |
-			    SET_WORD(info->path_map_d,
-				     FWCMD_H2C_BCN_UPD_PATH_MAP_D) |
-			    (info->antsel_a ?
-			     FWCMD_H2C_BCN_UPD_ANTSEL_A : 0) |
-			    (info->antsel_b ?
-			     FWCMD_H2C_BCN_UPD_ANTSEL_B : 0) |
-			    (info->antsel_c ?
-			     FWCMD_H2C_BCN_UPD_ANTSEL_C : 0) |
-			    (info->antsel_d ?
-			     FWCMD_H2C_BCN_UPD_ANTSEL_D : 0) |
-			     SET_WORD(info->csa_ofst,
-				      FWCMD_H2C_BCN_UPD_CSA_OFST));
-
-	buf = h2cb_put(h2cb, info->pld_len);
-	if (!buf) {
-		ret = MACNOBUF;
-		goto fail;
-	}
-
-	PLTFM_MEMCPY(buf, info->pld_buf, info->pld_len);
-
-	ret = h2c_pkt_set_hdr(adapter, h2cb,
-			      FWCMD_TYPE_H2C,
-			      FWCMD_H2C_CAT_MAC,
-			      FWCMD_H2C_CL_FR_EXCHG,
-			      FWCMD_H2C_FUNC_BCN_UPD,
-			      0,
-			      0);
-	if (ret)
-		goto fail;
-
-	ret = h2c_pkt_build_txd(adapter, h2cb);
-	if (ret)
-		goto fail;
-
-	#if MAC_AX_PHL_H2C
-	ret = PLTFM_TX(h2cb);
-	#else
-	ret = PLTFM_TX(h2cb->data, h2cb->len);
-	#endif
-	if (ret)
-		goto fail;
-
-	h2cb_free(adapter, h2cb);
-
-	h2c_end_flow(adapter);
-
-	return MACSUCCESS;
-fail:
-	h2cb_free(adapter, h2cb);
-
-	return ret;
-}
-
+#if MAC_FEAT_PSAP
 u32 mac_host_getpkt_h2c(struct mac_ax_adapter *adapter, u8 macid, u8 pkttype)
 {
-	//temp patch, wait for h2creg api
-	u32 content = 0;
+	struct mac_ax_h2creg_info content = {0};
 	u32 ret;
 
-	content |= FWCMD_H2CREG_FUNC_GETPKT_INFORM;
-	content |= (1 << 8);
-	content |= (macid << 16);
-	content |= (pkttype << 24);
+	content.id = FWCMD_H2CREG_FUNC_GETPKT_INFORM;
+	content.content_len = 4;
+	content.h2c_content.dword0 =
+				SET_WORD(macid,
+					 FWCMD_H2CREG_GETPKT_INFORM_MACID) |
+				SET_WORD(pkttype,
+					 FWCMD_H2CREG_GETPKT_INFORM_PKTTYPE);
 
-	ret = mac_send_h2creg(adapter, &content, 1);
-
-	return ret;
-}
-
-#if MAC_AX_PHL_H2C
-u32 __ie_cam_set_cmd(struct mac_ax_adapter *adapter, struct rtw_h2c_pkt *h2cb,
-		     struct mac_ax_ie_cam_cmd_info *info)
-{
-	struct fwcmd_ie_cam *cmd;
-	u8 *buf;
-	u32 ret = MACSUCCESS;
-
-	buf = h2cb_put(h2cb, sizeof(struct fwcmd_ie_cam));
-	if (!buf) {
-		ret = MACNOBUF;
-		return ret;
-	}
-
-	cmd = (struct fwcmd_ie_cam *)buf;
-	cmd->dword0 =
-		cpu_to_le32((info->en ? FWCMD_H2C_IE_CAM_CAM_EN : 0) |
-			    (info->band ? FWCMD_H2C_IE_CAM_BAND : 0) |
-			    (info->hit_en ? FWCMD_H2C_IE_CAM_HIT_FRWD_EN : 0) |
-			    (info->miss_en ?
-			     FWCMD_H2C_IE_CAM_MISS_FRWD_EN : 0) |
-			    (info->rst ? FWCMD_H2C_IE_CAM_RST : 0) |
-			    SET_WORD(info->port, FWCMD_H2C_IE_CAM_PORT) |
-			    SET_WORD(info->hit_sel, FWCMD_H2C_IE_CAM_HIT_FRWD) |
-			    SET_WORD(info->miss_sel,
-				     FWCMD_H2C_IE_CAM_MISS_FRWD) |
-			    SET_WORD(info->num, FWCMD_H2C_IE_CAM_UPD_NUM));
-
-	buf = h2cb_put(h2cb, info->buf_len);
-	if (!buf) {
-		ret = MACNOBUF;
-		return ret;
-	}
-
-	PLTFM_MEMCPY(buf, info->buf, info->buf_len);
-
-	return ret;
-}
-
-#else
-u32 __ie_cam_set_cmd(struct mac_ax_adapter *adapter, struct h2c_buf *h2cb,
-		     struct mac_ax_ie_cam_cmd_info *info)
-{
-	struct fwcmd_ie_cam *cmd;
-	u8 *buf;
-	u32 ret = MACSUCCESS;
-
-	buf = h2cb_put(h2cb, sizeof(struct fwcmd_ie_cam));
-	if (!buf) {
-		ret = MACNOBUF;
-		return ret;
-	}
-
-	cmd = (struct fwcmd_ie_cam *)buf;
-	cmd->dword0 =
-		cpu_to_le32((info->en ? FWCMD_H2C_IE_CAM_CAM_EN : 0) |
-			    (info->band ? FWCMD_H2C_IE_CAM_BAND : 0) |
-			    (info->hit_en ? FWCMD_H2C_IE_CAM_HIT_FRWD_EN : 0) |
-			    (info->miss_en ?
-			     FWCMD_H2C_IE_CAM_MISS_FRWD_EN : 0) |
-			    (info->rst ? FWCMD_H2C_IE_CAM_RST : 0) |
-			    SET_WORD(info->port, FWCMD_H2C_IE_CAM_PORT) |
-			    SET_WORD(info->hit_sel, FWCMD_H2C_IE_CAM_HIT_FRWD) |
-			    SET_WORD(info->miss_sel,
-				     FWCMD_H2C_IE_CAM_MISS_FRWD) |
-			    SET_WORD(info->num, FWCMD_H2C_IE_CAM_UPD_NUM));
-
-	buf = h2cb_put(h2cb, info->buf_len);
-	if (!buf) {
-		ret = MACNOBUF;
-		return ret;
-	}
-
-	PLTFM_MEMCPY(buf, info->buf, info->buf_len);
+	ret = proc_msg_reg(adapter, &content, NULL);
 
 	return ret;
 }
 #endif
-u32 mac_ie_cam_upd(struct mac_ax_adapter *adapter,
-		   struct mac_ax_ie_cam_cmd_info *info)
-{
-	#if MAC_AX_PHL_H2C
-	struct rtw_h2c_pkt *h2cb;
-	#else
-	struct h2c_buf *h2cb;
-	#endif
-	u32 ret;
-
-	h2cb = h2cb_alloc(adapter, H2CB_CLASS_DATA);
-	if (!h2cb)
-		return MACNPTR;
-
-	ret = __ie_cam_set_cmd(adapter, h2cb, info);
-	if (ret) {
-		PLTFM_MSG_ERR("H2C IE CAM set cmd fail %d\n", ret);
-		goto fail;
-	}
-
-	ret = h2c_pkt_set_hdr(adapter, h2cb,
-			      FWCMD_TYPE_H2C,
-			      FWCMD_H2C_CAT_MAC,
-			      FWCMD_H2C_CL_IE_CAM,
-			      FWCMD_H2C_FUNC_IE_CAM, 0, 1);
-	if (ret) {
-		PLTFM_MSG_ERR("H2C IE CAM set hdr fail %d\n", ret);
-		goto fail;
-	}
-
-	ret = h2c_pkt_build_txd(adapter, h2cb);
-	if (ret) {
-		PLTFM_MSG_ERR("H2C IE CAM build txd fail %d\n", ret);
-		goto fail;
-	}
-
-	#if MAC_AX_PHL_H2C
-	ret = PLTFM_TX(h2cb);
-	#else
-	ret = PLTFM_TX(h2cb->data, h2cb->len);
-	#endif
-	if (ret) {
-		PLTFM_MSG_ERR("H2C IE CAM tx fail %d\n", ret);
-		goto fail;
-	}
-
-fail:
-	h2cb_free(adapter, h2cb);
-
-	if (!ret)
-		h2c_end_flow(adapter);
-
-	return ret;
-}
 
 u32 _mac_send_h2creg(struct mac_ax_adapter *adapter,
 		     struct mac_ax_h2creg_info *h2c)
 {
-#define MAC_AX_H2CREG_CNT 100
-#define MAC_AX_H2CREG_US 200
 	u32 cnt = MAC_AX_H2CREG_CNT;
 	u8 len, byte0, byte1, val;
 	struct mac_ax_intf_ops *ops = adapter_to_intf_ops(adapter);
 	struct fwcmd_h2creg h2creg;
+	struct mac_ax_priv_ops *p_ops = adapter_to_priv_ops(adapter);
+	struct mac_ax_h2creg_offset *h2creg_offset;
 
 	if (!h2c)
 		return MACSUCCESS;
@@ -2943,8 +3144,14 @@ u32 _mac_send_h2creg(struct mac_ax_adapter *adapter,
 		adapter->stats.h2c_reg_uninit++;
 	}
 
+	h2creg_offset = p_ops->get_h2creg_offset(adapter);
+	if (!h2creg_offset) {
+		PLTFM_MSG_ERR("Get H2CREG offset FAIL\n");
+		return MACNPTR;
+	}
+
 	do {
-		if (!(MAC_REG_R8(R_AX_H2CREG_CTRL) & B_AX_H2CREG_TRIGGER))
+		if (!(MAC_REG_R8(h2creg_offset->ctrl) & B_AX_H2CREG_TRIGGER))
 			break;
 		PLTFM_DELAY_US(MAC_AX_H2CREG_US);
 		cnt--;
@@ -2978,64 +3185,13 @@ u32 _mac_send_h2creg(struct mac_ax_adapter *adapter,
 	h2creg.dword2 = h2c->h2c_content.dword2;
 	h2creg.dword3 = h2c->h2c_content.dword3;
 
-	MAC_REG_W32(R_AX_H2CREG_DATA0, h2creg.dword0);
-	MAC_REG_W32(R_AX_H2CREG_DATA1, h2creg.dword1);
-	MAC_REG_W32(R_AX_H2CREG_DATA2, h2creg.dword2);
-	MAC_REG_W32(R_AX_H2CREG_DATA3, h2creg.dword3);
-	H2CRegIncreaseCounter(adapter);
-	val = MAC_REG_R8(R_AX_H2CREG_CTRL);
-	MAC_REG_W8(R_AX_H2CREG_CTRL, val | B_AX_H2CREG_TRIGGER);
+	MAC_REG_W32(h2creg_offset->data0, h2creg.dword0);
+	MAC_REG_W32(h2creg_offset->data1, h2creg.dword1);
+	MAC_REG_W32(h2creg_offset->data2, h2creg.dword2);
+	MAC_REG_W32(h2creg_offset->data3, h2creg.dword3);
 
-	return MACSUCCESS;
-}
-
-u32 mac_send_h2creg(struct mac_ax_adapter *adapter, u32 *content, u8 len)
-{
-#define MAC_AX_H2CREG_PCNT 5
-	u32 cnt = MAC_AX_H2CREG_PCNT;
-	u8 i;
-	struct mac_ax_intf_ops *ops = adapter_to_intf_ops(adapter);
-
-	if (adapter->sm.fwdl != MAC_AX_FWDL_INIT_RDY) {
-		PLTFM_MSG_ERR("FW is not ready\n");
-		return MACFWNONRDY;
-	}
-
-	if (adapter->sm.mac_rdy != MAC_AX_MAC_RDY) {
-		PLTFM_MSG_TRACE("MAC is not ready\n");
-		adapter->stats.h2c_reg_uninit++;
-	}
-
-	if (is_chip_id(adapter, MAC_AX_CHIP_ID_8852C) ||
-	    is_chip_id(adapter, MAC_AX_CHIP_ID_8192XB)) {
-		do {
-			if (!MAC_REG_R8(R_AX_H2CREG_CTRL_V1))
-				break;
-			PLTFM_DELAY_US(1000);
-			cnt--;
-		} while (cnt);
-	} else {
-		do {
-			if (!MAC_REG_R8(R_AX_H2CREG_CTRL))
-				break;
-			PLTFM_DELAY_US(1000);
-			cnt--;
-		} while (cnt);
-	}
-
-	if (!cnt) {
-		PLTFM_MSG_ERR("FW does not process H2CREG\n");
-		return MACPOLLTO;
-	}
-
-	for (i = 0; i < len; i++)
-		MAC_REG_W32(R_AX_H2CREG_DATA0 + i * 4, content[i]);
-
-	if (is_chip_id(adapter, MAC_AX_CHIP_ID_8852C) ||
-	    is_chip_id(adapter, MAC_AX_CHIP_ID_8192XB))
-		MAC_REG_W8(R_AX_H2CREG_CTRL_V1, 1);
-	else
-		MAC_REG_W8(R_AX_H2CREG_CTRL, 1);
+	val = MAC_REG_R8(h2creg_offset->ctrl);
+	MAC_REG_W8(h2creg_offset->ctrl, val | B_AX_H2CREG_TRIGGER);
 
 	return MACSUCCESS;
 }
@@ -3043,100 +3199,25 @@ u32 mac_send_h2creg(struct mac_ax_adapter *adapter, u32 *content, u8 len)
 u32 __recv_c2hreg(struct mac_ax_adapter *adapter, struct fwcmd_c2hreg *c2h)
 {
 	struct mac_ax_intf_ops *ops = adapter_to_intf_ops(adapter);
+	struct mac_ax_priv_ops *p_ops = adapter_to_priv_ops(adapter);
+	struct mac_ax_c2hreg_offset *c2hreg;
 	u8 val;
 
-	if (is_chip_id(adapter, MAC_AX_CHIP_ID_8852C) ||
-	    is_chip_id(adapter, MAC_AX_CHIP_ID_8192XB)) {
-		if (!(MAC_REG_R8(R_AX_C2HREG_CTRL_V1) & B_AX_C2HREG_TRIGGER))
-			return MACC2HREGEMP;
-
-		c2h->dword0 = MAC_REG_R32(R_AX_C2HREG_DATA0_V1);
-		c2h->dword1 = MAC_REG_R32(R_AX_C2HREG_DATA1_V1);
-		c2h->dword2 = MAC_REG_R32(R_AX_C2HREG_DATA2_V1);
-		c2h->dword3 = MAC_REG_R32(R_AX_C2HREG_DATA3_V1);
-
-		val = MAC_REG_R8(R_AX_C2HREG_CTRL_V1);
-		MAC_REG_W8(R_AX_C2HREG_CTRL_V1, val & ~B_AX_C2HREG_TRIGGER);
-	} else {
-		if (!(MAC_REG_R8(R_AX_C2HREG_CTRL) & B_AX_C2HREG_TRIGGER))
-			return MACC2HREGEMP;
-
-		c2h->dword0 = MAC_REG_R32(R_AX_C2HREG_DATA0);
-		c2h->dword1 = MAC_REG_R32(R_AX_C2HREG_DATA1);
-		c2h->dword2 = MAC_REG_R32(R_AX_C2HREG_DATA2);
-		c2h->dword3 = MAC_REG_R32(R_AX_C2HREG_DATA3);
-
-		val = MAC_REG_R8(R_AX_C2HREG_CTRL);
-		MAC_REG_W8(R_AX_C2HREG_CTRL, val & ~B_AX_C2HREG_TRIGGER);
-	}
-	C2HRegIncreaseCounter(adapter);
-	return MACSUCCESS;
-}
-
-u32 _recv_c2hreg(struct mac_ax_adapter *adapter, u8 *buf)
-{
-	struct mac_ax_intf_ops *ops = adapter_to_intf_ops(adapter);
-	u8 i;
-
-	if (is_chip_id(adapter, MAC_AX_CHIP_ID_8852C) ||
-	    is_chip_id(adapter, MAC_AX_CHIP_ID_8192XB)) {
-		if (!(MAC_REG_R8(R_AX_C2HREG_CTRL_V1) & B_AX_C2HREG_TRIGGER))
-			return MACC2HREGEMP;
-	} else {
-		if (!(MAC_REG_R8(R_AX_C2HREG_CTRL) & B_AX_C2HREG_TRIGGER))
-			return MACC2HREGEMP;
+	c2hreg = p_ops->get_c2hreg_offset(adapter);
+	if (!c2hreg) {
+		PLTFM_MSG_ERR("Get C2HREG offset FAIL\n");
+		return MACNPTR;
 	}
 
-	if (is_chip_id(adapter, MAC_AX_CHIP_ID_8852C) ||
-	    is_chip_id(adapter, MAC_AX_CHIP_ID_8192XB)) {
-		for (i = 0; i < C2HREG_LEN; i = i + 4)
-			*(u32 *)(buf + i) = MAC_REG_R32(R_AX_C2HREG_DATA0_V1 + i);
-	} else {
-		for (i = 0; i < C2HREG_LEN; i = i + 4)
-			*(u32 *)(buf + i) = MAC_REG_R32(R_AX_C2HREG_DATA0 + i);
-	}
+	if (!(MAC_REG_R8(c2hreg->ctrl) & B_AX_C2HREG_TRIGGER))
+		return MACC2HREGEMP;
 
-	if (is_chip_id(adapter, MAC_AX_CHIP_ID_8852C) ||
-	    is_chip_id(adapter, MAC_AX_CHIP_ID_8192XB))
-		MAC_REG_W8(R_AX_C2HREG_CTRL_V1, 0);
-	else
-		MAC_REG_W8(R_AX_C2HREG_CTRL, 0);
-
-	return MACSUCCESS;
-}
-
-u32 mac_process_c2hreg(struct mac_ax_adapter *adapter,
-		       struct mac_ax_c2hreg_info *info)
-{
-	u32 ret;
-	struct fwcmd_c2hreg_hdr *hdr;
-
-	info->id = FWCMD_C2H_FUNC_NULL;
-
-	if (adapter->sm.fwdl != MAC_AX_FWDL_INIT_RDY) {
-		PLTFM_MSG_ERR("FW is not ready\n");
-		return MACFWNONRDY;
-	}
-
-	if (adapter->sm.mac_rdy != MAC_AX_MAC_RDY) {
-		PLTFM_MSG_TRACE("MAC is not ready\n");
-		adapter->stats.c2h_reg_uninit++;
-	}
-
-	ret = _recv_c2hreg(adapter, info->c2hreg);
-	if (ret == MACC2HREGEMP) {
-		return ret;
-	} else if (ret != MACSUCCESS) {
-		PLTFM_MSG_ERR("[ERR]Get C2H REG fail %d\n", ret);
-		return ret;
-	}
-
-	hdr = (struct fwcmd_c2hreg_hdr *)info->c2hreg;
-	info->id = GET_FIELD(hdr->dword0, FWCMD_C2HREG_C2HREG_HDR_FUNC);
-	info->content = info->c2hreg + C2HREG_HDR_LEN;
-	info->content_len = GET_FIELD(hdr->dword0,
-				      FWCMD_C2HREG_C2HREG_HDR_TOTAL_LEN);
-	info->content_len = (info->content_len << 2) - C2HREG_HDR_LEN;
+	c2h->dword0 = MAC_REG_R32(c2hreg->data0);
+	c2h->dword1 = MAC_REG_R32(c2hreg->data1);
+	c2h->dword2 = MAC_REG_R32(c2hreg->data2);
+	c2h->dword3 = MAC_REG_R32(c2hreg->data3);
+	val = MAC_REG_R8(c2hreg->ctrl);
+	MAC_REG_W8(c2hreg->ctrl, val & ~B_AX_C2HREG_TRIGGER);
 
 	return MACSUCCESS;
 }
@@ -3173,65 +3254,6 @@ u32 mac_recv_c2hreg(struct mac_ax_adapter *adapter,
 	cont->content_len = (cont->content_len << 2) - C2HREG_HDR_LEN;
 
 	return MACSUCCESS;
-}
-
-u32 mac_notify_fw_dbcc(struct mac_ax_adapter *adapter, u8 en)
-{
-	#if MAC_AX_PHL_H2C
-	struct rtw_h2c_pkt *h2cb;
-	#else
-	struct h2c_buf *h2cb;
-	#endif
-	u32 ret;
-	struct fwcmd_notify_dbcc *dbcc;
-
-	h2cb = h2cb_alloc(adapter, H2CB_CLASS_CMD);
-	if (!h2cb)
-		return MACNPTR;
-
-	dbcc = (struct fwcmd_notify_dbcc *)
-		h2cb_put(h2cb, sizeof(struct fwcmd_notify_dbcc));
-	if (!dbcc) {
-		ret = MACNPTR;
-		PLTFM_MSG_ERR("%s: h2c put fail\n", __func__);
-		goto fail;
-	}
-
-	dbcc->dword0 = en ? FWCMD_H2C_NOTIFY_DBCC_EN : 0;
-
-	ret = h2c_pkt_set_hdr(adapter, h2cb,
-			      FWCMD_TYPE_H2C,
-			      FWCMD_H2C_CAT_MAC,
-			      FWCMD_H2C_CL_MEDIA_RPT,
-			      FWCMD_H2C_FUNC_NOTIFY_DBCC, 0, 0);
-	if (ret) {
-		PLTFM_MSG_ERR("H2C IE CAM set hdr fail %d\n", ret);
-		goto fail;
-	}
-
-	ret = h2c_pkt_build_txd(adapter, h2cb);
-	if (ret) {
-		PLTFM_MSG_ERR("H2C IE CAM build txd fail %d\n", ret);
-		goto fail;
-	}
-
-	#if MAC_AX_PHL_H2C
-	ret = PLTFM_TX(h2cb);
-	#else
-	ret = PLTFM_TX(h2cb->data, h2cb->len);
-	#endif
-	if (ret) {
-		PLTFM_MSG_ERR("H2C IE CAM tx fail %d\n", ret);
-		goto fail;
-	}
-
-fail:
-	h2cb_free(adapter, h2cb);
-
-	if (!ret)
-		h2c_end_flow(adapter);
-
-	return ret;
 }
 
 u32 poll_c2hreg(struct mac_ax_adapter *adapter,
@@ -3281,8 +3303,6 @@ u32 poll_c2hreg(struct mac_ax_adapter *adapter,
 		}
 	} else {
 		PLTFM_MSG_ERR("%s: polling c2hreg timeout\n", __func__);
-		PLTFM_MSG_ERR("c2h->polling_id: %x\n", c2h->polling_id);
-		PLTFM_MSG_ERR("c2hreg_cont->id: %x\n", c2hreg_cont->id);
 	}
 
 	return ret;
@@ -3292,12 +3312,19 @@ u32 proc_msg_reg(struct mac_ax_adapter *adapter,
 		 struct mac_ax_h2creg_info *h2c,
 		 struct mac_ax_c2hreg_poll *c2h)
 {
+#if MAC_AX_FEATURE_DBGPKG
 	struct mac_ax_dbgpkg_en en = {0};
+#endif
 	u32 ret = MACSUCCESS;
 
 	if (adapter->sm.fwdl != MAC_AX_FWDL_INIT_RDY) {
 		PLTFM_MSG_ERR("FW is not ready\n");
 		return MACFWNONRDY;
+	}
+
+	if (adapter->sm.fw_rst != MAC_AX_FW_RESET_IDLE) {
+		PLTFM_MSG_ERR("FW is not ready\n");
+		return MACIOERRSERL1;
 	}
 
 	PLTFM_MUTEX_LOCK(&adapter->fw_info.msg_reg);
@@ -3314,10 +3341,12 @@ u32 proc_msg_reg(struct mac_ax_adapter *adapter,
 
 END:
 	PLTFM_MUTEX_UNLOCK(&adapter->fw_info.msg_reg);
+#if MAC_AX_FEATURE_DBGPKG
 	if (ret != MACSUCCESS) {
 		en.plersvd_dbg = 1;
 		mac_dbg_status_dump(adapter, NULL, &en);
 	}
+#endif
 	return ret;
 }
 
@@ -3370,10 +3399,30 @@ static u32 get_fw_rx_dbg_event(struct mac_ax_adapter *adapter,
 	return MACSUCCESS;
 }
 
+static u32 get_bcn_csa_event(struct mac_ax_adapter *adapter,
+			     struct rtw_c2h_info *c2h,
+			     enum phl_msg_evt_id *id,
+			     u8 *c2h_info)
+{
+	*id = MSG_EVT_CSA_COUNTDOWN_ZERO;
+
+	return MACSUCCESS;
+}
+
+static u32 get_bcn_bc_chg_event(struct mac_ax_adapter *adapter,
+				struct rtw_c2h_info *c2h,
+				enum phl_msg_evt_id *id,
+				u8 *c2h_info)
+{
+	*id = MSG_EVT_BCCHG_COUNTDOWN_ZERO;
+
+	return MACSUCCESS;
+}
+
 static u32 get_scanofld_event(struct mac_ax_adapter *adapter, struct rtw_c2h_info *c2h,
 			      enum phl_msg_evt_id *id, u8 *c2h_info)
 {
-#if SCANOFLD_RSP_EVT_PARSE
+#if !defined(CONFIG_HVTOOL)
 	struct fwcmd_scanofld_rsp *pkg;
 	struct mac_ax_scanofld_rsp *rsp;
 	struct mac_ax_scanofld_chrpt chrpt_struct;
@@ -3399,16 +3448,15 @@ static u32 get_scanofld_event(struct mac_ax_adapter *adapter, struct rtw_c2h_inf
 	rsp->pri_ch = GET_FIELD(pkg->dword0, FWCMD_C2H_SCANOFLD_RSP_PRI_CH);
 	rsp->notify_reason = GET_FIELD(pkg->dword0, FWCMD_C2H_SCANOFLD_RSP_NOTIFY_REASON);
 	rsp->status = GET_FIELD(pkg->dword0, FWCMD_C2H_SCANOFLD_RSP_STATUS);
-	PLTFM_MSG_TRACE("[scnofld][rsp]: Reason %d, ch %d, status %d\n",
-			rsp->notify_reason, rsp->pri_ch, rsp->status);
-
+	rsp->ch_band = GET_FIELD(pkg->dword3, FWCMD_C2H_SCANOFLD_RSP_CH_BAND);
+	rsp->band = (pkg->dword3 & FWCMD_C2H_SCANOFLD_RSP_BAND) ? 1 : 0;
+	PLTFM_MSG_ALWAYS("[scnofld][rsp][%d]: Reason %d, ch %d (band %d), status %d\n",
+			 rsp->band, rsp->notify_reason, rsp->pri_ch, rsp->ch_band, rsp->status);
 	switch (rsp->notify_reason) {
 	case MAC_AX_SCAN_END_SCAN_NOTIFY:
-		PLTFM_MUTEX_LOCK(&adapter->scanofld_info.fw_chlist_state_lock);
-		adapter->scanofld_info.fw_chlist_busy = 0;
-		PLTFM_MUTEX_UNLOCK(&adapter->scanofld_info.fw_chlist_state_lock);
-		adapter->scanofld_info.fw_scan_busy = 0;
-		/* fall through */
+		adapter->scanofld_info.fw_chlist_busy[rsp->band] = 0;
+		adapter->scanofld_info.fw_scan_busy[rsp->band] = 0;
+		fallthrough;
 
 	case MAC_AX_SCAN_GET_RPT_NOTIFY:
 		rsp->scanned_round = GET_FIELD(pkg->dword0, FWCMD_C2H_SCANOFLD_RSP_SCANNED_ROUND);
@@ -3420,13 +3468,13 @@ static u32 get_scanofld_event(struct mac_ax_adapter *adapter, struct rtw_c2h_inf
 		rsp->num_ch_rpt = GET_FIELD(pkg->dword3, FWCMD_C2H_SCANOFLD_RSP_NUM_CH_RPT);
 		rsp->ch_rpt_size = GET_FIELD(pkg->dword3, FWCMD_C2H_SCANOFLD_RSP_CH_RPT_SIZE);
 
-		PLTFM_MSG_TRACE("[scnofld][rsp][end] scan for %d rnd in %llu us, last slot %d us\n",
-				rsp->scanned_round, ((u64)rsp->spent_high << 32) + rsp->spent_low,
-				rsp->actual_period);
-		PLTFM_MSG_TRACE("[scnofld][rsp][end] airDense %d, txFail %d\n",
-				rsp->air_density, rsp->tx_fail_cnt);
-		PLTFM_MSG_TRACE("[scnofld][rsp] %d ch rpt (size %d)\n",
-				rsp->num_ch_rpt, rsp->ch_rpt_size);
+		PLTFM_MSG_ALWAYS("[scnofld][rsp][%d][end] scan %d rnd in %llu us, last slt %d us\n",
+				 rsp->band, rsp->scanned_round,
+				 ((u64)rsp->spent_high << 32) + rsp->spent_low, rsp->actual_period);
+		PLTFM_MSG_ALWAYS("[scnofld][rsp][%d][end] airDense %d, txFail %d\n",
+				 rsp->band, rsp->air_density, rsp->tx_fail_cnt);
+		PLTFM_MSG_ALWAYS("[scnofld][rsp][%d][end] %d ch rpt (size %d)\n",
+				 rsp->band, rsp->num_ch_rpt, rsp->ch_rpt_size);
 
 		if (!rsp->num_ch_rpt || !rsp->ch_rpt_size)
 			break;
@@ -3438,9 +3486,9 @@ static u32 get_scanofld_event(struct mac_ax_adapter *adapter, struct rtw_c2h_inf
 				PLTFM_MEMCPY(chrpt++, chrpt_in++, sizeof(u32));
 			}
 			chrpt_in += (rsp->ch_rpt_size - chrpt_size_h_dw);
-			PLTFM_MSG_TRACE("[scnofld][rsp][end] ch %d, rx %d, txfail %x, parsed %d\n",
-					chrpt_struct.pri_ch, chrpt_struct.rx_cnt,
-					chrpt_struct.tx_fail, chrpt_struct.parsed);
+			PLTFM_MSG_ALWAYS("[scnofld][rsp][%d][end] ch%d, rx %d, txfail %x, hit %d\n",
+					 rsp->band, chrpt_struct.pri_ch, chrpt_struct.rx_cnt,
+					 chrpt_struct.tx_fail, chrpt_struct.parsed);
 		}
 		break;
 
@@ -3449,41 +3497,227 @@ static u32 get_scanofld_event(struct mac_ax_adapter *adapter, struct rtw_c2h_inf
 					       FWCMD_C2H_SCANOFLD_RSP_ACTUAL_PERIOD);
 		rsp->tx_fail_cnt = GET_FIELD(pkg->dword3,
 					     FWCMD_C2H_SCANOFLD_RSP_TX_FAIL_CNT);
-		PLTFM_MSG_TRACE("[scnofld][rsp][leave] pd %d, txfail %d\n",
-				rsp->actual_period, rsp->tx_fail_cnt);
+		PLTFM_MSG_ALWAYS("[scnofld][rsp][%d][leave] pd %d, txfail %d\n",
+				 rsp->band, rsp->actual_period, rsp->tx_fail_cnt);
 		break;
 
 	default:
 		break;
 	}
-#endif //SCANOFLD_RSP_EVT_PARSE
-#if SCANOFLD_RSP_EVT_ID
-	*id = MSG_EVT_SCAN_OFLD;
-#endif //SCANOFLD_RSP_EVT_ID
+	*id = MSG_EVT_SCANOFLD;
+#endif //#if !defined(CONFIG_HVTOOL)
 	return MACSUCCESS;
 }
 
-static struct c2h_event_id_proc event_proc[] = {
-	/* cat, class, func, hdl */
-	{FWCMD_C2H_CAT_MAC, FWCMD_C2H_CL_MISC,
-	 FWCMD_C2H_FUNC_WPS_RPT, get_wps_rpt_event_id},
-	{FWCMD_C2H_CAT_MAC, FWCMD_C2H_CL_FW_OFLD,
-	 FWCMD_C2H_FUNC_BEACON_RESEND, get_bcn_resend_event},
-	{FWCMD_C2H_CAT_MAC, FWCMD_C2H_CL_FW_OFLD,
-	 FWCMD_C2H_FUNC_TSF32_TOGL_RPT, get_tsf32_togl_rpt_event},
-	{FWCMD_C2H_CAT_MAC, FWCMD_C2H_CL_MISC,
-	 FWCMD_C2H_FUNC_CCXRPT, get_ccxrpt_event},
-	{FWCMD_C2H_CAT_MAC, FWCMD_C2H_CL_MISC,
-	 FWCMD_C2H_FUNC_FTMRPT, get_ftmrpt_event},
-	{FWCMD_C2H_CAT_MAC, FWCMD_C2H_CL_MISC,
-	 FWCMD_C2H_FUNC_FTMACKRPT, get_ftmackrpt_event},
-	{FWCMD_C2H_CAT_MAC, FWCMD_C2H_CL_FW_DBG,
-	 FWCMD_C2H_FUNC_RX_DBG, get_fw_rx_dbg_event},
-	{FWCMD_C2H_CAT_MAC, FWCMD_C2H_CL_FW_OFLD,
-	 FWCMD_C2H_FUNC_SCANOFLD_RSP, get_scanofld_event},
-	{FWCMD_C2H_CAT_NULL, FWCMD_C2H_CL_NULL,
-	 FWCMD_C2H_FUNC_NULL, NULL},
-};
+static u32 get_usr_txrpt_info_event(struct mac_ax_adapter *adapter,
+				    struct rtw_c2h_info *c2h,
+				    enum phl_msg_evt_id *id,
+				    u8 *c2h_info)
+{
+	*id = MSG_EVT_USR_TX_RPT;
+
+	PLTFM_MEMCPY(c2h_info, c2h->content, sizeof(struct rtw_mac_usr_tx_rpt_info));
+
+	return MACSUCCESS;
+}
+
+static u32 get_frame_to_act_rpt_event(struct mac_ax_adapter *adapter,
+				      struct rtw_c2h_info *c2h,
+				      enum phl_msg_evt_id *id,
+				      u8 *c2h_info)
+{
+	*id = MSG_EVT_USR_FRAME_ACT_RPT;
+
+	PLTFM_MEMCPY(c2h_info, c2h->content, sizeof(struct rtw_mac_frame_to_act_rpt));
+
+	return MACSUCCESS;
+}
+#if MAC_FEAT_NAN
+static u32 get_nan_cluster_info_event(struct mac_ax_adapter *adapter,
+				      struct rtw_c2h_info *c2h,
+				      enum phl_msg_evt_id *id,
+				      u8 *c2h_info)
+{
+	struct fwcmd_nan_info_notify_cluster_info cluster_info;
+	struct mac_ax_nan_info *nan_info;
+
+	cluster_info.dword0 = le32_to_cpu(*(u32 *)(c2h->content));
+	cluster_info.dword1 = le32_to_cpu(*(u32 *)(c2h->content + 4));
+	cluster_info.dword2 = le32_to_cpu(*(u32 *)(c2h->content + 8));
+	cluster_info.dword3 = le32_to_cpu(*(u32 *)(c2h->content + 12));
+	cluster_info.dword4 = le32_to_cpu(*(u32 *)(c2h->content + 16));
+	cluster_info.dword5 = le32_to_cpu(*(u32 *)(c2h->content + 20));
+	cluster_info.dword6 = le32_to_cpu(*(u32 *)(c2h->content + 24));
+
+	nan_info = (struct mac_ax_nan_info *)c2h_info;
+	nan_info->rpt_cluster_id[0] = GET_FIELD(cluster_info.dword1,
+						FWCMD_C2H_NAN_INFO_NOTIFY_CLUSTER_INFO_CLUSTER_ID0);
+	nan_info->rpt_cluster_id[1] = GET_FIELD(cluster_info.dword1,
+						FWCMD_C2H_NAN_INFO_NOTIFY_CLUSTER_INFO_CLUSTER_ID1);
+	nan_info->rpt_cluster_id[2] = GET_FIELD(cluster_info.dword1,
+						FWCMD_C2H_NAN_INFO_NOTIFY_CLUSTER_INFO_CLUSTER_ID2);
+	nan_info->rpt_cluster_id[3] = GET_FIELD(cluster_info.dword1,
+						FWCMD_C2H_NAN_INFO_NOTIFY_CLUSTER_INFO_CLUSTER_ID3);
+	nan_info->rpt_cluster_id[4] = GET_FIELD(cluster_info.dword2,
+						FWCMD_C2H_NAN_INFO_NOTIFY_CLUSTER_INFO_CLUSTER_ID4);
+	nan_info->rpt_cluster_id[5] = GET_FIELD(cluster_info.dword2,
+						FWCMD_C2H_NAN_INFO_NOTIFY_CLUSTER_INFO_CLUSTER_ID5);
+	nan_info->rpt_master_pref = GET_FIELD(cluster_info.dword2,
+					      FWCMD_C2H_NAN_INFO_NOTIFY_CLUSTER_INFO_MASTERPREF);
+	nan_info->rpt_random_factor =
+		GET_FIELD(cluster_info.dword2, FWCMD_C2H_NAN_INFO_NOTIFY_CLUSTER_INFO_RANDOMFACTOR);
+	nan_info->rpt_amr = GET_FIELD(cluster_info.dword6,
+				      FWCMD_C2H_NAN_INFO_NOTIFY_CLUSTER_INFO_AMR_HIGH);
+	nan_info->rpt_amr <<= 32;
+	nan_info->rpt_amr += GET_FIELD(cluster_info.dword3,
+				       FWCMD_C2H_NAN_INFO_NOTIFY_CLUSTER_INFO_AMR);
+	nan_info->rpt_ambtt = GET_FIELD(cluster_info.dword4,
+					FWCMD_C2H_NAN_INFO_NOTIFY_CLUSTER_INFO_AMBTT);
+	nan_info->rpt_hop_count = GET_FIELD(cluster_info.dword5,
+					    FWCMD_C2H_NAN_INFO_NOTIFY_CLUSTER_INFO_HOPCOUNT);
+	nan_info->rpt_nan_c2h_type = NAN_C2H_TYPE_CLUSTER_INFO;
+
+	*id = MSG_EVT_NAN_ENTRY;
+
+	return MACSUCCESS;
+}
+
+static u32 get_nan_tsf_info_event(struct mac_ax_adapter *adapter,
+				  struct rtw_c2h_info *c2h,
+				  enum phl_msg_evt_id *id,
+				  u8 *c2h_info)
+{
+	struct fwcmd_nan_info_notify_tsf_info tsf_info;
+	struct mac_ax_nan_info *nan_info;
+
+	tsf_info.dword0 = le32_to_cpu(*(u32 *)(c2h->content));
+	tsf_info.dword1 = le32_to_cpu(*(u32 *)(c2h->content + 4));
+	tsf_info.dword2 = le32_to_cpu(*(u32 *)(c2h->content + 8));
+	nan_info = (struct mac_ax_nan_info *)c2h_info;
+	nan_info->rpt_port_dwst_low = GET_FIELD(tsf_info.dword1,
+						FWCMD_C2H_NAN_INFO_NOTIFY_TSF_INFO_PORT_DWST_LOW);
+	nan_info->rpt_fr_dwst_low = GET_FIELD(tsf_info.dword2,
+					      FWCMD_C2H_NAN_INFO_NOTIFY_TSF_INFO_FR_DWST_LOW);
+	nan_info->rpt_nan_c2h_type = NAN_C2H_TYPE_TSF_INFO;
+
+	*id = MSG_EVT_NAN_ENTRY;
+
+	return MACSUCCESS;
+}
+
+static u32 get_nan_cluster_join_event(struct mac_ax_adapter *adapter,
+				      struct rtw_c2h_info *c2h,
+				      enum phl_msg_evt_id *id,
+				      u8 *c2h_info)
+{
+	struct mac_ax_nan_info *nan_info;
+
+	nan_info = (struct mac_ax_nan_info *)c2h_info;
+	nan_info->rpt_nan_c2h_type = NAN_C2H_TYPE_CLUSTER_JOIN;
+
+	*id = MSG_EVT_NAN_ENTRY;
+
+	return MACSUCCESS;
+}
+#endif
+
+#if MAC_FEAT_TWT_OFDMA_EN
+static u32 get_twt_notify_event(struct mac_ax_adapter *adapter,
+				struct rtw_c2h_info *c2h,
+				enum phl_msg_evt_id *id,
+				u8 *c2h_info)
+{
+	struct fwcmd_twt_notify_evt twt_notify_evt;
+	struct mac_ax_twt_notify_evt_c2hpara *twt_notify_evt_c2hpara;
+
+	twt_notify_evt.dword0 = le32_to_cpu(*(u32 *)(c2h->content));
+	twt_notify_evt.dword1 = le32_to_cpu(*(u32 *)(c2h->content + 4));
+	twt_notify_evt.dword2 = le32_to_cpu(*(u32 *)(c2h->content + 8));
+	twt_notify_evt_c2hpara = (struct mac_ax_twt_notify_evt_c2hpara *)c2h_info;
+	twt_notify_evt_c2hpara->type = GET_FIELD(twt_notify_evt.dword0,
+						 FWCMD_C2H_TWT_NOTIFY_EVT_TYPE);
+	twt_notify_evt_c2hpara->twt_id = GET_FIELD(twt_notify_evt.dword0,
+						   FWCMD_C2H_TWT_NOTIFY_EVT_TWT_ID);
+	twt_notify_evt_c2hpara->tsf_low = GET_FIELD(twt_notify_evt.dword1,
+						    FWCMD_C2H_TWT_NOTIFY_EVT_TSF_LOW);
+	twt_notify_evt_c2hpara->tsf_high = GET_FIELD(twt_notify_evt.dword2,
+						    FWCMD_C2H_TWT_NOTIFY_EVT_TSF_HIGH);
+	*id = MSG_EVT_TWT_NOTIFY_EVT;
+
+	return MACSUCCESS;
+}
+#endif
+
+static u32 get_twt_wait_announ_event(struct mac_ax_adapter *adapter,
+				     struct rtw_c2h_info *c2h,
+				     enum phl_msg_evt_id *id,
+				     u8 *c2h_info)
+{
+	*id = MSG_EVT_TWT_WAIT_ANNOUNCE;
+
+	PLTFM_MEMCPY(c2h_info, c2h->content, sizeof(struct fwcmd_wait_announce));
+
+	return MACSUCCESS;
+}
+
+static u32 c2h_fwi_done_ack(struct mac_ax_adapter *adapter, struct rtw_c2h_info *info)
+{
+	u32 ret = MACSUCCESS;
+
+	if (info->c2h_cat == FWCMD_H2C_CAT_OUTSRC || info->c2h_cat == FWCMD_H2C_CAT_TEST)
+		return MACSUCCESS;
+
+	if (info->c2h_cat == FWCMD_H2C_CAT_MAC) {
+		if (info->c2h_class == FWCMD_C2H_CL_FW_INFO) {
+			ret = c2h_fw_info_done_ack_hdl(adapter, info);
+			if (ret != MACSUCCESS)
+				return ret;
+		} else if (info->c2h_class == FWCMD_H2C_CL_FW_OFLD) {
+			ret = c2h_fwofld_done_ack_hdl(adapter, info);
+			if (ret != MACSUCCESS)
+				return ret;
+		} else if (info->c2h_class == FWCMD_H2C_CL_PS) {
+			ret = c2h_ps_done_ack_hdl(adapter, info);
+			if (ret != MACSUCCESS)
+				return ret;
+		} else if (info->c2h_class == FWCMD_H2C_CL_MEDIA_RPT ||
+			   info->c2h_class == FWCMD_H2C_CL_ADDR_CAM_UPDATE) {
+			ret = c2h_role_done_ack_hdl(adapter, info);
+			if (ret != MACSUCCESS)
+				return ret;
+		} else if (info->c2h_class == FWCMD_H2C_CL_PROXY) {
+			ret = c2h_proxy_done_ack_hdl(adapter, info);
+			if (ret != MACSUCCESS)
+				return ret;
+		} else if (info->c2h_class == FWCMD_H2C_CL_NAN) {
+#if MAC_FEAT_NAN
+			ret = c2h_nan_done_ack_hdl(adapter, info);
+			if (ret != MACSUCCESS)
+				return ret;
+#endif
+		} else if (info->c2h_class == FWCMD_H2C_CL_WOW) {
+			ret = c2h_wow_done_ack_hdl(adapter, info);
+			if (ret != MACSUCCESS)
+				return ret;
+		} else if (info->c2h_class == FWCMD_H2C_CL_SEC_CAM) {
+			ret = c2h_sec_done_ack_hdl(adapter, info);
+			if (ret != MACSUCCESS)
+				return ret;
+		} else if (info->c2h_class == FWCMD_H2C_CL_SER) {
+			ret = c2h_ser_done_ack_hdl(adapter, info);
+			if (ret != MACSUCCESS)
+				return ret;
+		}
+#if MAC_SELF_DIAG_INFO
+		else if (info->c2h_class == FWCMD_H2C_CL_WOW_TRI_EVT) {
+			ret = c2h_wow_evt_done_ack_hdl(adapter, info);
+			if (ret != MACSUCCESS)
+				return ret;
+		}
+#endif
+	}
+	return ret;
+}
 
 u32 mac_get_c2h_event(struct mac_ax_adapter *adapter,
 		      struct rtw_c2h_info *c2h,
@@ -3495,7 +3729,9 @@ u32 mac_get_c2h_event(struct mac_ax_adapter *adapter,
 		   enum phl_msg_evt_id *id, u8 *c2h_info) = NULL;
 
 	/*for C2H ack bit no need to process*/
-	if (c2h->type_done_ack == 1 || c2h->type_rec_ack == 1)
+	if (c2h->type_done_ack)
+		return c2h_fwi_done_ack(adapter, c2h);
+	if (c2h->type_rec_ack == 1)
 		return MACSUCCESS;
 
 	proc = event_proc;
@@ -3512,32 +3748,151 @@ u32 mac_get_c2h_event(struct mac_ax_adapter *adapter,
 	return MACSUCCESS;
 }
 
-void H2CRegIncreaseCounter(struct mac_ax_adapter *adapter)
+u32 mac_set_h2c_c2h_mon(struct mac_ax_adapter *adapter, u8 en)
 {
-	u8 val, low;
-	struct mac_ax_intf_ops *ops = adapter_to_intf_ops(adapter);
+	adapter->sm.h2c_c2h_mon = en ? MAC_AX_H2C_C2H_MON_ON : MAC_AX_H2C_C2H_MON_OFF;
 
-	val = MAC_REG_R8(R_AX_UDM1 + 1);
-	low = val & B_AX_UDM1_WCPU_H2C_DEQ_CNT_MSK;
-	low++;
-	if (low > 15)
-		low = 0; //we just use 4 bit as counter
-	val = val & 0xf0;
-	val = val | low;
-	MAC_REG_W8(R_AX_UDM1 + 1, val);
+	PLTFM_MSG_TRACE("[h2c_c2h_mon] set h2c_c2h_mon = %d\n", adapter->sm.h2c_c2h_mon);
+
+	return MACSUCCESS;
 }
 
-void C2HRegIncreaseCounter(struct mac_ax_adapter *adapter)
+u32 mac_h2c_common(struct mac_ax_adapter *adapter,
+		   struct h2c_info *info, u32 *content)
 {
-	u8 val, high;
-	struct mac_ax_intf_ops *ops = adapter_to_intf_ops(adapter);
+	u32 ret = 0;
+	u8 *buf;
+	struct rtw_t_meta_data txd_info = {0};
+	struct mac_ax_ops *ops = adapter_to_mac_ops(adapter);
+	u32 hdr_len = 0;
+	u32 usb_offset = 0;
+#if MAC_AX_PHL_H2C
+	struct rtw_h2c_pkt *h2cb;
+	enum rtw_h2c_pkt_type buf_class;
+#else
+	struct h2c_buf *h2cb;
+	enum h2c_buf_class buf_class;
+#endif
 
-	val = MAC_REG_R8(R_AX_UDM1 + 1);
-	high = (val >> B_AX_UDM1_WCPU_C2H_ENQ_CNT_SH) & B_AX_UDM1_WCPU_C2H_ENQ_CNT_MSK;
-	high++;
-	if (high > 15)
-		high = 0;//we just use 4 bit as counter
-	val = val & 0x0f;
-	val = val | (high << B_AX_UDM1_WCPU_C2H_ENQ_CNT_SH);
-	MAC_REG_W8(R_AX_UDM1 + 1, val);
+	/*temp workaround for h2cb no functionality and outsrc has its timer*/
+	if (adapter->sm.fwdl != MAC_AX_FWDL_INIT_RDY) {
+		PLTFM_MSG_ERR("FW is not ready\n");
+		return MACFWNONRDY;
+	}
+#if MAC_FEAT_WOWLAN
+	if (adapter->wowlan_info.h2c_filter_en) {
+		ret = mac_wow_h2c_check(adapter, info->h2c_cat, info->h2c_class,
+					info->h2c_func, FWCMD_TYPE_H2C);
+		if (ret) {
+			PLTFM_MSG_ERR("No Support Wow H2C cat(%d)class(%d)func(%d)\n",
+				      info->h2c_cat, info->h2c_class, info->h2c_func);
+			return ret;
+		}
+	}
+#endif /* MAC_FEAT_WOWLAN */
+	txd_info.type = RTW_PHL_PKT_TYPE_H2C;
+	txd_info.pktlen = (u16)info->content_len;
+	hdr_len = ops->txdesc_len(adapter, &txd_info);
+	if (adapter->env_info.intf == MAC_AX_INTF_USB) {
+		if (((txd_info.pktlen + hdr_len) & (512 - 1)) == 0) {
+			usb_offset = 4;
+			hdr_len = hdr_len + 4;
+		}
+	}
+
+	if (info->content_len <= H2C_CMD_LEN - FWCMD_HDR_LEN - hdr_len - usb_offset) {
+#if MAC_AX_PHL_H2C
+		buf_class = H2CB_TYPE_CMD;
+#else
+		buf_class = H2CB_CLASS_CMD;
+#endif
+	} else if (info->content_len <= H2C_DATA_LEN - FWCMD_HDR_LEN - hdr_len - usb_offset) {
+#if MAC_AX_PHL_H2C
+		buf_class = H2CB_TYPE_DATA;
+#else
+		buf_class = H2CB_CLASS_DATA;
+#endif
+	} else if (info->content_len <= H2C_MAX_TOTAL_LEN - FWCMD_HDR_LEN - hdr_len - usb_offset) {
+#if MAC_AX_PHL_H2C
+		buf_class = H2CB_TYPE_LONG_DATA;
+#else
+		buf_class = H2CB_CLASS_LONG_DATA;
+#endif
+	} else {
+		PLTFM_MSG_ERR("invalid content_len\n");
+		return MACNPTR;
+	}
+
+	h2cb = h2cb_alloc(adapter, buf_class);
+	if (!h2cb) {
+		PLTFM_MSG_ERR("H2C alloc buffer fail\n");
+		return MACNPTR;
+	}
+
+	buf = h2cb_put(h2cb, info->content_len);
+	if (!buf) {
+		PLTFM_MSG_ERR("H2C buffer not enough\n");
+		ret = MACNOBUF;
+		goto fail;
+	}
+	PLTFM_MEMCPY(buf, content, info->content_len);
+
+	ret = h2c_pkt_set_hdr(adapter, h2cb,
+			      FWCMD_TYPE_H2C,
+			      info->h2c_cat,
+			      info->h2c_class,
+			      info->h2c_func,
+			      info->rec_ack,
+			      info->done_ack);
+	if (ret)
+		goto fail;
+
+	if (info->agg_en) {
+		// Return MACSUCCESS if h2c aggregation is enabled and enqueued successfully.
+		// The H2C shall be sent by mac_h2c_agg_tx.
+		ret = h2c_agg_enqueue(adapter, h2cb);
+		if (ret == MACSUCCESS)
+			return MACSUCCESS;
+	}
+
+	ret = h2c_pkt_build_txd(adapter, h2cb);
+	if (ret)
+		goto fail;
+
+#if MAC_AX_PHL_H2C
+	ret = PLTFM_TX(h2cb);
+#else
+	ret = PLTFM_TX(h2cb->data, h2cb->len);
+	h2cb_free(adapter, h2cb);
+#endif
+	if (ret)
+		return ret;
+
+	h2c_end_flow(adapter);
+
+	return MACSUCCESS;
+fail:
+
+#if MAC_AX_PHL_H2C
+	PLTFM_RECYCLE_H2C(h2cb);
+#else
+	h2cb_free(adapter, h2cb);
+#endif
+
+	return ret;
 }
+
+#if MAC_AX_PHL_H2C
+#else
+u32 get_h2cb_status(struct h2c_allloc_status *h2c_status)
+{
+	h2c_status->cmd = h2cb_counter[H2CB_CLASS_CMD];
+	h2c_status->data = h2cb_counter[H2CB_CLASS_DATA];
+	h2c_status->ldata = h2cb_counter[H2CB_CLASS_LONG_DATA];
+	h2c_status->mac = (u16)(h2c_status->cmd + h2c_status->data + h2c_status->ldata);
+	h2c_status->bb = 0;
+	h2c_status->rf = 0;
+	h2c_status->btc = 0;
+	return MACSUCCESS;
+}
+#endif

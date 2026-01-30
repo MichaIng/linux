@@ -16,9 +16,15 @@
 #define _PHL_CHAN_INFO_H_
 
 #ifdef CONFIG_PHL_CHANNEL_INFO
+enum rtw_phl_status rtw_phl_cmd_cfg_chinfo(void *phl,
+					   struct rtw_chinfo_action_parm *act_parm,
+					   enum phl_cmd_type cmd_type,
+					   u32 cmd_timeout);
 enum rtw_phl_status phl_chaninfo_init(struct phl_info_t *phl_info);
 void phl_chaninfo_deinit(struct phl_info_t *phl_info);
+void phl_chaninfo_pkt_init(void* drv_priv, struct chan_info_t *chan_info_pkt);
 
+#ifndef CONFIG_PHL_CHANNEL_INFO_DIRECT_INDICATE
 /* Channel info queue operation*/
 u32 rtw_phl_get_chaninfo_idle_number(void *drvpriv, struct rtw_phl_com_t *phl_com);
 u32 rtw_phl_get_chaninfo_busy_number(void *drvpriv, struct rtw_phl_com_t *phl_com);
@@ -34,6 +40,7 @@ void rtw_phl_enqueue_idle_chaninfo(void *drvpriv, struct rtw_phl_com_t *phl_com,
 
 struct chan_info_t * rtw_phl_recycle_busy_chaninfo(void *drvpriv, struct rtw_phl_com_t *phl_com,
 				struct chan_info_t *chan_info_pkt);
+#endif /* #ifndef CONFIG_PHL_CHANNEL_INFO_DIRECT_INDICATE */
 
 enum rtw_phl_status
 phl_cmd_cfg_chinfo_hdl(struct phl_info_t *phl_info, u8 *param);

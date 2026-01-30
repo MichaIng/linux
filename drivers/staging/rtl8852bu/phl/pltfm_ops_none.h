@@ -86,7 +86,23 @@ static __inline char *_os_strchr(const char *s, int c)
 			return NULL;
 	return (char *)s;
 }
+
+static __inline int _os_va_start(_os_va_list args, const char *format)
+{
+	return 0;
+}
+
+static __inline int _os_va_end(_os_va_list args)
+{
+	return 0;
+}
+
 static __inline int _os_snprintf(char *str, size_t size, const char *format, ...)
+{
+	return 0;
+}
+
+static __inline int _os_vsnprintf(char *str, size_t size, const char *format, _os_va_list args)
 {
 	return 0;
 }
@@ -121,6 +137,10 @@ static inline u32 _os_get_cur_time_ms(void)
 	return (_os_get_cur_time_us() / 1000);
 }
 
+static inline _os_raw_time _os_get_cur_raw_time(void)
+{
+	return 0;
+}
 static inline u64 _os_modular64(u64 x, u64 y)
 {
 	return x % y;
@@ -164,47 +184,47 @@ static inline u32 _os_div_round_up(u32 x, u32 y)
 }
 
 #ifdef CONFIG_PCI_HCI
-static inline void _os_cache_inv(void *d, _dma *bus_addr_l, _dma *bus_addr_h,
+static inline void _os_cache_inv(void *d, u32 *bus_addr_l, u32 *bus_addr_h,
 					u32 buf_sz, u8 direction)
 {
 }
-static inline void _os_cache_wback(void *d, _dma *bus_addr_l,
-			_dma *bus_addr_h, u32 buf_sz, u8 direction)
+static inline void _os_cache_wback(void *d, u32 *bus_addr_l,
+			u32 *bus_addr_h, u32 buf_sz, u8 direction)
 {
 }
 
 /* txbd, rxbd, wd */
-static inline void *_os_shmem_alloc(void *d, _dma *bus_addr_l,
-				    _dma *bus_addr_h, u32 buf_sz,
+static inline void *_os_shmem_alloc(void *d, u32 *bus_addr_l,
+				    u32 *bus_addr_h, u32 buf_sz,
 				    u8 cache, u8 direction, void **os_rsvd)
 {
 	return NULL;
 }
-static inline void _os_shmem_free(void *d, u8 *vir_addr, _dma *bus_addr_l,
-				  _dma *bus_addr_h, u32 buf_sz,
+static inline void _os_shmem_free(void *d, u8 *vir_addr, u32 *bus_addr_l,
+				  u32 *bus_addr_h, u32 buf_sz,
 				  u8 cache, u8 direction, void *os_rsvd)
 {
 }
 #endif /*CONFIG_PCI_HCI*/
 
-static inline void *_os_pkt_buf_unmap_rx(void *d, _dma bus_addr_l, _dma bus_addr_h, u32 buf_sz)
+static inline void *_os_pkt_buf_unmap_rx(void *d, u32 bus_addr_l, u32 bus_addr_h, u32 buf_sz)
 {
 	return NULL;
 }
 
-static inline void *_os_pkt_buf_map_rx(void *d, _dma *bus_addr_l, _dma *bus_addr_h,
+static inline void *_os_pkt_buf_map_rx(void *d, u32 *bus_addr_l, u32 *bus_addr_h,
 					u32 buf_sz, void *os_priv)
 {
 	return NULL;
 }
 
-static inline void *_os_pkt_buf_alloc_rx(void *d, _dma *bus_addr_l,
-			_dma *bus_addr_h, u32 buf_sz, void **os_priv)
+static inline void *_os_pkt_buf_alloc_rx(void *d, u32 *bus_addr_l,
+			u32 *bus_addr_h, u32 buf_sz, void **os_priv)
 {
 	return NULL;
 }
-static inline u8 *_os_pkt_buf_free_rx(void *d, u8 *vir_addr, _dma bus_addr_l,
-			_dma bus_addr_h, u32 buf_sz, void *os_priv)
+static inline u8 *_os_pkt_buf_free_rx(void *d, u8 *vir_addr, u32 bus_addr_l,
+			u32 bus_addr_h, u32 buf_sz, void *os_priv)
 {
 	return NULL;
 }
@@ -219,6 +239,13 @@ static inline void * _os_alloc_netbuf(void *d, u32 buf_sz, void **os_priv)
 static inline void _os_free_netbuf(void *d, u8 *vir_addr, u32 buf_sz, void *os_priv)
 {
 }
+
+/* Generate an unsigned 32-bit random number */
+static inline u32 _os_random32(void *d)
+{
+	return 0;
+}
+
 static __inline void *_os_mem_alloc(void *h, u32 buf_sz)
 {
 	return NULL;
@@ -240,10 +267,10 @@ static __inline void _os_kmem_free(void *h, void *buf, u32 buf_sz)
 static __inline void _os_mem_set(void *h, void *buf, s8 value, u32 size)
 {
 }
-static __inline void _os_mem_cpy(void *h, void *dest, void *src, u32 size)
+static __inline void _os_mem_cpy(void *h, void *dest, const void *src, u32 size)
 {
 }
-static __inline int _os_mem_cmp(void *h, void *ptr1, void *ptr2, u32 size)
+static __inline int _os_mem_cmp(void *h, const void *ptr1, const void *ptr2, u32 size)
 {
 	return 0;
 }
@@ -485,6 +512,39 @@ static inline enum rtw_phl_status _os_workitem_deinit(void *drv_priv, _os_workit
 	return RTW_PHL_STATUS_SUCCESS;
 }
 
+/* OS handler extension */
+static inline u8 _os_init_handler_ext(void *drv_priv,
+                                      void *phl_handler)
+{
+	return RTW_PHL_STATUS_SUCCESS;
+}
+
+static inline u8 _os_deinit_handler_ext(void *drv_priv,
+                                        void *phl_handler)
+{
+	return RTW_PHL_STATUS_SUCCESS;
+}
+
+/*
+* if _os_file_readable() is supported
+*/
+static inline bool _os_file_readable_supported(void)
+{
+	return false;
+}
+
+/*
+* Test if the specific @param path is a file and readable.
+* If readable, @param sz is set to file size
+* @param path the path of the file to test
+* @param sz the file size if file is readable
+* @return true or false
+*/
+static inline bool _os_file_readable(const char *path, u32 *sz)
+{
+	return false;
+}
+
 /*
  * _os_read_file - phl read file api
  * @path: path of the file to open and read
@@ -498,6 +558,14 @@ static inline u32 _os_read_file(const char *path, u8 *buf, u32 sz)
 	/* OS Dependent API */
 	return 0;
 }
+
+/* Network Function */
+#ifdef CONFIG_RTW_MIRROR_DUMP
+static inline u32 _os_mirror_dump(u8 *hdr, u32 hdr_len, u8 *buf, u32 sz)
+{
+	return 0;
+}
+#endif
 
 #ifdef CONFIG_PCI_HCI
 static __inline u8 _os_read8_pcie(void *h, u32 addr)
@@ -526,6 +594,19 @@ static __inline u32 _os_write32_pcie(void *h, u32 addr, u32 val)
 {
 	return 0;
 }
+
+static __inline bool _os_get_pci_cfg(void *drv_priv, u32 offset, void *buf, u32 len)
+{
+	/* TBD */
+	return false;
+}
+
+static __inline bool _os_set_pci_cfg(void *drv_priv, u32 offset, void *buf, u32 len)
+{
+	/* TBD */
+	return false;
+}
+
 #endif/*#ifdef CONFIG_PCI_HCI*/
 
 #ifdef CONFIG_USB_HCI
@@ -859,5 +940,7 @@ static inline u8 _os_sdio_read_cia_r8(void *d, u32 addr)
 			); \
 		} \
 	} while (0)
+
+#define _os_nvm_get_info(d, info_type, value, size) 	(0)
 
 #endif /*_PLTFM_OPS_NONE_H_*/

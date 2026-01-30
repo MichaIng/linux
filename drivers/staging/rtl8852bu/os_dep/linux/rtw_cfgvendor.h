@@ -17,6 +17,9 @@
 #define _RTW_CFGVENDOR_H_
 
 #define OUI_GOOGLE  0x001A11
+#ifndef OUI_REALTEK
+#define OUI_REALTEK	0x00e04c /* Realtek */
+#endif
 #define ATTRIBUTE_U32_LEN                  (NLA_HDRLEN  + 4)
 #define VENDOR_ID_OVERHEAD                 ATTRIBUTE_U32_LEN
 #define VENDOR_SUBCMD_OVERHEAD             ATTRIBUTE_U32_LEN
@@ -74,6 +77,10 @@ typedef enum {
     /* define all Android Packet Filter related commands between 0x1800 and 0x18FF */
     ANDROID_NL80211_SUBCMD_PKT_FILTER_RANGE_START = 0x1800,
     ANDROID_NL80211_SUBCMD_PKT_FILTER_RANGE_END   = 0x18FF,
+
+    /* define all NAN related commands between 0x1900 and 0x19FF */
+    NL80211_SUBCMD_NAN_RANGE_START = 0x1900,
+    NL80211_SUBCMD_NAN_RANGE_END = 0x19FF,
 
     /* This is reserved for future usage */
 
@@ -139,6 +146,13 @@ enum rtw_vendor_subcmd {
 
 	WIFI_OFFLOAD_SUBCMD_START_MKEEP_ALIVE = ANDROID_NL80211_SUBCMD_WIFI_OFFLOAD_RANGE_START,
 	WIFI_OFFLOAD_SUBCMD_STOP_MKEEP_ALIVE,
+
+	NAN_SUBCMD_SRVC_EXT_INFO = NL80211_SUBCMD_NAN_RANGE_START,	/* 0x1900 */
+	NAN_SUBCMD_DATA_REQ,						/* 0x1901 */
+	NAN_SUBCMD_DATA_RSP,						/* 0x1902 */
+	NAN_SUBCMD_DATA_END,						/* 0x1903 */
+	NAN_SUBCMD_DATA_UPDATE,						/* 0x1904 */
+	NAN_SUBCMD_CFGVENDOR,						/* 0x1905 */
 
 	VENDOR_SUBCMD_MAX
 };
@@ -255,6 +269,14 @@ enum logger_attributes {
 	LOGGER_ATTRIBUTE_RING_NUM
 };
 typedef enum rtw_vendor_event {
+#ifdef CONFIG_NAN_R2
+    NAN_EVENT_DATA_COMFIRM,
+    NAN_EVENT_DATA_TERMINATION,
+    NAN_EVENT_DATA_INDICATION,
+    NAN_EVENT_PASN_START,
+    NAN_EVENT_PASN_RX,
+    NAN_EVENT_PASN_UPD_PMKID,
+#endif
     RTK_RESERVED1,
     RTK_RESERVED2,
     GSCAN_EVENT_SIGNIFICANT_CHANGE_RESULTS ,
@@ -630,5 +652,21 @@ void rtw_hal_pno_random_gen_mac_addr(_adapter *adapter);
 void rtw_hal_set_hw_mac_addr(_adapter *adapter, u8 *mac_addr);
 #endif
 
+#ifdef CONFIG_NAN_R2
+/* (ac) rtw_cfgvendor_nan_data_indication_evt */
+void rtw_cfgvendor_nan_data_indic_evt(
+				_adapter *padapter,
+				 struct rtw_phl_nan_rpt_data_indication *event);
+
+/* (ac) rtw_cfgvendor_nan_data_comfirm_evt */
+void rtw_cfgvendor_nan_data_confirm_evt(
+				_adapter *padapter,
+				struct rtw_phl_nan_rpt_data_confirm *event);
+
+/* (ac) rtw_cfgvendor_nan_data_termination_evt */
+void rtw_cfgvendor_nan_data_term_evt(
+				_adapter *padapter,
+				struct rtw_phl_nan_rpt_data_termination *event);
+#endif
 
 #endif /* _RTW_CFGVENDOR_H_ */

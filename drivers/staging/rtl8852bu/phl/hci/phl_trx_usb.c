@@ -14,6 +14,7 @@
  *****************************************************************************/
 #define _PHL_TRX_USB_C_
 #include "../phl_headers.h"
+#include "../phl_api.h"
 #include "phl_trx_usb.h"
 
 #define IDX_NONE (0xffffffff)
@@ -114,6 +115,10 @@ static void _phl_free_txbuf_pool_usb(struct phl_info_t *phl_info, u8 *txbuf_pool
 
 			_phl_free_txbuf_usb(phl_info, tx_buf);
 		}
+		pq_deinit(phl_to_drvpriv(phl_info), &ring->mgmt_txbuf_list);
+		pq_deinit(phl_to_drvpriv(phl_info), &ring->idle_txbuf_list);
+		pq_deinit(phl_to_drvpriv(phl_info), &ring->h2c_txbuf_list);
+
 		_os_mem_free(phl_to_drvpriv(phl_info), ring,
 				sizeof(struct phl_usb_tx_buf_resource));
 		ring = NULL;
@@ -148,7 +153,7 @@ exit:
 	if (RTW_PHL_STATUS_SUCCESS != pstatus)
 		_phl_free_txbuf_usb(phl_info, tx_buf);
 
-	return tx_buf;
+	return NULL;
 }
 
 static enum rtw_phl_status
@@ -165,12 +170,9 @@ _phl_alloc_txbuf_pool_usb(struct phl_info_t *phl_info)
 	tx_buf_ring = _os_mem_alloc(phl_to_drvpriv(phl_info), sizeof(struct phl_usb_tx_buf_resource));
 
 	if (NULL != tx_buf_ring) {
-		INIT_LIST_HEAD(&tx_buf_ring->mgmt_txbuf_list.queue);
-		INIT_LIST_HEAD(&tx_buf_ring->idle_txbuf_list.queue);
-		INIT_LIST_HEAD(&tx_buf_ring->h2c_txbuf_list.queue);
-		_os_spinlock_init(phl_to_drvpriv(phl_info), &tx_buf_ring->mgmt_txbuf_list.lock);
-		_os_spinlock_init(phl_to_drvpriv(phl_info), &tx_buf_ring->idle_txbuf_list.lock);
-		_os_spinlock_init(phl_to_drvpriv(phl_info), &tx_buf_ring->h2c_txbuf_list.lock);
+		pq_init(phl_to_drvpriv(phl_info), &tx_buf_ring->mgmt_txbuf_list);
+		pq_init(phl_to_drvpriv(phl_info), &tx_buf_ring->idle_txbuf_list);
+		pq_init(phl_to_drvpriv(phl_info), &tx_buf_ring->h2c_txbuf_list);
 		for (i = 0; i < bus_cap->tx_buf_num; i++) {
 
 			/*YiWei_todo  tx_buf_size need do n bytes aligment*/
@@ -248,20 +250,34 @@ enum rtw_phl_status _phl_in_token_usb(struct phl_info_t *phl_info, u8 pipe_idx)
 	u8	rx_desc_sz=0;
 	struct rtw_rx_buf *rx_buf = NULL;
 	_os_list* obj = NULL;
+	struct phl_queue* sel_idle_list = NULL;
+	u8 info_id = 0;
 
 	//PHL_TRACE(COMP_PHL_RECV, _PHL_DEBUG_, "[1] %s:: 000 idle_rxbuf_list.cnt=%d\n",
-	//							__FUNCTION__, rx_buf_ring->idle_rxbuf_list.cnt);
+	//          __FUNCTION__, rx_buf_ring->idle_rxbuf_list.cnt);
 
-	if(pq_pop(drv, &rx_buf_ring->idle_rxbuf_list, &obj, _first, _irq)) {
+	if (pipe_idx == WLAN_IN_MPDU_PIPE_IDX)
+		sel_idle_list = &rx_buf_ring->idle_rxbuf_list;
+	else if (pipe_idx == WLAN_IN_INTERRUPT_PIPE_IDX)
+		sel_idle_list = &rx_buf_ring->idle_int_rxbuf_list;
+	else
+		return RTW_PHL_STATUS_RESOURCE;
+
+	if(pq_pop(drv, sel_idle_list, &obj, _first, _irq)) {
 		rx_buf = (struct rtw_rx_buf*)obj;
 	}
 	else
 		return RTW_PHL_STATUS_RESOURCE;
 
 	PHL_TRACE(COMP_PHL_RECV, _PHL_DEBUG_, "[1] %s:: ==> [%p] idle_rxbuf_list.cnt=%d\n",
-								__FUNCTION__, rx_buf, rx_buf_ring->idle_rxbuf_list.cnt);
+		  __FUNCTION__, rx_buf, sel_idle_list->cnt);
 
-	hstatus = rtw_hal_query_info(phl_info->hal, RTW_HAL_RXDESC_SIZE, &rx_desc_sz);
+	if (pipe_idx == WLAN_IN_MPDU_PIPE_IDX)
+		info_id = RTW_HAL_RXDESC_SIZE;
+	else if (pipe_idx == WLAN_IN_INTERRUPT_PIPE_IDX)
+		info_id = RTW_HAL_RX_INT_SIZE;
+
+	hstatus = rtw_hal_query_info(phl_info->hal, info_id, &rx_desc_sz);
 	if(RTW_HAL_STATUS_FAILURE == hstatus)
 		return RTW_PHL_STATUS_FAILURE;
 
@@ -275,7 +291,7 @@ enum rtw_phl_status _phl_in_token_usb(struct phl_info_t *phl_info, u8 pipe_idx)
 	{
 		/*	TODO::	temp::error hanlding	*/
 		PHL_TRACE(COMP_PHL_RECV, _PHL_WARNING_, "[1] %s:: [Error] os_send_usb_in_token\n",
-											__FUNCTION__);
+		          __func__);
 		pq_del_node(drv, &rx_buf_ring->busy_rxbuf_list, &rx_buf->list, _irq);
 		phl_release_rxbuf_usb(phl_info, rx_buf, 0, RTW_RX_TYPE_MAX); // usb doesn't care rtw_rx_type
 
@@ -283,7 +299,7 @@ enum rtw_phl_status _phl_in_token_usb(struct phl_info_t *phl_info, u8 pipe_idx)
 	}
 
 	PHL_TRACE(COMP_PHL_RECV, _PHL_DEBUG_, "[1] %s:: <== [%p] busy_rxbuf_list.cnt=%d\n",
-							__FUNCTION__, rx_buf, rx_buf_ring->busy_rxbuf_list.cnt);
+	          __func__, rx_buf, rx_buf_ring->busy_rxbuf_list.cnt);
 
 	return RTW_PHL_STATUS_SUCCESS;
 }
@@ -296,36 +312,43 @@ enum rtw_phl_status _phl_rx_start_usb(struct phl_info_t *phl_info)
 	struct rtw_rx_buf_ring *rx_buf_ring = (struct rtw_rx_buf_ring *)hci_info->rxbuf_pool;
 	struct rtw_hal_com_t *hal_com = rtw_hal_get_halcom(phl_info->hal);
 	struct bus_cap_t *bus_cap = &hal_com->bus_cap;
-	u8 pipe_idx = 0;
+	u8 pipe_idx = 0, fail_cnt = 0;
 
-	for (pipe_idx = 0; pipe_idx < hal_spec->max_bulkin_num ; pipe_idx++) {
+	if (phl_info->hci->usb_in_rx_start != true) {
+		phl_info->hci->usb_in_rx_start= true;
+		for (pipe_idx = 0; pipe_idx < hal_spec->max_bulkin_num ; pipe_idx++) {
 
-		/* Send the bulk IN request down.	*/
-		if( pipe_idx==WLAN_IN_MPDU_PIPE_IDX )
-		{
-			while(rx_buf_ring->busy_rxbuf_list.cnt < (int)(bus_cap->in_token_num))
+			/* Send the bulk IN request down. */
+			if (pipe_idx == WLAN_IN_MPDU_PIPE_IDX )
 			{
-				PHL_TRACE(COMP_PHL_RECV, _PHL_DEBUG_, "[0] %s:: rx_buf_ring->busy_rxbuf_list.cnt =%d\n",
-							__FUNCTION__, rx_buf_ring->busy_rxbuf_list.cnt );
-
-				pstatus = _phl_in_token_usb(phl_info, pipe_idx);
-
-				if(pstatus != RTW_PHL_STATUS_SUCCESS)
+				while (rx_buf_ring->busy_rxbuf_list.cnt < (int)(bus_cap->in_token_num))
 				{
+					PHL_TRACE(COMP_PHL_RECV, _PHL_DEBUG_, "[0] %s:: rx_buf_ring->busy_rxbuf_list.cnt =%d\n",
+					          __func__, rx_buf_ring->busy_rxbuf_list.cnt );
+
+					pstatus = _phl_in_token_usb(phl_info, pipe_idx);
+
+					if (pstatus == RTW_PHL_STATUS_RESOURCE) {
+						break;
+					} else if (pstatus != RTW_PHL_STATUS_SUCCESS) {
+						fail_cnt++;
+						if (fail_cnt > bus_cap->in_token_num)
+							break;
+					}
+				}
+			}
+			else if ( hci_info->usb_support_interrupt && pipe_idx == WLAN_IN_INTERRUPT_PIPE_IDX )
+			{
+				pstatus = _phl_in_token_usb(phl_info, pipe_idx);
+				if (pstatus != RTW_PHL_STATUS_SUCCESS)
+				{
+					pstatus = RTW_PHL_STATUS_FAILURE;
 					break;
 				}
 			}
 		}
-		/*else if( pipe_idx==WLAN_IN_INTERRUPT_PIPE_IDX )
-		{
-			if(_phl_in_token_usb(phl_info, pipe_idx) != RTW_PHL_STATUS_SUCCESS)
-			{
-				pstatus = RTW_PHL_STATUS_FAILURE;
-				break;
-			}
-		}*/
+		phl_info->hci->usb_in_rx_start= false;
 	}
-
 	return pstatus;
 }
 
@@ -349,8 +372,7 @@ static void _phl_rx_deferred_in_token(void *phl)
 	struct hci_info_t *hci_info = (struct hci_info_t *)phl_info->hci;
 	struct rtw_rx_buf_ring *rx_buf_ring = (struct rtw_rx_buf_ring *)hci_info->rxbuf_pool;
 
-	PHL_TRACE(COMP_PHL_DBG, _PHL_WARNING_, "[5] %s:: ==>\n",
-							__FUNCTION__);
+	PHL_TRACE(COMP_PHL_DBG, _PHL_WARNING_, "[5] %s:: ==>\n", __func__);
 
 	/* [1] Check driver/nic state*/
 
@@ -376,6 +398,10 @@ _phl_rx_init_usb(struct phl_info_t *phl_info, u8 pipe_cnt, u32 num_rxbuf)
 	struct rtw_rx_buf *rx_buf = NULL;
 	struct rtw_hal_com_t *hal_com = rtw_hal_get_halcom(phl_info->hal);
 	struct bus_cap_t *bus_cap = &hal_com->bus_cap;
+	struct hci_info_t *hci_info = (struct hci_info_t *)phl_info->hci;
+	u8 support_interrupt = hci_info->usb_support_interrupt;
+	u32 num_int_rxbuf = 0;
+	struct phl_queue* sel_idle_list = NULL;
 
 	u16 i = 0;
 	FUNCIN_WSTS(pstatus);
@@ -383,55 +409,68 @@ _phl_rx_init_usb(struct phl_info_t *phl_info, u8 pipe_cnt, u32 num_rxbuf)
 	rx_buf_ring = _os_mem_alloc(drv, sizeof(struct rtw_rx_buf_ring));
 	if (NULL != rx_buf_ring) {
 
-		/* Initialize list for available rtw_rx_buf objects.	*/
-		_os_spinlock_init(drv, &rx_buf_ring->idle_rxbuf_list.lock);
-		_os_spinlock_init(drv, &rx_buf_ring->busy_rxbuf_list.lock);
-		_os_spinlock_init(drv, &rx_buf_ring->pend_rxbuf_list.lock);
-		INIT_LIST_HEAD(&rx_buf_ring->idle_rxbuf_list.queue);
-		INIT_LIST_HEAD(&rx_buf_ring->busy_rxbuf_list.queue);
-		INIT_LIST_HEAD(&rx_buf_ring->pend_rxbuf_list.queue);
-		rx_buf_ring->idle_rxbuf_list.cnt = 0;
-		rx_buf_ring->busy_rxbuf_list.cnt = 0;
-		rx_buf_ring->pend_rxbuf_list.cnt = 0;
+		phl_info->hci->rxbuf_pool = (u8 *)rx_buf_ring;
 
-		rx_buf_ring->block_cnt_alloc = pipe_cnt * num_rxbuf;
+		/* Initialize list for available rtw_rx_buf objects.	*/
+		pq_init(drv, &rx_buf_ring->idle_rxbuf_list);
+		pq_init(drv, &rx_buf_ring->busy_rxbuf_list);
+		pq_init(drv, &rx_buf_ring->pend_rxbuf_list);
+
+		_os_init_timer(drv, &rx_buf_ring->deferred_timer,
+		               _phl_rx_deferred_in_token, phl_info, "phl_rx_deferred_timer");
+
+		if (support_interrupt) {
+			num_int_rxbuf = bus_cap->rx_int_buf_num;
+			_os_spinlock_init(drv, &rx_buf_ring->idle_int_rxbuf_list.lock);
+			INIT_LIST_HEAD(&rx_buf_ring->idle_int_rxbuf_list.queue);
+			rx_buf_ring->idle_int_rxbuf_list.cnt = 0;
+		}
+
+		rx_buf_ring->block_cnt_alloc = num_rxbuf + num_int_rxbuf;
+		/*PHL_INFO("%s, rx_buf_ring->block_cnt_alloc=%d, num_rxbuf=%d, num_int_rxbuf=%d\n", __func__, rx_buf_ring->block_cnt_alloc, num_rxbuf, num_int_rxbuf);*/
 
 		/* Allocate memory for rtw_rx_buf objects.	*/
 		rx_buf_ring->total_blocks_size = sizeof(struct rtw_rx_buf) * rx_buf_ring->block_cnt_alloc;
 
 		rx_buf_ring->rxbufblock= _os_mem_alloc(drv, rx_buf_ring->total_blocks_size);
 		if (NULL != rx_buf_ring->rxbufblock) {
+			pstatus = RTW_PHL_STATUS_SUCCESS;
+
 			/* Initialize all rtw_rx_buf objects allocated and	*/
 			/* put them into the list for further use.			*/
 			rx_buf = (struct rtw_rx_buf*)rx_buf_ring->rxbufblock;
 			for (i = 0; i < rx_buf_ring->block_cnt_alloc; i++) {
 				/* MAX_RECEIVE_BUFFER_SIZE = 512(RX_AGG_BLOCK_SIZE) * 60(MAX_RX_AGG_BLKCNT)	*/
-				rx_buf->buf_len = bus_cap->rx_buf_size;
-				rx_buf->buffer = _os_kmem_alloc(drv, rx_buf->buf_len);
-				if (NULL == rx_buf->buffer) {
+				if (i < num_rxbuf) {
+					sel_idle_list = &rx_buf_ring->idle_rxbuf_list;
+					rx_buf->buf_len = bus_cap->rx_buf_size;
+
+				} else if (i >= num_rxbuf && i < num_rxbuf + num_int_rxbuf) {
+					sel_idle_list = &rx_buf_ring->idle_int_rxbuf_list;
+					rx_buf->buf_len = bus_cap->rx_int_buf_size;
+				}
+				rx_buf->alloc_buf_addr = _os_kmem_alloc(drv, rx_buf->buf_len + bus_cap->rx_buf_align_size);
+				if (NULL == rx_buf->alloc_buf_addr) {
 					pstatus = RTW_PHL_STATUS_FAILURE;
 					break;
+				}
+
+				if (bus_cap->rx_buf_align_size) {
+					rx_buf->buffer = (u8 *)_ALIGN((size_t)rx_buf->alloc_buf_addr,
+								      (size_t)bus_cap->rx_buf_align_size);
+				} else {
+					rx_buf->buffer = rx_buf->alloc_buf_addr;
 				}
 
 				INIT_LIST_HEAD(&rx_buf->list);
 				_os_spinlock_init(drv, &rx_buf->lock);
 				rx_buf->pktcnt = 0;
 
-				pq_push(drv, &rx_buf_ring->idle_rxbuf_list, &rx_buf->list, _tail, _irq);
-
+				pq_push(drv, sel_idle_list, &rx_buf->list, _tail, _irq);
 				rx_buf++;
-		}
-
-			_os_init_timer(drv, &rx_buf_ring->deferred_timer,
-					_phl_rx_deferred_in_token, phl_info, "phl_rx_deferred_timer");
-
-		pstatus = RTW_PHL_STATUS_SUCCESS;
+			}
 		}
 	}
-
-
-	if (RTW_PHL_STATUS_SUCCESS == pstatus)
-		phl_info->hci->rxbuf_pool = (u8 *)rx_buf_ring;
 
 	FUNCOUT_WSTS(pstatus);
 
@@ -444,6 +483,8 @@ static void _phl_rx_deinit_usb(struct phl_info_t *phl_info)
 	struct hci_info_t *hci_info = (struct hci_info_t *)phl_info->hci;
 	struct rtw_rx_buf_ring *rx_buf_ring = (struct rtw_rx_buf_ring *)hci_info->rxbuf_pool;
 	struct rtw_rx_buf *rx_buf = NULL;
+	struct rtw_hal_com_t *hal_com = rtw_hal_get_halcom(phl_info->hal);
+	struct bus_cap_t *bus_cap = &hal_com->bus_cap;
 	u32 total_cnt = 0;
 	//_os_list* obj = NULL;
 	u16 i = 0;
@@ -501,16 +542,24 @@ static void _phl_rx_deinit_usb(struct phl_info_t *phl_info)
 		//
 		// Free of this rtw_usb_rx_buf->buffer object.
 		//
-		_os_spinlock_free(drv, &rx_buf->lock);
-		_os_kmem_free(drv, rx_buf->buffer, rx_buf->buf_len);
+		if (rx_buf->alloc_buf_addr) {
+			_os_spinlock_free(drv, &rx_buf->lock);
+			_os_kmem_free(drv, rx_buf->alloc_buf_addr,
+				      rx_buf->buf_len + bus_cap->rx_buf_align_size);
+			rx_buf->alloc_buf_addr = NULL;
+		}
 		rx_buf++;
 	}
 #endif
+	pq_deinit(drv, &rx_buf_ring->idle_rxbuf_list);
+	pq_deinit(drv, &rx_buf_ring->busy_rxbuf_list);
+	pq_deinit(drv, &rx_buf_ring->pend_rxbuf_list);
 
 	/* Free memory block allocated for phl_usb_buf objects.	*/
 	_os_mem_free(drv, rx_buf_ring->rxbufblock, rx_buf_ring->total_blocks_size);
 
 	_os_mem_free(drv, rx_buf_ring, sizeof(struct rtw_rx_buf_ring));
+	hci_info->rxbuf_pool = NULL;
 }
 
 void phl_rx_handle_normal(struct phl_info_t *phl_info,
@@ -579,9 +628,10 @@ _phl_prepare_tx_usb(struct phl_info_t *phl_info, struct rtw_xmit_req *tx_req,
 	u8 dummy = 0;
 	u8 i = 0;
 
+	if (tx_req == NULL)
+		return pstatus;
+
 	do {
-		if (NULL == tx_req)
-			break;
 
 		/*tx_req->mdata.usb_pkt_ofst = 1;*/
 
@@ -646,7 +696,13 @@ static enum rtw_phl_status phl_tx_usb(struct phl_info_t *phl_info)
 
 void phl_trx_deinit_usb(struct phl_info_t *phl_info)
 {
+	void *drv = phl_to_drvpriv(phl_info);
+	struct hci_info_t *hci = phl_info->hci;
+
 	FUNCIN();
+
+	os_disable_usb_out_pipes(phl_to_drvpriv(phl_info));
+	os_disable_usb_in_pipes(phl_to_drvpriv(phl_info));
 
 	os_out_token_free(phl_to_drvpriv(phl_info));
 	_phl_free_txbuf_pool_usb(phl_info, phl_info->hci->txbuf_pool);
@@ -754,6 +810,18 @@ void phl_trx_reset_usb(struct phl_info_t *phl_info, u8 type)
 		phl_reset_rx_usb(phl_info);
 		phl_reset_rx_stats(phl_stats);
 	}
+
+	if (PHL_CTRL_IN_PIPE & type) {
+		os_enable_usb_in_pipes(phl_to_drvpriv(phl_info));
+	}
+
+	if (PHL_CTRL_OUT_PIPE & type) {
+		os_enable_usb_out_pipes(phl_to_drvpriv(phl_info));
+	}
+}
+
+static void phl_tx_reset_hwband_usb(struct phl_info_t *phl_info, enum phl_band_idx band_idx)
+{
 }
 
 static void _phl_tx_flow_ctrl_usb(struct phl_info_t *phl_info,
@@ -767,7 +835,7 @@ static void _phl_tx_flow_ctrl_usb(struct phl_info_t *phl_info,
 
 	if (reso) {
 		if (target_ring) {
-			if (target_ring->ring_ptr->tid == MGMT_TID)
+			if (target_ring->ring_ptr->cat == RTW_PHL_RING_CAT_MGNT)
 				*tx_buf = dequeue_usb_buf(phl_info, &reso->mgmt_txbuf_list);
 			else
 				*tx_buf = dequeue_usb_buf(phl_info, &reso->idle_txbuf_list);
@@ -777,7 +845,7 @@ static void _phl_tx_flow_ctrl_usb(struct phl_info_t *phl_info,
 	}
 
 	if (*tx_buf == NULL && target_ring != NULL) {
-		if (target_ring->ring_ptr->tid == MGMT_TID)
+		if (target_ring->ring_ptr->cat == RTW_PHL_RING_CAT_MGNT)
 			PHL_WARN("%s, mgnt tx_buf NULL free ring sts\n", __func__);
 		else
 			PHL_DBG("%s, idle tx_buf NULL free ring sts\n", __func__);
@@ -786,9 +854,11 @@ static void _phl_tx_flow_ctrl_usb(struct phl_info_t *phl_info,
 	}
 }
 
-static void _usb_tx_agg_preprocess(struct phl_info_t *phl_info, u8 max_bulkout_wd_num,
-			   struct phl_ring_status *ring_sts,
-			   u32 *last_idx, u8 *add_dummy)
+static void _usb_tx_agg_preprocess(struct phl_info_t *phl_info,
+				   u8 max_bulkout_wd_num,
+				   u16 max_dma_txagg_msk,
+				   struct phl_ring_status *ring_sts,
+				   u32 *last_idx, u8 *add_dummy)
 {
 	struct rtw_phl_tx_ring *tring = ring_sts->ring_ptr;
 	struct rtw_xmit_req *tx_req = NULL;
@@ -819,10 +889,7 @@ static void _usb_tx_agg_preprocess(struct phl_info_t *phl_info, u8 max_bulkout_w
 			*last_idx = (cnt) ? (cnt - 1) : (IDX_NONE);
 			break;
 		}
-		if (tx_req->mdata.wdinfo_en ==1)
-			wd_len = MAX_WD_LEN;
-		else
-			wd_len = MAX_WD_BODY_LEN;
+		wd_len = rtw_hal_get_wd_len(phl_info->hal, tx_req);
 		if (( _ALIGN(wd_len + tx_req->total_len,
 		    8) + tx_len) > bus_cap->tx_buf_size - PKT_OFFSET_DUMMY) {
 			*last_idx = (cnt) ? (cnt - 1) : (IDX_NONE);
@@ -855,7 +922,8 @@ static void _usb_tx_agg_preprocess(struct phl_info_t *phl_info, u8 max_bulkout_w
 			trasc_idx = (u8)(tx_len >> shift_offset);
 			trasc_agg_cnt = 0;
 		}
-		if (trasc_agg_cnt >= max_bulkout_wd_num) {
+		if (trasc_agg_cnt >= max_bulkout_wd_num ||
+		    (cnt + 1) == max_dma_txagg_msk) {
 			*last_idx = cnt;
 			break;
 		}
@@ -891,21 +959,24 @@ static enum rtw_phl_status _phl_handle_xmit_ring_usb(struct phl_info_t *phl_info
 	u8 agg_cnt = 0;
 	u8 dma_ch = tring->dma_ch;
 	enum rtw_packet_type type = 0;
-	u8 is_dummy = false;
 	u8 trasc_agg_cnt = 0;
 	u32 wd_len = 0;
 	u32 bulk_size = phl_info->hci->usb_bulkout_size;
+#ifdef CONFIG_PHL_USB_TX_PADDING_CHK
+	u8 is_dummy = false;
 	u32 last_idx = IDX_NONE;
+#endif
 #ifdef CONFIG_PHL_USB_TX_AGGREGATION
 	u8 agg_en = 1;
 	u8 trasc_idx = 0;
 	u8 shift_offset = GET_SHIFT_OFFSET(bulk_size);
 	u8 max_bulkout_wd_num = rtw_hal_get_max_bulkout_wd_num(phl_info->hal);
+	u16 max_dma_txagg_msk = rtw_hal_get_max_dma_txagg_msk(phl_info->hal);
 #endif
 	void *drv_priv = phl_to_drvpriv(phl_info);
 #ifdef CONFIG_PHL_USB_TX_PADDING_CHK
-	_usb_tx_agg_preprocess(phl_info, max_bulkout_wd_num, ring_sts,
-				&last_idx, &is_dummy);
+	_usb_tx_agg_preprocess(phl_info, max_bulkout_wd_num, max_dma_txagg_msk,
+			       ring_sts, &last_idx, &is_dummy);
 #endif
 	tx_buf_data = tx_buf->buffer;
 	while (0 != ring_sts->req_busy) {
@@ -917,24 +988,22 @@ static enum rtw_phl_status _phl_handle_xmit_ring_usb(struct phl_info_t *phl_info
 			break;
 		}
 
-		tx_req->mdata.macid = ring_sts->macid;
 		tx_req->mdata.band = ring_sts->band;
 		tx_req->mdata.wmm = ring_sts->wmm;
 		tx_req->mdata.hal_port = ring_sts->port;
 		/*tx_req->mdata.mbssid = ring_sts->mbssid;*/
-		tx_req->mdata.tid = tring->tid;
 		tx_req->mdata.dma_ch = tring->dma_ch;
 		tx_req->mdata.pktlen = (u16)tx_req->total_len;
+#ifdef RTW_WKARD_WPOFFSET
+		tx_req->mdata.wp_offset = 2;
+#endif
 		type = tx_req->mdata.type;
-		if (tx_req->mdata.wdinfo_en == 1)
-			wd_len = MAX_WD_LEN;
-		else
-			wd_len = MAX_WD_BODY_LEN;
+		wd_len = rtw_hal_get_wd_len(phl_info->hal, tx_req);
+#ifdef CONFIG_PHL_USB_TX_PADDING_CHK
 		if(last_idx != IDX_NONE && agg_cnt == (u8)last_idx && is_dummy) {
 			tx_req->mdata.usb_pkt_ofst = 1;
 			wd_len += PKT_OFFSET_DUMMY;
 		}
-#ifdef CONFIG_PHL_USB_TX_PADDING_CHK
 		if (_ALIGN(wd_len + tx_req->total_len,
 		    8) + tx_len > (bus_cap->tx_buf_size - PKT_OFFSET_DUMMY))
 			break;
@@ -1000,6 +1069,11 @@ static enum rtw_phl_status _phl_handle_xmit_ring_usb(struct phl_info_t *phl_info
 				__func__, max_bulkout_wd_num);*/
 				break;
 			}
+			if (agg_cnt == max_dma_txagg_msk) {
+				/* PHL_PRINT("%s, hit dma txagg limit(%d), break agg\n",
+					  __func__, max_dma_txagg_msk); */
+				break;
+			}
 #else
 			if (agg_cnt == 1)
 				break;
@@ -1038,23 +1112,21 @@ static enum rtw_phl_status _phl_handle_xmit_ring_usb(struct phl_info_t *phl_info
 #endif
 		bulk_id = rtw_hal_get_bulkout_id(phl_info->hal,
 			dma_ch, 0);
-		pstatus = os_usb_tx(phl_to_drvpriv(phl_info),
+		pstatus = os_usb_tx(drv_priv,
 			(u8 *)tx_buf, bulk_id, tx_len, tx_buf_data);
 	}
 
 	if (pstatus != RTW_PHL_STATUS_SUCCESS) {
 		PHL_TRACE(COMP_PHL_DBG, _PHL_WARNING_, "[WARNING] phl_tx fail!\n");
-		if (tx_buf) {
-			tx_buf_res =
-				(struct phl_usb_tx_buf_resource *)phl_info->hci->txbuf_pool;
+		tx_buf_res =
+			(struct phl_usb_tx_buf_resource *)phl_info->hci->txbuf_pool;
 
-			if (tring->tid == MGMT_TID)
-				pstatus = enqueue_usb_buf(phl_info,
-					&tx_buf_res->mgmt_txbuf_list, tx_buf, _tail);
-			else
-				pstatus = enqueue_usb_buf(phl_info,
-					&tx_buf_res->idle_txbuf_list, tx_buf, _tail);
-		}
+		if (tring->cat == RTW_PHL_RING_CAT_MGNT)
+			pstatus = enqueue_usb_buf(phl_info,
+			                &tx_buf_res->mgmt_txbuf_list, tx_buf, _tail);
+		else
+			pstatus = enqueue_usb_buf(phl_info,
+			                &tx_buf_res->idle_txbuf_list, tx_buf, _tail);
 	}
 
 	phl_release_ring_sts(phl_info, ring_sts);
@@ -1104,13 +1176,11 @@ static void _phl_tx_callback_usb(void *context)
 			list_del(&ring_sts->list);
 			_phl_tx_flow_ctrl_usb(phl_info, ring_sts, &tx_buf);
 
-			if (ring_sts && tx_buf)
-				pstatus =  _phl_handle_xmit_ring_usb(phl_info,
-								     ring_sts,
-								     tx_buf);
-			else if (!ring_sts)
-				PHL_DBG("%s, ring_sts NULL\n", __func__);
-			else if (!tx_buf)
+			if (tx_buf)
+				pstatus = _phl_handle_xmit_ring_usb(phl_info,
+				                                    ring_sts,
+				                                    tx_buf);
+			else
 				PHL_DBG("%s, tx_buf NULL\n", __func__);
 		}
 
@@ -1171,7 +1241,11 @@ enum rtw_phl_status phl_trx_init_usb(struct phl_info_t *phl_info)
 	struct rtw_phl_handler *rx_handler = &phl_info->phl_rx_handler;
 	struct rtw_hal_com_t *hal_com = rtw_hal_get_halcom(phl_info->hal);
 	struct bus_cap_t *bus_cap = &hal_com->bus_cap;
+	struct hci_info_t *hci = phl_info->hci;
 	void *drv_priv = phl_to_drvpriv(phl_info);
+#ifdef USB_XMIT_THREAD_MODE
+	_os_thread *thread = NULL;
+#endif /* USB_XMIT_THREAD_MODE */
 
 	FUNCIN_WSTS(pstatus);
 	PHL_INFO("%s, bus_cap->tx_buf_num(%d)\n", __func__, bus_cap->tx_buf_num);
@@ -1183,7 +1257,11 @@ enum rtw_phl_status phl_trx_init_usb(struct phl_info_t *phl_info)
 	PHL_INFO("%s, bus_cap->rx_buf_size(%d)\n", __func__, bus_cap->rx_buf_size);
 	PHL_INFO("%s, bus_cap->in_token_num(%d)\n", __func__, bus_cap->in_token_num);
 	do {
+#ifndef USB_XMIT_THREAD_MODE
 		tx_handler->type = RTW_PHL_HANDLER_PRIO_HIGH; /* tasklet */
+#else
+		tx_handler->type = RTW_PHL_HANDLER_PRIO_NORMAL;
+#endif
 		tx_handler->callback = _phl_tx_callback_usb;
 		tx_handler->context = phl_info;
 		tx_handler->drv_priv = drv_priv;
@@ -1200,7 +1278,6 @@ enum rtw_phl_status phl_trx_init_usb(struct phl_info_t *phl_info)
 			break;
 
 		/* usb tx sw resource */
-		/*YiWei_to need use correct txbuf num and txbuf size*/
 		pstatus = _phl_alloc_txbuf_pool_usb(phl_info);
 		if (RTW_PHL_STATUS_SUCCESS != pstatus)
 			break;
@@ -1212,17 +1289,30 @@ enum rtw_phl_status phl_trx_init_usb(struct phl_info_t *phl_info)
 
 		/* allocate platform in token */
 		/* OS maintain in token (number/init/free)*/
-		pstatus = os_in_token_alloc(phl_to_drvpriv(phl_info));
+		pstatus = os_in_token_alloc(drv_priv);
 		if (RTW_PHL_STATUS_SUCCESS != pstatus)
 			break;
 
-		pstatus = os_out_token_alloc(phl_to_drvpriv(phl_info));
+		pstatus = os_out_token_alloc(drv_priv);
 		if (RTW_PHL_STATUS_SUCCESS != pstatus)
 			break;
 
-		os_enable_usb_out_pipes(phl_to_drvpriv(phl_info));
-		os_enable_usb_in_pipes(phl_to_drvpriv(phl_info));
+		os_enable_usb_out_pipes(drv_priv);
+		os_enable_usb_in_pipes(drv_priv);
 
+#ifdef USB_XMIT_THREAD_MODE
+		if (tx_handler->os_handler.hdlr_created == false) {
+			thread = &tx_handler->os_handler.u.thread;
+			if (RTW_PHL_STATUS_SUCCESS == _os_thread_init(drv_priv, thread, _phl_thread_handler,
+								      thread, tx_handler->cb_name)) {
+				PHL_TRACE(COMP_PHL_DBG, _PHL_INFO_, "%s Init thread success\n", __func__);
+				tx_handler->os_handler.hdlr_created = true;
+				_os_thread_schedule(drv_priv, thread);
+			} else {
+				PHL_TRACE(COMP_PHL_DBG, _PHL_ERR_, "%s thread init _phl_thread_handler fail.\n", __func__);
+			}
+		}
+#endif /* USB_XMIT_THREAD_MODE */
 	} while (false);
 
 	if (RTW_PHL_STATUS_SUCCESS != pstatus)
@@ -1232,14 +1322,130 @@ enum rtw_phl_status phl_trx_init_usb(struct phl_info_t *phl_info)
 	return pstatus;
 }
 
+#ifdef CONFIG_PHL_USB_RX_AGGREGATION
+static enum rtw_phl_status
+_rtw_phl_cmd_usb_rx_agg_cfg(struct phl_info_t *phl_info,
+			    enum phl_usb_rx_agg_mode mode,
+			    u8 agg_mode,
+			    u8 drv_define,
+			    u8 timeout,
+			    u8 size,
+			    u8 pkt_num)
+{
+	enum rtw_phl_status psts = RTW_PHL_STATUS_SUCCESS;
+	enum rtw_hal_status hsts;
+
+	hsts = rtw_hal_usb_rx_agg_cfg(phl_info->hal, mode, agg_mode, drv_define,
+				      timeout, size, pkt_num);
+	if (hsts != RTW_HAL_STATUS_SUCCESS)
+		psts = RTW_PHL_STATUS_FAILURE;
+
+	return psts;
+}
+
+/* agg_mode refs to enum mac_ax_rx_agg_mode */
+struct cmd_usb_rx_agg_param {
+	enum phl_usb_rx_agg_mode mode;
+	u8 agg_mode;
+	u8 drv_define;
+	u8 timeout;
+	u8 size;
+	u8 pkt_num;
+};
+
+static void _phl_cmd_usb_rx_agg_cfg_done(void *drv_priv,
+					 u8 *cmd,
+					 u32 cmd_len,
+					 enum rtw_phl_status status)
+{
+	if (cmd)
+		_os_kmem_free(drv_priv, cmd, cmd_len);
+}
+
+enum rtw_phl_status
+phl_cmd_usb_rx_agg_cfg_hdl(struct phl_info_t *phl_info, u8 *cmd)
+{
+	struct cmd_usb_rx_agg_param *param = (struct cmd_usb_rx_agg_param *) cmd;
+
+	return _rtw_phl_cmd_usb_rx_agg_cfg(phl_info, param->mode,
+					   param->agg_mode, param->drv_define,
+					   param->timeout, param->size,
+					   param->pkt_num);
+}
+
+enum rtw_phl_status
+rtw_phl_cmd_usb_rx_agg_cfg(void *phl,
+			   enum phl_usb_rx_agg_mode mode,
+			   u8 agg_mode,
+			   u8 drv_define,
+			   u8 timeout,
+			   u8 size,
+			   u8 pkt_num,
+			   enum phl_cmd_type cmd_type,
+			   u32 cmd_timeout)
+{
+	struct phl_info_t *phl_info = (struct phl_info_t *)phl;
+	void *drv = phl_to_drvpriv(phl_info);
+	enum rtw_phl_status psts = RTW_PHL_STATUS_FAILURE;
+	struct cmd_usb_rx_agg_param *param = NULL;
+	u32 param_len = 0;
+
+	if (cmd_type == PHL_CMD_DIRECTLY) {
+		psts = _rtw_phl_cmd_usb_rx_agg_cfg(phl_info,
+						   mode,
+						   agg_mode,
+						   drv_define,
+						   timeout,
+						   size,
+						   pkt_num);
+		goto _exit;
+	}
+
+	param_len =sizeof(struct cmd_usb_rx_agg_param);
+	param = _os_kmem_alloc(drv, param_len);
+	if (param == NULL) {
+		PHL_ERR("%s: alloc param failed!\n", __func__);
+		psts = RTW_PHL_STATUS_RESOURCE;
+		goto _exit;
+	}
+
+	_os_mem_set(drv, param, 0, param_len);
+	param->mode = mode;
+	param->agg_mode = agg_mode;
+	param->drv_define = drv_define;
+	param->timeout = timeout;
+	param->size = size;
+	param->pkt_num = pkt_num;
+
+	psts = phl_cmd_enqueue(phl_info,
+			       HW_BAND_0,
+			       MSG_EVT_USB_RX_AGG_CFG,
+			       (u8 *)param,
+			       param_len,
+			       _phl_cmd_usb_rx_agg_cfg_done,
+			       cmd_type,
+			       cmd_timeout);
+	if (is_cmd_failure(psts)) {
+		/* Send cmd success, but wait cmd fail */
+		psts = RTW_PHL_STATUS_FAILURE;
+	} else if (psts != RTW_PHL_STATUS_SUCCESS) {
+		/* Send cmd fail */
+		psts = RTW_PHL_STATUS_FAILURE;
+		_os_kmem_free(drv, param, param_len);
+	}
+
+_exit:
+	return psts;
+}
+#endif
+
 /* phl_trx_start_usb */
 enum rtw_phl_status phl_trx_cfg_usb(struct phl_info_t *phl_info)
 {
 	enum rtw_phl_status pstatus = RTW_PHL_STATUS_SUCCESS;
 
 #ifdef CONFIG_PHL_USB_RX_AGGREGATION
-	rtw_hal_usb_rx_agg_cfg(phl_info->hal, PHL_RX_AGG_DEFAULT,
-		0, 0, 0, 0, 0);
+	rtw_hal_usb_rx_agg_init(phl_info->phl_com, phl_info->hal);
 #endif
 	os_enable_usb_out_pipes(phl_to_drvpriv(phl_info));
 	os_enable_usb_in_pipes(phl_to_drvpriv(phl_info));
@@ -1274,7 +1480,7 @@ phl_pend_rxbuf_usb(struct phl_info_t *phl_info, void *rxobj, u32 inbuf_len, u8 s
 		pq_del_node(drv, &rx_buf_ring->busy_rxbuf_list, &rx_buf->list, _irq);
 	}
 	else
-		PHL_ASSERT("[2] %s:: [Notice] rxbuf isn't in busy_rxbuf_list\n", __FUNCTION__);
+		PHL_ASSERT("[2] %s:: [Notice] rxbuf isn't in busy_rxbuf_list\n", __func__);
 
 	if(status_code == RTW_PHL_STATUS_SUCCESS)
 	{
@@ -1284,8 +1490,7 @@ phl_pend_rxbuf_usb(struct phl_info_t *phl_info, void *rxobj, u32 inbuf_len, u8 s
 	}
 	else
 	{
-		PHL_TRACE(COMP_PHL_RECV, _PHL_INFO_, "[2] %s:: [Error] Complete\n",
-											__FUNCTION__);
+		PHL_TRACE(COMP_PHL_RECV, _PHL_INFO_, "[2] %s:: [Error] Complete\n", __func__);
 		phl_release_rxbuf_usb(phl_info, rx_buf, 0, RTW_RX_TYPE_MAX); // usb doesn't care rtw_rx_type
 	}
 
@@ -1296,11 +1501,14 @@ phl_pend_rxbuf_usb(struct phl_info_t *phl_info, void *rxobj, u32 inbuf_len, u8 s
 		return RTW_PHL_STATUS_SUCCESS;
 #endif
 
-	if(status_code == RTW_PHL_STATUS_SUCCESS)
+	if (phl_info->hci->usb_in_rx_start == true)
+		return RTW_PHL_STATUS_SUCCESS;
+
+	if(status_code == RTW_PHL_STATUS_SUCCESS || status_code == RTW_PHL_STATUS_INVALID_PARAM)
 	{
-		if(_phl_in_token_usb(phl_info, rx_buf->pipe_idx) == RTW_PHL_STATUS_RESOURCE)
+		if(_phl_in_token_usb(phl_info, rx_buf->pipe_idx) != RTW_PHL_STATUS_SUCCESS)
 		{
-			PHL_TRACE(COMP_PHL_DBG, _PHL_WARNING_, "[5] RTW_PHL_STATUS_RESOURCE :: idle_rxbuf_list or in_token empty \n");
+			PHL_TRACE(COMP_PHL_DBG, _PHL_WARNING_, "[5] _phl_in_token_usb failed:: idle_rxbuf empty or intoken send failed \n");
 
 			_os_set_timer(drv, &rx_buf_ring->deferred_timer, 10);
 		}
@@ -1319,6 +1527,7 @@ phl_release_rxbuf_usb(struct phl_info_t *phl_info, void *r, u8 ch, enum rtw_rx_t
 	enum rtw_phl_status pstatus = RTW_PHL_STATUS_FAILURE;
 	_os_spinlockfg sp_flags;
 	bool	ret = false;
+	struct phl_queue* sel_idle_list = NULL;
 
 	rx_buf_ring = (struct rtw_rx_buf_ring *)hci_info->rxbuf_pool;
 	if (rx_buf_ring != NULL && rx_buf != NULL) {
@@ -1333,11 +1542,16 @@ phl_release_rxbuf_usb(struct phl_info_t *phl_info, void *r, u8 ch, enum rtw_rx_t
 			INIT_LIST_HEAD(&rx_buf->list);
 			_os_spinunlock(drv, &rx_buf->lock, _irq, &sp_flags);
 
-			ret = pq_push(drv, &rx_buf_ring->idle_rxbuf_list, &rx_buf->list, _tail, _irq);
+			if (rx_buf->pipe_idx == WLAN_IN_MPDU_PIPE_IDX)
+				sel_idle_list = &rx_buf_ring->idle_rxbuf_list;
+			else if (rx_buf->pipe_idx == WLAN_IN_INTERRUPT_PIPE_IDX)
+				sel_idle_list = &rx_buf_ring->idle_int_rxbuf_list;
+
+			ret = pq_push(drv, sel_idle_list, &rx_buf->list, _tail, _irq);
 			if(ret)
 				pstatus = RTW_PHL_STATUS_SUCCESS;
 
-			PHL_TRACE(COMP_PHL_RECV, _PHL_DEBUG_, "[4] %s:: [%p] idle_rxbuf_list.cnt=%d\n", __FUNCTION__, rx_buf, rx_buf_ring->idle_rxbuf_list.cnt);
+			PHL_TRACE(COMP_PHL_RECV, _PHL_DEBUG_, "[4] %s:: [%p] idle_rxbuf_list.cnt=%d\n", __FUNCTION__, rx_buf, sel_idle_list->cnt);
 		}
 		else
 		{
@@ -1359,7 +1573,8 @@ struct rtw_phl_rx_pkt *phl_get_single_rx(struct phl_info_t *phl_info,
 	void *drv = phl_to_drvpriv(phl_info);
 	struct rtw_phl_rx_pkt *phl_rx = NULL, *phl_rxhead = NULL;
 
-	u8 *pkt_buf, *pkt_buf_end, ref_cnt = 0;
+	u8 *pkt_buf, *pkt_buf_end;
+	u16 ref_cnt = 0;
 	u8 *netbuf = NULL;
 	s32 transfer_len = 0;
 	s32 pkt_offset = 0, align_offset = 0;
@@ -1367,7 +1582,10 @@ struct rtw_phl_rx_pkt *phl_get_single_rx(struct phl_info_t *phl_info,
 	_os_spinlockfg sp_flags;
 	u8 mfrag = 0, frag_num = 0;
 	u16 netbuf_len = 0;
-
+#ifdef CONFIG_PHL_CSUM_OFFLOAD_RX
+	struct hal_info_t *hal = (struct hal_info_t *)phl_info->hal;
+	u8 status;
+#endif
 	//initialize for compiler
 	pkt_buf = rx_buf->buffer;
 	pkt_buf_end = rx_buf->buffer + rx_buf->transfer_len;
@@ -1409,6 +1627,17 @@ struct rtw_phl_rx_pkt *phl_get_single_rx(struct phl_info_t *phl_info,
 #else
 		align_offset = pkt_offset;
 #endif
+
+#ifdef CONFIG_PHL_CSUM_OFFLOAD_RX
+		if (phl_rx->r.mdata.chksum_ofld_en) {
+			status = *(pkt_buf + align_offset);
+			if (rtw_hal_chk_rx_tcpip_chksum_ofd(hal, &phl_rx->r.mdata, status))
+				PHL_TRACE(COMP_PHL_RECV,_PHL_DEBUG_,
+					  "[3] %s:: checksum offload failed\n", __FUNCTION__);
+			/* add 8 bytes for checksum result */
+			align_offset += 8;
+		}
+#endif  /* CONFIG_PHL_CSUM_OFFLOAD_RX */
 
 		if(phl_rxhead == NULL)
 		{
@@ -1506,6 +1735,7 @@ void rtw_phl_post_in_complete(void *phl, void *rxobj, u32 inbuf_len, u8 status_c
 		rtw_phl_start_rx_process(phl);
 }
 
+
 void _phl_rx_handle_wp_report_usb(struct phl_info_t *phl_info,
 							struct rtw_phl_rx_pkt *phl_rx)
 {
@@ -1525,6 +1755,9 @@ void _phl_rx_handle_wp_report_usb(struct phl_info_t *phl_info,
 			break;
 
 		phl_rx_wp_report_record_sts(phl_info, macid, ac_queue, txsts);
+#ifdef CONFIG_PHL_CUSTOM_FRAME_STAT
+		phl_custom_txsts_notify(phl_info, macid, ac_queue, txsts);
+#endif
 		pkt += rsize;
 		pkt_len -= rsize;
 	}
@@ -1558,6 +1791,10 @@ static void phl_rx_process_usb(struct phl_info_t *phl_info,
 				phl_rx_handle_normal(phl_info, phl_rx);
 			}
 #else
+#ifdef CONFIG_PHL_SNIFFER_SUPPORT
+			/* Sniffer mode without PSTS PER PKT: generate radiotap only from RxDesc */
+			phl_rx_proc_snif_info_wo_psts(phl_info, phl_rx);
+#endif
 			phl_rx_handle_normal(phl_info, phl_rx);
 #endif
 			break;
@@ -1572,7 +1809,6 @@ static void phl_rx_process_usb(struct phl_info_t *phl_info,
 			#ifdef CONFIG_PHL_RELEASE_RPT_ENABLE
 			_phl_rx_handle_wp_report_usb(phl_info, phl_rx);
 			phl_recycle_rx_buf(phl_info, phl_rx);
-			phl_rx = NULL;
 			break;
 			#endif /* CONFIG_PHL_RELEASE_RPT_ENABLE */
 		case RTW_RX_TYPE_C2H:
@@ -1583,13 +1819,11 @@ static void phl_rx_process_usb(struct phl_info_t *phl_info,
 			PHL_TRACE(COMP_PHL_RECV, _PHL_DEBUG_, "phl_rx_process_usb(): Unsupported case:%d, please check it\n",
 					phl_rx->type);
 			phl_recycle_rx_buf(phl_info, phl_rx);
-			phl_rx = NULL;
 			break;
 		default :
 			PHL_TRACE(COMP_PHL_RECV, _PHL_INFO_, "[3] %s:: [Warning] rx type(0x%X) recycle \n",
-					__FUNCTION__, phl_rx->type);
+			          __func__, phl_rx->type);
 			phl_recycle_rx_buf(phl_info, phl_rx);
-			phl_rx = NULL;
 			break;
 		}
 	} while(phl_rxhead != NULL);
@@ -1603,11 +1837,12 @@ static enum rtw_phl_status phl_rx_usb(struct phl_info_t *phl_info)
 	struct rtw_rx_buf_ring *rx_buf_ring = (struct rtw_rx_buf_ring *)hci_info->rxbuf_pool;
 	struct rtw_rx_buf *rx_buf = NULL;
 	_os_list* obj = NULL;
+	struct rtw_hal_com_t *hal_com = rtw_hal_get_halcom(phl_info->hal);
 
 	while (rx_buf_ring->pend_rxbuf_list.cnt)
 	{
 		PHL_TRACE(COMP_PHL_RECV, _PHL_DEBUG_, "[3] %s:: pend_rxbuf_list.cnt =%d\n",
-							__FUNCTION__, rx_buf_ring->pend_rxbuf_list.cnt );
+		          __func__, rx_buf_ring->pend_rxbuf_list.cnt );
 
 		if(pq_pop(drv, &rx_buf_ring->pend_rxbuf_list, &obj, _first, _irq)) {
 			rx_buf = (struct rtw_rx_buf*)obj;
@@ -1629,19 +1864,22 @@ static enum rtw_phl_status phl_rx_usb(struct phl_info_t *phl_info)
 			break;
 
 			case WLAN_IN_INTERRUPT_PIPE_IDX:
+			{
+				if (!hal_com->int_triggered) {
+					hal_com->int_triggered = rtw_hal_handle_usb_interrupt_buffer(phl_info->hal, rx_buf->buffer, rx_buf->transfer_len);
+					rtw_phl_interrupt_handler(phl_info);
+				}
+				phl_release_rxbuf_usb(phl_info, rx_buf, 0, RTW_RX_TYPE_MAX);
+				rx_buf = NULL;
+			}
 			break;
 
 			default:
+				PHL_TRACE(COMP_PHL_RECV, _PHL_INFO_, "[3] %s:: [Error] [%p] pipe_idx = %d \n",
+				          __func__, rx_buf, rx_buf->pipe_idx);
+				phl_release_rxbuf_usb(phl_info, rx_buf, 0, RTW_RX_TYPE_MAX); // usb doesn't care rtw_rx_type
 			break;
 		}
-
-		if (phl_rx==NULL && NULL != rx_buf) {
-			PHL_TRACE(COMP_PHL_RECV, _PHL_INFO_, "[3] %s:: [Error] [%p] pipe_idx = %d \n",
-											__FUNCTION__, rx_buf, rx_buf->pipe_idx);
-			phl_release_rxbuf_usb(phl_info, rx_buf, 0, RTW_RX_TYPE_MAX); // usb doesn't care rtw_rx_type
-			rx_buf=NULL;
-		}
-
 	}
 
 	return RTW_PHL_STATUS_SUCCESS;
@@ -1657,6 +1895,10 @@ enum rtw_phl_status phl_pltfm_tx_usb(struct phl_info_t *phl_info,
 	u8 bulk_id = 0;
 	u8 dma_ch = rtw_hal_get_fwcmd_queue_idx(phl_info->hal);
 
+#ifdef CONFIG_PHL_H2C_PKT_POOL_STATS_CHECK
+	phl_set_h2c_pkt_alloc_cnt(phl_info, h2c_pkt);
+#endif
+
 	reso = (struct phl_usb_tx_buf_resource *)phl_info->hci->txbuf_pool;
 
 	if (reso)
@@ -1670,7 +1912,7 @@ enum rtw_phl_status phl_pltfm_tx_usb(struct phl_info_t *phl_info,
 		bulk_id = rtw_hal_get_bulkout_id(phl_info->hal,
 			dma_ch, 0);
 		pstatus = os_usb_tx(phl_to_drvpriv(phl_info),
-			(u8 *)tx_buf, bulk_id, h2c_pkt->data_len, h2c_pkt->vir_head);
+			(u8 *)tx_buf, bulk_id, h2c_pkt->data_len, h2c_pkt->vir_data);
 		if (pstatus == RTW_PHL_STATUS_FAILURE) {
 			phl_enqueue_idle_h2c_pkt(phl_info,
 				(struct rtw_h2c_pkt *)tx_buf->buffer);
@@ -1730,32 +1972,6 @@ void phl_recycle_rx_pkt_usb(struct phl_info_t *phl_info,
 	phl_recycle_rx_buf(phl_info, phl_rx);
 }
 
-enum rtw_phl_status phl_register_trx_hdlr_usb(struct phl_info_t *phl_info)
-{
-	enum rtw_phl_status pstatus = RTW_PHL_STATUS_FAILURE;
-	struct rtw_phl_handler *tx_handler = &phl_info->phl_tx_handler;
-	struct rtw_phl_handler *rx_handler = &phl_info->phl_rx_handler;
-	void *drv_priv = phl_to_drvpriv(phl_info);
-
-	tx_handler->type = RTW_PHL_HANDLER_PRIO_HIGH; /* tasklet */
-	tx_handler->callback = _phl_tx_callback_usb;
-	tx_handler->context = phl_info;
-	tx_handler->drv_priv = drv_priv;
-	pstatus = phl_register_handler(phl_info->phl_com, tx_handler);
-	if (RTW_PHL_STATUS_SUCCESS != pstatus)
-		PHL_ERR("%s : register tx_handler fail.\n", __FUNCTION__);
-
-	rx_handler->type = RTW_PHL_HANDLER_PRIO_HIGH;
-	rx_handler->callback = _phl_rx_callback_usb;
-	rx_handler->context = phl_info;
-	rx_handler->drv_priv = drv_priv;
-	pstatus = phl_register_handler(phl_info->phl_com, rx_handler);
-	if (RTW_PHL_STATUS_SUCCESS != pstatus)
-		PHL_ERR("%s : register rx_handler fail.\n", __FUNCTION__);
-
-	return pstatus;
-}
-
 void phl_tx_watchdog_usb(struct phl_info_t *phl_info)
 {
 
@@ -1777,6 +1993,7 @@ static struct phl_hci_trx_ops ops= {
 	.free_h2c_pkt_buf = _phl_free_h2c_pkt_buf_usb,
 	.trx_reset = phl_trx_reset_usb,
 	.trx_resume = phl_trx_resume_usb,
+	.tx_reset_hwband = phl_tx_reset_hwband_usb,
 	.req_tx_stop = phl_req_tx_stop_usb,
 	.req_rx_stop = phl_req_rx_stop_usb,
 	.is_tx_pause = phl_is_tx_sw_pause_usb,
@@ -1784,7 +2001,6 @@ static struct phl_hci_trx_ops ops= {
 	.get_txbd_buf = phl_get_txbd_buf_usb,
 	.get_rxbd_buf = phl_get_rxbd_buf_usb,
 	.recycle_rx_pkt = phl_recycle_rx_pkt_usb,
-	.register_trx_hdlr = phl_register_trx_hdlr_usb,
 	.rx_handle_normal = phl_rx_handle_normal,
 	.tx_watchdog = phl_tx_watchdog_usb
 };
@@ -1905,13 +2121,139 @@ rtw_phl_cmd_get_usb_support_ability(void *phl, u32* ability,
 	enum rtw_phl_status psts = RTW_PHL_STATUS_FAILURE;
 
 #ifdef CONFIG_CMD_DISP
-	psts = phl_cmd_enqueue(phl_info,
+	if (cmd_type == PHL_CMD_DIRECTLY)
+		psts = phl_get_usb_support_ability(phl_info, ability);
+	else {
+		psts = phl_cmd_enqueue(phl_info,
+					band_idx,
+					MSG_EVT_GET_USB_SW_ABILITY,
+					(u8*)ability,
+					sizeof(u32),
+					NULL,
+					cmd_type,
+					cmd_timeout);
+	}
+
+	if (is_cmd_failure(psts))
+		/* Send cmd success, but wait cmd fail*/
+		psts = RTW_PHL_STATUS_FAILURE;
+	else if (psts != RTW_PHL_STATUS_SUCCESS)
+		/* Send cmd fail */
+		psts = RTW_PHL_STATUS_FAILURE;
+#else
+	psts = phl_get_usb_support_ability(phl_info, ability);
+#endif
+	return psts;
+}
+enum rtw_phl_status rtw_phl_cmd_get_usb_mode_status(void *phl, u32 *status,
+						    enum phl_band_idx band_idx,
+						    enum phl_cmd_type cmd_type,
+						    u32 cmd_timeout)
+{
+	struct phl_info_t *phl_info = (struct phl_info_t *)phl;
+	enum rtw_phl_status psts = RTW_PHL_STATUS_FAILURE;
+
+#ifdef CONFIG_CMD_DISP
+	if (cmd_type == PHL_CMD_DIRECTLY)
+		psts = phl_cmd_get_usb_mode_status(phl_info, status);
+	else {
+		psts = phl_cmd_enqueue(phl_info,
 				band_idx,
-				MSG_EVT_GET_USB_SW_ABILITY,
-				(u8*)ability,
+				MSG_EVT_GET_USB_MODE_STATUS,
+				(u8*)status,
 				sizeof(u32),
 				NULL,
-				PHL_CMD_WAIT,
+				cmd_type,
+				cmd_timeout);
+	}
+
+	if (is_cmd_failure(psts)) {
+		/* Send cmd success, but wait cmd fail*/
+		psts = RTW_PHL_STATUS_FAILURE;
+	} else if (psts != RTW_PHL_STATUS_SUCCESS) {
+		/* Send cmd fail */
+		psts = RTW_PHL_STATUS_FAILURE;
+	}
+#else
+	psts = phl_cmd_get_usb_mode_status(phl_info, status);
+#endif
+	return psts;
+}
+enum rtw_phl_status rtw_phl_cmd_get_u3_perf_mode(void *phl, u32 *perf_mode,
+						 enum phl_band_idx band_idx,
+						 enum phl_cmd_type cmd_type,
+						 u32 cmd_timeout)
+{
+	struct phl_info_t *phl_info = (struct phl_info_t *)phl;
+	enum rtw_phl_status psts = RTW_PHL_STATUS_FAILURE;
+
+#ifdef CONFIG_CMD_DISP
+	if (cmd_type == PHL_CMD_DIRECTLY)
+		psts = phl_cmd_get_u3_perf_mode(phl_info, perf_mode);
+	else {
+		psts = phl_cmd_enqueue(phl_info,
+					band_idx,
+					MSG_EVT_GET_U3_PERF_MODE,
+					(u8*)perf_mode,
+					sizeof(u32),
+					NULL,
+					PHL_CMD_WAIT,
+					0);
+	}
+
+	if (is_cmd_failure(psts))
+		/* Send cmd success, but wait cmd fail*/
+		psts = RTW_PHL_STATUS_FAILURE;
+	else if (psts != RTW_PHL_STATUS_SUCCESS)
+		/* Send cmd fail */
+		psts = RTW_PHL_STATUS_FAILURE;
+#else
+	psts = phl_cmd_get_u3_perf_mode(phl_info, perf_mode);
+#endif
+	return psts;
+}
+
+#ifdef CONFIG_PHL_WKARD_REDUCE_SER
+struct cmd_usb_toggle {
+	bool transfer_start;
+	u32 *flush_mode;
+};
+
+enum rtw_phl_status
+rtw_phl_cmd_usb_toggle_flush_for_ser(void *phl, bool transfer_start,
+				u32 *flush_mode,
+				enum phl_band_idx band_idx,
+				enum phl_cmd_type cmd_type, u32 cmd_timeout)
+{
+	struct phl_info_t *phl_info = (struct phl_info_t *)phl;
+	enum rtw_phl_status psts = RTW_PHL_STATUS_FAILURE;
+	struct cmd_usb_toggle *param = NULL;
+	void *drv = phl_to_drvpriv(phl_info);
+	u32 param_len;
+
+#ifdef CONFIG_CMD_DISP
+	if (cmd_type == PHL_CMD_DIRECTLY) {
+		phl_usb_toggle_flush_for_ser(phl_info, transfer_start, flush_mode);
+		goto _exit;
+	}
+	
+	param_len = sizeof(struct cmd_usb_toggle);
+	param = _os_kmem_alloc(drv, param_len);
+	if (param == NULL) {
+		PHL_ERR("%s can not allocate param \n", __func__);
+		return psts;
+	}
+
+	param->transfer_start = transfer_start;
+	param->flush_mode = flush_mode;
+
+	psts = phl_cmd_enqueue(phl_info,
+				band_idx,
+				MSG_EVT_USB_TOGGLE,
+				(u8*)param,
+				sizeof(u32),
+				NULL,
+				cmd_type,
 				0);
 
 	if (is_cmd_failure(psts)) {
@@ -1922,10 +2264,13 @@ rtw_phl_cmd_get_usb_support_ability(void *phl, u32* ability,
 		psts = RTW_PHL_STATUS_FAILURE;
 	}
 #else
-	psts = phl_get_usb_support_ability(phl_info, ability);
+	psts = phl_usb_toggle_flush_for_ser(phl_info, transfer_start, flush_mode);
 #endif
+
+_exit:
 	return psts;
 }
+#endif /* CONFIG_PHL_WKARD_REDUCE_SER */
 
 enum rtw_phl_status phl_get_cur_usb_speed(struct phl_info_t *phl_info, u32 *speed)
 {
@@ -1963,3 +2308,43 @@ phl_get_usb_support_ability(struct phl_info_t *phl_info, u32 *ability)
 	return RTW_PHL_STATUS_SUCCESS;
 }
 
+enum rtw_phl_status phl_cmd_get_usb_mode_status(struct phl_info_t *phl_info,
+					    u32 *status)
+{
+	if (rtw_hal_get_usb_mode_status(phl_info->hal, status) == RTW_HAL_STATUS_SUCCESS) {
+		/* refer enum usb_mode_status for switch mode result */
+		PHL_INFO("%s (%d) !!\n", __FUNCTION__, *status);
+		return RTW_PHL_STATUS_SUCCESS;
+	} else
+		return RTW_PHL_STATUS_FAILURE;
+}
+enum rtw_phl_status phl_cmd_get_u3_perf_mode(struct phl_info_t *phl_info,
+					 u32 *perf_mode)
+{
+	if (rtw_hal_get_u3_perf_mode(phl_info->hal, perf_mode) == RTW_HAL_STATUS_SUCCESS) {
+		/* refer enum mac_u3_perf_mode for switch mode result */
+		PHL_INFO("%s (%d) !!\n", __FUNCTION__, *perf_mode);
+		return RTW_PHL_STATUS_SUCCESS;
+	} else
+		return RTW_PHL_STATUS_FAILURE;
+}
+#ifdef CONFIG_PHL_WKARD_REDUCE_SER
+enum rtw_phl_status
+phl_usb_toggle_flush_for_ser_hdl(struct phl_info_t *phl_info, u8 *param)
+{
+	struct cmd_usb_toggle *p =
+		(struct cmd_usb_toggle *)param;
+
+	phl_usb_toggle_flush_for_ser(phl_info->hal, p->transfer_start, p->flush_mode);
+	
+	return RTW_PHL_STATUS_SUCCESS;
+}
+
+enum rtw_phl_status
+phl_usb_toggle_flush_for_ser(struct phl_info_t *phl_info, bool transfer_start, u32 *flush_mode)
+{
+	rtw_hal_usb_toggle_flush_for_ser(phl_info->hal, transfer_start, flush_mode);
+	
+	return RTW_PHL_STATUS_SUCCESS;
+}
+#endif /* CONFIG_PHL_WKARD_REDUCE_SER */

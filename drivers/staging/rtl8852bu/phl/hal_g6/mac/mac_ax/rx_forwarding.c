@@ -20,11 +20,7 @@ u32 mac_set_rx_forwarding(struct mac_ax_adapter *adapter,
 {
 	u32 ret = 0;
 	u8 *buf;
-#if MAC_AX_PHL_H2C
-	struct rtw_h2c_pkt *h2cb;
-#else
-	struct h2c_buf *h2cb;
-#endif
+	struct h2c_info h2c_info = {0};
 	struct fwcmd_rx_fwd *rx_fwd;
 	struct mac_ax_af_ud_ctrl_t *af_ud;
 	struct mac_ax_pm_cam_ctrl_t *pm_cam;
@@ -32,14 +28,18 @@ u32 mac_set_rx_forwarding(struct mac_ax_adapter *adapter,
 	if (!rf_ctrl_p)
 		return MACNPTR;
 
-	h2cb = h2cb_alloc(adapter, H2CB_CLASS_DATA);
-	if (!h2cb)
-		return MACNPTR;
+	h2c_info.agg_en = 0;
+	h2c_info.content_len = sizeof(struct fwcmd_rx_fwd);
+	h2c_info.h2c_cat = FWCMD_H2C_CAT_MAC;
+	h2c_info.h2c_class = FWCMD_H2C_CL_FW_OFLD;
+	h2c_info.h2c_func = FWCMD_H2C_FUNC_RX_FWD;
+	h2c_info.rec_ack = 0;
+	h2c_info.done_ack = 1;
 
-	buf = h2cb_put(h2cb, sizeof(struct fwcmd_rx_fwd));
+	buf = PLTFM_MALLOC(sizeof(struct fwcmd_rx_fwd));
 	if (!buf) {
-		ret = MACNOBUF;
-		goto fail;
+		PLTFM_MSG_ERR("%s malloc h2c error\n", __func__);
+		return MACNPTR;
 	}
 
 	rx_fwd = (struct fwcmd_rx_fwd *)buf;
@@ -86,25 +86,7 @@ u32 mac_set_rx_forwarding(struct mac_ax_adapter *adapter,
 			     FWCMD_H2C_RX_FWD_PM_CAM_PLD_MASK3));
 
 	if (adapter->sm.fwdl == MAC_AX_FWDL_INIT_RDY) {
-		ret = h2c_pkt_set_hdr(adapter, h2cb,
-				      FWCMD_TYPE_H2C,
-				      FWCMD_H2C_CAT_MAC,
-				      FWCMD_H2C_CL_FW_OFLD,
-				      FWCMD_H2C_FUNC_RX_FWD,
-				      0,
-				      1);
-		if (ret)
-			goto fail;
-
-		ret = h2c_pkt_build_txd(adapter, h2cb);
-		if (ret)
-			goto fail;
-
-#if MAC_AX_PHL_H2C
-		ret = PLTFM_TX(h2cb);
-#else
-		ret = PLTFM_TX(h2cb->data, h2cb->len);
-#endif
+		ret = mac_h2c_common(adapter, &h2c_info, (u32 *)rx_fwd);
 		if (ret)
 			goto fail;
 	} else {
@@ -114,13 +96,13 @@ u32 mac_set_rx_forwarding(struct mac_ax_adapter *adapter,
 
 	ret = MACSUCCESS;
 fail:
-	h2cb_free(adapter, h2cb);
+	PLTFM_FREE(rx_fwd, sizeof(struct fwcmd_rx_fwd));
 
 	return ret;
 }
 
 #else
-static inline u32 af_fwd_cfg(struct mac_ax_adapter *adapter,
+static u32 af_fwd_cfg(struct mac_ax_adapter *adapter,
 			     enum mac_ax_action_frame frame,
 			     enum mac_ax_fwd_target fwd_tg)
 {
@@ -175,7 +157,7 @@ static inline u32 af_fwd_cfg(struct mac_ax_adapter *adapter,
 	return MACSUCCESS;
 }
 
-static inline u32 af_ud_fwd_cfg(struct mac_ax_adapter *adapter,
+static u32 af_ud_fwd_cfg(struct mac_ax_adapter *adapter,
 				struct mac_ax_af_ud_ctrl_t *af_ud_ctrl_p)
 {
 	u32 val32;
@@ -231,7 +213,7 @@ static inline u32 af_ud_fwd_cfg(struct mac_ax_adapter *adapter,
 	return MACSUCCESS;
 }
 
-static inline u32 tf_fwd_cfg(struct mac_ax_adapter *adapter,
+static u32 tf_fwd_cfg(struct mac_ax_adapter *adapter,
 			     enum mac_ax_trigger_frame frame,
 			     enum mac_ax_fwd_target fwd_tg)
 {
@@ -271,7 +253,7 @@ static inline u32 tf_fwd_cfg(struct mac_ax_adapter *adapter,
 	return MACSUCCESS;
 }
 
-static inline u32 pm_cam_access_polling(struct mac_ax_adapter *adapter)
+static u32 pm_cam_access_polling(struct mac_ax_adapter *adapter)
 {
 	u32 cnt = PM_CAM_WAIT_CNT;
 	struct mac_ax_intf_ops *ops = adapter_to_intf_ops(adapter);
@@ -289,7 +271,7 @@ static inline u32 pm_cam_access_polling(struct mac_ax_adapter *adapter)
 	return MACSUCCESS;
 }
 
-static inline u32 pm_cam_indirect_r(struct mac_ax_adapter *adapter,
+static u32 pm_cam_indirect_r(struct mac_ax_adapter *adapter,
 				    u32 offset)
 {
 	u32 val32;
@@ -310,7 +292,7 @@ static inline u32 pm_cam_indirect_r(struct mac_ax_adapter *adapter,
 	return MAC_REG_R32(R_AX_PLD_CAM_RDATA);
 }
 
-static inline void pm_cam_indirect_w(struct mac_ax_adapter *adapter,
+static void pm_cam_indirect_w(struct mac_ax_adapter *adapter,
 				     u32 offset, u32 data)
 {
 	u32 val32;
@@ -329,15 +311,16 @@ static inline void pm_cam_indirect_w(struct mac_ax_adapter *adapter,
 		PLTFM_MSG_ERR("[ERR]PM CAM write timeout\n");
 }
 
-static inline u32 pm_cam_fwd_cfg(struct mac_ax_adapter *adapter,
+static u32 pm_cam_fwd_cfg(struct mac_ax_adapter *adapter,
 				 struct mac_ax_pm_cam_ctrl_t *pm_cam_ctrl_p)
 {
 	u32 val32, offset;
 	struct mac_ax_intf_ops *ops = adapter_to_intf_ops(adapter);
 
 	if (is_chip_id(adapter, MAC_AX_CHIP_ID_8852C) ||
-	    is_chip_id(adapter, MAC_AX_CHIP_ID_8192XB)) {
-		PLTFM_MSG_ERR("[ERR]%s PM_CAM API is removed in 52C & 92XB.\n"
+	    is_chip_id(adapter, MAC_AX_CHIP_ID_8192XB) ||
+	    is_chip_id(adapter, MAC_AX_CHIP_ID_8852D)) {
+		PLTFM_MSG_ERR("[ERR]%s PM_CAM API is removed in 52C & 92XB & 51E & 52D.\n"
 			      , __func__);
 		return MACSUCCESS;
 	}

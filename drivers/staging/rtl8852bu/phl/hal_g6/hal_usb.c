@@ -97,7 +97,7 @@ int usb_write8(struct rtw_hal_com_t *hal, u32 addr, u8 val)
 	len = 1;
 	data = val;
 
-	ret = _os_usbctrl_vendorreq(hal->drv_priv, 
+	ret = _os_usbctrl_vendorreq(hal->drv_priv,
 			request, wvalue, index, &data, len, requesttype);
 	return ret;
 }
@@ -181,7 +181,7 @@ static int usb_write_post_cfg(struct rtw_hal_com_t *hal, u32 addr, u32 val)
 	struct hal_ops_t	*hal_ops = hal_get_ops(hal_info);
 
 	enum rtw_hal_status hal_status = RTW_HAL_STATUS_FAILURE;
-	
+
 	if(NULL != hal_ops->write_reg_post_cfg) {
 		hal_status = hal_ops->write_reg_post_cfg(hal_info, addr, val);
 	}
@@ -211,7 +211,6 @@ static void hal_usb_set_io_ops_gen(struct rtw_hal_com_t *hal, struct hal_io_ops 
 void hal_usb_set_io_ops(struct rtw_hal_com_t *hal, struct hal_io_ops *pops)
 {
 	hal_usb_set_io_ops_gen(hal, pops);
-	/*hal_usb_set_io_ops_8852au(hal, pops);*/
 }
 
 
@@ -265,27 +264,50 @@ u32 rtwl_hal_get_usb_support_ability(void *h)
 	*/
 	return hal_mac_get_usb_support_ability(hal);
 }
-
-enum rtw_rx_status rtw_hal_get_usb_status(void *h)
+#ifdef CONFIG_PHL_CUSTOM_FEATURE_USB
+enum rtw_hal_status rtw_hal_set_usb_support_ability(void *h, u32 ability)
 {
 	struct hal_info_t *hal = (struct hal_info_t *)h;
-	struct mac_ax_adapter *mac = hal_to_mac(hal);
-	struct mac_ax_ops *hal_mac_ops = mac->ops;
-	u32 mac_usb_sts;
-	u32 val;
 
-	mac_usb_sts = hal_mac_ops->get_hw_value(mac, MAC_AX_HW_GET_USB_STS, &val);
-
-	switch (mac_usb_sts) {
-	case MACSUCCESS:
-	case MACNOITEM:
-		return RTW_STATUS_RX_OK;
-	case MACRXDMAHANG:
-		return RTW_STATUS_RXDMA_HANG;
-	case MACUSBRXHANG:
-		return RTW_STATUS_RXFIFO_HANG;
-	default:
-		return RTW_STATUS_RX_OK;
-	}
+	if (hal_mac_set_usb_support_ability(hal, ability) == MACSUCCESS)
+		return RTW_HAL_STATUS_SUCCESS;
+	else
+		return RTW_HAL_STATUS_FAILURE;
 }
+#endif
+enum rtw_hal_status rtw_hal_get_usb_mode_status(void *h, u32 *status)
+{
+	struct hal_info_t *hal = (struct hal_info_t *)h;
+	/*
+	* USB_MODE_U2_PURE_U2 = 0x0,
+	* USB_MODE_U2_SUPPORT_U2U3 = 0x1,
+	* USB_MODE_U2_SWITCH_FAIL = 0x2,
+	* USB_MODE_U2_ENV_LIMIT = 0x3,
+	* USB_MODE_U3 = 0x4,
+	*/
+	if (hal_mac_get_usb_mode_status(hal, status) == MACSUCCESS) {
+		return RTW_HAL_STATUS_SUCCESS;
+	} else
+		return RTW_HAL_STATUS_FAILURE;
+}
+enum rtw_hal_status rtw_hal_get_u3_perf_mode(void *h, u32 *perf_mode)
+{
+	struct hal_info_t *hal = (struct hal_info_t *)h;
+	/*
+	* U3_PERF_MIDDLE = 0x0,
+	* U3_PERF_HIGH = 0x1,
+	*/
+	if (hal_mac_get_u3_perf_mode(hal, perf_mode) == MACSUCCESS) {
+		return RTW_HAL_STATUS_SUCCESS;
+	} else
+		return RTW_HAL_STATUS_FAILURE;
+}
+#ifdef CONFIG_PHL_WKARD_REDUCE_SER
+u32 rtw_hal_usb_toggle_flush_for_ser(void *h, bool transfer_start, u32 *flush_mode)
+{
+	struct hal_info_t *hal = (struct hal_info_t *)h;
+
+	return hal_mac_usb_toggle_flush_for_ser(hal, transfer_start, flush_mode);
+}
+#endif /* CONFIG_PHL_WKARD_REDUCE_SER */
 #endif /*CONFIG_USB_HCI*/

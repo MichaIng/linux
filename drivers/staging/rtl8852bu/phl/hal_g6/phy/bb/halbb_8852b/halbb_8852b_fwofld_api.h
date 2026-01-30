@@ -52,8 +52,8 @@ bool halbb_fwofld_ctrl_bw_ch_8852b(struct bb_info *bb, u8 pri_ch, u8 central_ch,
 void halbb_fwofld_ctrl_cck_en_8852b(struct bb_info *bb, bool cck_en,
 			     enum phl_phy_idx phy_idx);
 void halbb_fwofld_set_efuse_8852b(struct bb_info *bb, u8 central_ch, enum phl_phy_idx phy_idx);
-void halbb_fwofld_set_gain_error_8852b(struct bb_info *bb, u8 central_ch);
-void halbb_fwofld_set_rxsc_rpl_comp_8852b(struct bb_info *bb, u8 central_ch);
+void halbb_fwofld_set_gain_error_8852b(struct bb_info *bb, u8 central_ch, enum band_type band_type);
+void halbb_fwofld_set_rxsc_rpl_comp_8852b(struct bb_info *bb, u8 central_ch, enum band_type band_type);
 void halbb_fwofld_set_pmac_tx_8852b(struct bb_info *bb, struct halbb_pmac_info *tx_info,
 			     enum phl_phy_idx phy_idx);
 #endif

@@ -34,9 +34,11 @@ static struct mac_ax_rx_fltr_ctrl_t rx_fltr_init_opt = {
 	0, /* acpt_unsupport_pkt */
 	0, /* acpt_mac_hdr_content_err_pkt */
 	0, /* acpt_ftm_req_pkt */
+	0, /* rsvd */
 	0, /* pkt_len_fltr */
 	0, /* unsp_pkt_target */
-	3, /* uid_fltr */
+	8, /* uid_fltr */
+	0, /* rsvd */
 	1, /* cck_crc_chk_enable */
 	1, /* cck_sig_chk_enable */
 	1, /* lsig_parity_chk_enable */
@@ -45,6 +47,9 @@ static struct mac_ax_rx_fltr_ctrl_t rx_fltr_init_opt = {
 	1, /* vht_mu_sigb_crc_chk_enable */
 	1, /* he_sigb_crc_chk_enable */
 	0, /* min_len_chk_disable */
+	0, /* rsvd */
+	0, /* plcp_option_enable */
+	0, /* rsvd */
 };
 
 u32 rx_fltr_init(struct mac_ax_adapter *adapter, enum mac_ax_band band)
@@ -53,8 +58,8 @@ u32 rx_fltr_init(struct mac_ax_adapter *adapter, enum mac_ax_band band)
 	struct mac_ax_ops *mac_ax_ops = adapter_to_mac_ops(adapter);
 	struct mac_ax_rx_fltr_ctrl_t opt_msk = {
 		0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1, 0x3, 0x1, 0x1, 0x1,
-		0x1, 0x1, 0x3F, 0x3, 0x3, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1,
-		0x1, 0x1
+		0x1, 0x1, 0x1, 0x3F, 0x3, 0xf, 0xf, 0x1, 0x1, 0x1, 0x1, 0x1, 0x1,
+		0x1, 0x1, 0x3, 0x1, 0x1f
 	};
 
 	ret = check_mac_en(adapter, band, MAC_AX_CMAC_SEL);
@@ -95,7 +100,7 @@ static void rx_fltr_opt_2_uint(struct mac_ax_adapter *adapter,
 			       u16 *plcp_fltr_value)
 {
 	u32 val32 = 0x0;
-	u8 val16 = 0x0;
+	u16 val16 = 0x0;
 
 	val32 =
 		((fltr_opt->sniffer_mode) ?
@@ -135,25 +140,76 @@ static void rx_fltr_opt_2_uint(struct mac_ax_adapter *adapter,
 
 	*mac_fltr_value = val32;
 
-	val16 =
-		((fltr_opt->cck_crc_chk_enable) ?
-				B_AX_CCK_CRC_CHK : 0) |
-		((fltr_opt->cck_sig_chk_enable) ?
-				B_AX_CCK_SIG_CHK : 0) |
-		((fltr_opt->lsig_parity_chk_enable) ?
-				B_AX_LSIG_PARITY_CHK : 0) |
-		((fltr_opt->siga_crc_chk_enable) ?
-				B_AX_SIGA_CRC_CHK : 0) |
-		((fltr_opt->vht_su_sigb_crc_chk_enable) ?
-				B_AX_VHT_SU_SIGB_CRC_CHK : 0) |
-		((fltr_opt->vht_mu_sigb_crc_chk_enable) ?
-				B_AX_VHT_MU_SIGB_CRC_CHK : 0) |
-		((fltr_opt->he_sigb_crc_chk_enable) ?
-				B_AX_HE_SIGB_CRC_CHK : 0) |
-		((fltr_opt->min_len_chk_disable) ?
-				B_AX_DIS_CHK_MIN_LEN : 0);
+#if MAC_AX_8852A_SUPPORT || MAC_AX_8852B_SUPPORT || MAC_AX_8852C_SUPPORT || \
+MAC_AX_8192XB_SUPPORT || MAC_AX_8851B_SUPPORT || MAC_AX_8852BT_SUPPORT
+	if (is_chip_id(adapter, MAC_AX_CHIP_ID_8852A) ||
+	    is_chip_id(adapter, MAC_AX_CHIP_ID_8852B) ||
+	    is_chip_id(adapter, MAC_AX_CHIP_ID_8852C) ||
+	    is_chip_id(adapter, MAC_AX_CHIP_ID_8192XB) ||
+	    is_chip_id(adapter, MAC_AX_CHIP_ID_8851B) ||
+	    is_chip_id(adapter, MAC_AX_CHIP_ID_8852BT))
+		val16 =
+			((fltr_opt->cck_crc_chk_enable) ?
+					B_AX_CCK_CRC_CHK : 0) |
+			((fltr_opt->cck_sig_chk_enable) ?
+					B_AX_CCK_SIG_CHK : 0) |
+			((fltr_opt->lsig_parity_chk_enable) ?
+					B_AX_LSIG_PARITY_CHK_EN : 0) |
+			((fltr_opt->siga_crc_chk_enable) ?
+					B_AX_SIGA_CRC_CHK : 0) |
+			((fltr_opt->vht_su_sigb_crc_chk_enable) ?
+					B_AX_VHT_SU_SIGB_CRC_CHK : 0) |
+			((fltr_opt->vht_mu_sigb_crc_chk_enable) ?
+					B_AX_VHT_MU_SIGB_CRC_CHK : 0) |
+			((fltr_opt->he_sigb_crc_chk_enable) ?
+					B_AX_HE_SIGB_CRC_CHK : 0) |
+			((fltr_opt->min_len_chk_disable) ?
+					B_AX_DIS_CHK_MIN_LEN : 0);
+#endif
+#if MAC_AX_8852D_SUPPORT
+	if (is_chip_id(adapter, MAC_AX_CHIP_ID_8852D))
+		val16 =
+			((fltr_opt->cck_crc_chk_enable) ?
+					B_AX_CCK_CRC_CHK : 0) |
+			((fltr_opt->cck_sig_chk_enable) ?
+					B_AX_CCK_SIG_CHK : 0) |
+			((fltr_opt->lsig_parity_chk_enable) ?
+					B_AX_LSIG_PARITY_CHK_EN : 0) |
+			((fltr_opt->siga_crc_chk_enable) ?
+					B_AX_SIGA_CRC_CHK : 0) |
+			((fltr_opt->vht_su_sigb_crc_chk_enable) ?
+					B_AX_VHT_SU_SIGB_CRC_CHK : 0) |
+			((fltr_opt->vht_mu_sigb_crc_chk_enable) ?
+					B_AX_VHT_MU_SIGB_CRC_CHK : 0) |
+			((fltr_opt->he_sigb_crc_chk_enable) ?
+					B_AX_HE_SIGB_CRC_CHK : 0) |
+			((fltr_opt->min_len_chk_disable) ?
+					B_AX_DIS_CHK_MIN_LEN : 0) |
+			((fltr_opt->plcp_option_enable) ?
+					B_AX_PLCP_OPTION : 0);
+#endif
 
 	*plcp_fltr_value = val16;
+}
+
+static u32 _patch_plcp_option_en(struct mac_ax_adapter *adapter, u8 band)
+{
+	struct mac_ax_intf_ops *ops = adapter_to_intf_ops(adapter);
+	u32 val32;
+	u16 cr;
+
+	if (!chk_patch_plcp_option_en(adapter))
+		return MACSUCCESS;
+
+	cr = band ? R_AX_PLCP_HDR_FLTR_C1 : R_AX_PLCP_HDR_FLTR;
+	val32 = MAC_REG_R32(cr);
+#if MAC_AX_8852D_SUPPORT
+	if (is_chip_id(adapter, MAC_AX_CHIP_ID_8852D))
+		val32 |= B_AX_PLCP_OPTION;
+#endif
+	MAC_REG_W32(cr, val32);
+
+	return MACARDYDONE;
 }
 
 u32 mac_get_rx_fltr_opt(struct mac_ax_adapter *adapter,
@@ -202,7 +258,7 @@ u32 mac_get_rx_fltr_opt(struct mac_ax_adapter *adapter,
 	fltr_opt->cck_crc_chk_enable = ((val32 & B_AX_CCK_CRC_CHK) != 0);
 	fltr_opt->cck_sig_chk_enable = ((val32 & B_AX_CCK_SIG_CHK) != 0);
 	fltr_opt->lsig_parity_chk_enable = ((val32 &
-					 B_AX_LSIG_PARITY_CHK) != 0);
+					 B_AX_LSIG_PARITY_CHK_EN) != 0);
 	fltr_opt->siga_crc_chk_enable = ((val32 & B_AX_SIGA_CRC_CHK) != 0);
 	fltr_opt->vht_su_sigb_crc_chk_enable = ((val32 &
 						 B_AX_VHT_SU_SIGB_CRC_CHK)
@@ -214,6 +270,12 @@ u32 mac_get_rx_fltr_opt(struct mac_ax_adapter *adapter,
 					    != 0);
 	fltr_opt->min_len_chk_disable = ((val32 & B_AX_DIS_CHK_MIN_LEN)
 					 != 0);
+#if MAC_AX_8852D_SUPPORT
+	if (is_chip_id(adapter, MAC_AX_CHIP_ID_8852D))
+		fltr_opt->plcp_option_enable = ((val32 & B_AX_PLCP_OPTION)
+						 != 0);
+#endif
+
 	return MACSUCCESS;
 }
 
@@ -242,6 +304,9 @@ u32 mac_set_rx_fltr_opt(struct mac_ax_adapter *adapter,
 		PLTFM_MSG_ERR("[ERR]%s opt is null\n", __func__);
 		return MACNPTR;
 	}
+
+	if (_patch_plcp_option_en(adapter, band) == MACARDYDONE)
+		fltr_opt->plcp_option_enable = 0x1;
 
 	mac_get_rx_fltr_opt(adapter, &opt, band);
 
@@ -366,6 +431,14 @@ u32 mac_set_typsbtyp_fltr_opt(struct mac_ax_adapter *adapter,
 				     ((subtype & 0xf) * 2), 0x3);
 		MAC_REG_W32((band == MAC_AX_BAND_1) ?
 			    R_AX_CTRL_FLTR_C1 : R_AX_CTRL_FLTR, val32);
+#if MAC_AX_8852BT_SUPPORT
+	if (is_chip_id(adapter, MAC_AX_CHIP_ID_8852BT)) {
+		val32 = MAC_REG_R32(R_AX_CTRL_FLTR);
+		val32 = val32 & ~(BIT4);
+		val32 = val32 & ~(BIT5);
+		MAC_REG_W32(R_AX_CTRL_FLTR, val32);
+	}
+#endif
 		break;
 	case MAC_AX_PKT_DATA:
 		val32 = MAC_REG_R32((band == MAC_AX_BAND_1) ?

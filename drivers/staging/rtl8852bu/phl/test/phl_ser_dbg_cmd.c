@@ -24,12 +24,14 @@ enum PHL_SER_CMD_ID {
 	PHL_SER_STATE,
 	PHL_SER_CMAC,
 	PHL_SER_DMAC,
+	PHL_SER_SW_L2
 };
 
 struct phl_ser_cmd_info phl_ser_cmd_i[] = {
 	{"state", PHL_SER_STATE},
 	{"cmac", PHL_SER_CMAC},
-	{"dmac", PHL_SER_DMAC}
+	{"dmac", PHL_SER_DMAC},
+	{"sw_l2", PHL_SER_SW_L2} /* directly trigger l2 reset flow of phl */
 };
 
 /* echo phl ser state */
@@ -41,6 +43,7 @@ void _phl_ser_cmd_state(struct phl_info_t *phl_info, u32 *used, char input[][MAX
 	PHL_DBG_MON_INFO(out_len, *used, output + *used,
 					 out_len - *used, "\n[SER statistic]\
 					 \nRTW_PHL_SER_L0_RESET = %d\
+					 \nRTW_PHL_SER_PREPARE_DMAC (Pre-M0) = %d\
 					 \nRTW_PHL_SER_PAUSE_TRX (M1) = %d\
 					 \nRTW_PHL_SER_DO_RECOVERY (M3) = %d\
 					 \nRTW_PHL_SER_READY (M5) = %d\
@@ -49,6 +52,7 @@ void _phl_ser_cmd_state(struct phl_info_t *phl_info, u32 *used, char input[][MAX
 					 \nRTW_PHL_SER_DUMP_FW_LOG = %d\
 					 \nRTW_PHL_SER_LOG_ONLY = %d\n",
 	(int)ser_stat->ser_event[RTW_PHL_SER_L0_RESET],
+	(int)ser_stat->ser_event[RTW_PHL_SER_PREPARE_DMAC],
 	(int)ser_stat->ser_event[RTW_PHL_SER_PAUSE_TRX],
 	(int)ser_stat->ser_event[RTW_PHL_SER_DO_RECOVERY],
 	(int)ser_stat->ser_event[RTW_PHL_SER_READY],
@@ -115,6 +119,9 @@ void phl_ser_cmd_parser(struct phl_info_t *phl_info, char input[][MAX_ARGV],
 	case PHL_SER_DMAC:
 		_phl_ser_cmd_dmac(phl_info, &used, input, input_num,
 					output, out_len);
+		break;
+	case PHL_SER_SW_L2:
+		phl_ser_send_msg(phl_info, RTW_PHL_SER_L2_RESET);
 		break;
 	default:
 		PHL_DBG_MON_INFO(out_len, used, output + used, out_len - used,

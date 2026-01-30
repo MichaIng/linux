@@ -225,3 +225,43 @@ u32 phl_get_passing_time_ms(u32 start)
 
 	return pass;
 }
+
+u32 phl_get_diff_time_us(u32 start, u32 end)
+{
+	u32 diff = 0;
+
+	if (end >= start)
+		diff = end - start;
+	else
+		diff = 0xffffffff - start + end;
+
+	return diff;
+}
+
+enum rtw_ac phl_tid_to_ac(u8 tid)
+{
+	enum rtw_ac ac = RTW_AC_MAX;
+
+	switch (tid) {
+	case 0:
+	case 3:
+		ac = RTW_AC_BE;
+		break;
+	case 1:
+	case 2:
+		ac = RTW_AC_BK;
+		break;
+	case 4:
+	case 5:
+		ac = RTW_AC_VI;
+		break;
+	case 6:
+	case 7:
+		ac = RTW_AC_VO;
+		break;
+	default:
+		PHL_WARN("%s: Invalid TID %d\n", __func__, tid);
+		break;
+	}
+	return ac;
+}

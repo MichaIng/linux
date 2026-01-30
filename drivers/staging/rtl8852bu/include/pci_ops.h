@@ -38,32 +38,7 @@
 void	PlatformClearPciPMEStatus(_adapter *adapter);
 
 #ifdef CONFIG_64BIT_DMA
-	u8	PlatformEnableDMA64(_adapter *adapter);
+u8 PlatformEnableDMA64(struct pci_dev *pdev);
 #endif
-#ifdef CONFIG_PCI_DYNAMIC_ASPM
-void rtw_pci_set_aspm_lnkctl(_adapter *padapter, u8 mode);
-void rtw_pci_set_l1_latency(_adapter *padapter, u8 mode);
-
-static inline void rtw_pci_dynamic_aspm_set_mode(_adapter *padapter, u8 mode)
-{
-	struct dvobj_priv *pdvobjpriv = adapter_to_dvobj(padapter);
-	struct pci_priv	*pcipriv = &(pdvobjpriv->pcipriv);
-
-	if (mode == pcipriv->aspm_mode)
-		return;
-
-	pcipriv->aspm_mode = mode;
-
-#ifdef CONFIG_PCI_DYNAMIC_ASPM_LINK_CTRL
-	rtw_pci_set_aspm_lnkctl(padapter, mode);
-#endif
-#ifdef CONFIG_PCI_DYNAMIC_ASPM_L1_LATENCY
-	rtw_pci_set_l1_latency(padapter, mode);
-#endif
-}
-#else
-#define rtw_pci_dynamic_aspm_set_mode(adapter, mode)
-#endif
-
 
 #endif /*__PCI_OPS_H_*/

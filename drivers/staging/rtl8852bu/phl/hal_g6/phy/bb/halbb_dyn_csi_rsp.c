@@ -26,13 +26,6 @@
 
 #ifdef HALBB_DYN_CSI_RSP_SUPPORT
 
-bool halbb_dyn_csi_rsp_rlt_get(struct bb_info *bb){
-	struct bf_ch_raw_info *bf = &bb->bb_cmn_hooker->bf_ch_raw_i;
-	
-	BB_DBG(bb, DBG_DCR, "CSI Rsp Rlt = %d.\n", bf->is_csi_rsp_en);
-	return bf->is_csi_rsp_en;
-}
-
 void halbb_csi_rsp_rlt(struct bb_info *bb, bool en)
 {
 	struct bf_ch_raw_info *bf = &bb->bb_cmn_hooker->bf_ch_raw_i;
@@ -104,7 +97,7 @@ void halbb_dcr_config_ch_info_he(struct bb_info *bb) {
 	} else if (bw == CHANNEL_WIDTH_40) {
 		cfg->ch_i_grp_num_he = 2;
 	} else { /*if (bw == CHANNEL_WIDTH_20)*/
-		if (bb->ic_type == BB_RTL8852B)
+		if (bb->ic_type & (BB_RTL8852B | BB_RTL8851B))
 			cfg->ch_i_grp_num_he = 1;
 		else
 			cfg->ch_i_grp_num_he = 2;
@@ -114,14 +107,13 @@ void halbb_dcr_config_ch_info_he(struct bb_info *bb) {
 	cfg->ch_i_cmprs = 1;
 	cfg->ch_i_ele_bitmap = 0x303; /*Nr X Nc: 2 X 2*/
 
-	halbb_cfg_ch_info_cr(bb, cfg);
 }
 
 bool halbb_dcr_get_ch_raw_info(struct bb_info *bb, bool is_csi_en)
 {	
 	struct bf_ch_raw_info *bf = &bb->bb_cmn_hooker->bf_ch_raw_i;
 	struct bb_ch_info_physts_info *ch_physts = &bb->bb_ch_rpt_i.bb_ch_info_physts_i;
-	bool get_ch_rpt_success = false;
+	bool rpt = false;
 	
 	if (is_csi_en) {
 		BB_DBG(bb, DBG_DCR, "CSI Rsp enable need to disable for CH Est.\n");
@@ -130,10 +122,10 @@ bool halbb_dcr_get_ch_raw_info(struct bb_info *bb, bool is_csi_en)
 		halbb_delay_ms(bb, bf->ch_est_dly);
 	}
 
-	get_ch_rpt_success = halbb_ch_info_wait_from_physts(bb, bf->get_phy_sts_dly, bf->get_phy_sts_dly, HE_PKT);
+	rpt = halbb_ch_info_wait_from_physts(bb, bf->get_phy_sts_dly, bf->get_phy_sts_dly*5, HE_PKT, false);
 
-	if (get_ch_rpt_success && ch_physts->ch_info_len < 200)
-		get_ch_rpt_success = false;
+	if (rpt && ch_physts->ch_info_len < 200)
+		rpt = false;
 
 	if (is_csi_en) {
 		BB_DBG(bb, DBG_DCR, "Restore CSI Rsp.\n");
@@ -141,33 +133,7 @@ bool halbb_dcr_get_ch_raw_info(struct bb_info *bb, bool is_csi_en)
 		rtw_hal_mac_ax_init_bf_role(bb->hal_com, 0, bb->bb_phy_idx);
 	}
 
-	return get_ch_rpt_success;
-}
-
-bool halbb_dcr_en(struct bb_info *bb, bool en){
-	struct bf_ch_raw_info *bf = &bb->bb_cmn_hooker->bf_ch_raw_i;
-	bool ret = true;
-	u32 id = bb->phl_com->id.id & 0xFFFF;
-
-	if (id == 0x209 || id == 0x309) {
-	    BB_DBG(bb, DBG_DCR, "DCR_en=%d, cid=0x%x\n", en, id);
-	} else {
-		return false;
-	}
-
-	if (en) {
-		//Allocate Buffer
-		ret = halbb_ch_info_buf_alloc(bb);
-		if (ret) {
-			bf->dyn_csi_rsp_en = true;
-		}
-	} else {
-		halbb_ch_info_buf_rls(bb);
-		halbb_dcr_reset(bb);
-		bf->dyn_csi_rsp_en = false;
-	}
-
-	return ret;
+	return rpt;
 }
 
 void halbb_dcr_init(struct bb_info *bb)
@@ -184,6 +150,10 @@ void halbb_dcr_init(struct bb_info *bb)
 	bf->ch_chk_cnt = 0;
 	bf->dyn_csi_rsp_dbg_en = 0;
 	bf->dcr_bw = CHANNEL_WIDTH_MAX;
+	bf->period_cnt = 0;
+	bf->cbl_lnk_cnt = 0;
+	bf->cbl_lnk_state = false;
+	bf->csi_on_chk = false;
 }
 
 void halbb_dcr_reset(struct bb_info *bb)
@@ -379,6 +349,85 @@ void halbb_dyn_csi_rsp_main(struct bb_info *bb)
 	halbb_csi_rsp_rlt(bb, is_csi_rsp_en);
 }
 
+bool halbb_dcr_rssi_chk(struct bb_info *bb)
+{
+	struct bf_ch_raw_info *bf = &bb->bb_cmn_hooker->bf_ch_raw_i;
+	u32 id = bb->phl_com->id.id & 0xFFFF;
+	u8 band = bb->hal_com->band[0].cur_chandef.band;
+	enum channel_width bw = bb->hal_com->band[0].cur_chandef.bw;
+	u8 rssi_min = bb->bb_ch_i.rssi_min >> 1;
+	bool csi_enable = true;
+
+	if (id != 0x409)
+		return true;
+
+	/*When RSSI below threshold, CSI feedback turned off*/
+	if ((band == BAND_ON_6G) && (bw == CHANNEL_WIDTH_160) && (rssi_min < 40) && (bf->cbl_lnk_state))
+		csi_enable = false;
+	else if ((band == BAND_ON_6G) && (bw == CHANNEL_WIDTH_80) && (rssi_min < 32) && (bf->cbl_lnk_state))
+		csi_enable = false;
+	else if ((band == BAND_ON_5G) && (rssi_min < 35))
+		csi_enable = false;
+	else
+		csi_enable = true;
+
+	return csi_enable;
+}
+
+void halbb_dcr_env_det(struct bb_info *bb)
+{
+	struct bf_ch_raw_info *bf = &bb->bb_cmn_hooker->bf_ch_raw_i;
+	struct bb_cmn_rpt_info	*cmn_rpt = &bb->bb_cmn_rpt_i;
+	struct bb_pkt_cnt_su_info *pkt_cnt = &cmn_rpt->bb_pkt_cnt_su_i;
+	struct bb_link_info	*link = &bb->bb_link_i;
+	u8 band = bb->hal_com->band[0].cur_chandef.band;
+	u32 id = bb->phl_com->id.id & 0xFFFF;
+	bool cbl_lnk_state = false;
+
+	BB_DBG(bb, DBG_DCR,
+	       "[START] is_link = %d, period_cnt = %d, cable_link = %d, pkt_cnt_1ss = %d, pkt_cnt_2ss = %d, csi_on_chk = %d\n",
+	       link->is_linked, bf->period_cnt, bf->cbl_lnk_state,
+	       pkt_cnt->pkt_cnt_1ss, pkt_cnt->pkt_cnt_2ss, bf->csi_on_chk);
+
+	if (id != 0x409)
+		return;
+
+	if (!link->is_linked || band != BAND_ON_6G) {
+		if (link->first_disconnect) {
+			bf->period_cnt = 0;
+			bf->cbl_lnk_cnt = 0;
+			bf->cbl_lnk_state = false;
+			bf->csi_on_chk = false;
+		}
+		return;
+	}
+	if (bf->period_cnt >= 8) {
+		if (!bf->csi_on_chk) {
+			rtw_hal_mac_ax_init_bf_role(bb->hal_com, 0, bb->bb_phy_idx);
+			bf->csi_on_chk = true;
+		}
+		return;
+	}
+
+	/*turn off CSI feedback*/
+	rtw_hal_mac_ax_deinit_bfee(bb->hal_com, bb->bb_phy_idx);
+
+	if (pkt_cnt->pkt_cnt_1ss > pkt_cnt->pkt_cnt_2ss) {
+		bf->cbl_lnk_cnt += 1;
+	}
+
+	if (bf->cbl_lnk_cnt >= 2)
+		cbl_lnk_state = true;
+
+	bf->cbl_lnk_state = cbl_lnk_state;
+	bf->period_cnt += 1;
+
+	BB_DBG(bb, DBG_DCR,
+	       "[END] is_link = %d, period_cnt = %d, cable_link = %d, pkt_cnt_1ss = %d, pkt_cnt_2ss = %d\n",
+	       link->is_linked, bf->period_cnt, bf->cbl_lnk_state,
+	       pkt_cnt->pkt_cnt_1ss, pkt_cnt->pkt_cnt_2ss);
+}
+
 void halbb_dyn_csi_rsp_dbg(struct bb_info *bb, char input[][16], 
 				    u32 *_used, char *output, u32 *_out_len)
 {
@@ -439,3 +488,44 @@ void halbb_dyn_csi_rsp_dbg(struct bb_info *bb, char input[][16],
 	}
 }
 #endif
+
+bool halbb_dyn_csi_rsp_rlt_get(struct bb_info *bb)
+{
+#ifdef HALBB_DYN_CSI_RSP_SUPPORT
+	struct bf_ch_raw_info *bf = &bb->bb_cmn_hooker->bf_ch_raw_i;
+
+	BB_DBG(bb, DBG_DCR, "CSI Rsp Rlt = %d.\n", bf->is_csi_rsp_en);
+	return bf->is_csi_rsp_en;
+#else
+	return false;
+#endif
+}
+
+bool halbb_dcr_en(struct bb_info *bb, bool en)
+{
+	bool ret = true;
+#ifdef HALBB_DYN_CSI_RSP_SUPPORT
+	struct bf_ch_raw_info *bf = &bb->bb_cmn_hooker->bf_ch_raw_i;
+	u32 id = bb->phl_com->id.id & 0xFFFF;
+
+	if (id == 0x209 || id == 0x309) {
+		 BB_DBG(bb, DBG_DCR, "DCR_en=%d, cid=0x%x\n", en, id);
+	} else {
+		return false;
+	}
+
+	if (en) {
+		//Allocate Buffer
+		//ret = halbb_ch_info_buf_alloc(bb);
+		//if (ret) {
+			bf->dyn_csi_rsp_en = true;
+		//}
+	} else {
+		//halbb_ch_info_buf_rls(bb);
+		halbb_dcr_reset(bb);
+		bf->dyn_csi_rsp_en = false;
+	}
+#endif
+	return ret;
+}
+

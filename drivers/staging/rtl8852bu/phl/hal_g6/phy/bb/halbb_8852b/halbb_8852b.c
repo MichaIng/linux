@@ -26,48 +26,6 @@
 
 #ifdef BB_8852B_SUPPORT
 
-#ifdef BB_DYN_DTR
-void halbb_dyn_dtr_en_8852b(struct bb_info *bb, bool en)
-{
-	bb->bb_8852b_i.dyn_dtr_en = en;
-}
-
-void halbb_dyn_dtr_init_8852b(struct bb_info *bb)
-{
-	bb->bb_8852b_i.dyn_dtr_en = false;
-	bb->bb_8852b_i.dyn_dtr_rssi_th = 67;
-}
-
-void halbb_dyn_dtr_8852b(struct bb_info *bb)
-{
-	struct bb_link_info *link = &bb->bb_link_i;
-
-	if (!bb->bb_8852b_i.dyn_dtr_en) {
-		halbb_set_reg(bb, 0x4454, BIT(9), 0x0);
-		return;
-	}
-
-	if (!link->is_linked)
-		return;
-
-	if (!link->is_one_entry_only)
-		return;
-
-	BB_DBG(bb, DBG_IC_API, "[%s]\n", __func__);
-
-	if ((bb->bb_physts_i.bb_physts_rslt_hdr_i.rssi_avg >> 1) > bb->bb_8852b_i.dyn_dtr_rssi_th) {
-		// RSSI > th, enable DTR for 1ss 1R 
-		halbb_set_reg(bb, 0x4454, BIT(9), 0x1);
-		BB_DBG(bb, DBG_IC_API, "[DYN DTR] rssi=0x%x, Enable, 1ss w/ 1R\n", bb->bb_physts_i.bb_physts_rslt_hdr_i.rssi_avg >> 1);
-	} else if ((bb->bb_physts_i.bb_physts_rslt_hdr_i.rssi_avg >> 1) < (bb->bb_8852b_i.dyn_dtr_rssi_th - 2)) {
-		// RSSI < th - 2, disable DTR for 1ss 2R
-		halbb_set_reg(bb, 0x4454, BIT(9), 0x0);
-		BB_DBG(bb, DBG_IC_API, "[DYN DTR] rssi=0x%x, Disable, 1ss w/ 2R\n", bb->bb_physts_i.bb_physts_rslt_hdr_i.rssi_avg >> 1);
-	}
-
-}
-#endif
-
 bool halbb_chk_pkg_valid_8852b(struct bb_info *bb, u8 bb_ver, u8 rf_ver)
 {
 	bool valid = true;
@@ -90,6 +48,42 @@ bool halbb_chk_pkg_valid_8852b(struct bb_info *bb, u8 bb_ver, u8 rf_ver)
 	return valid;
 }
 
+bool halbb_chk_tx_idle_8852b(struct bb_info *bb, enum phl_phy_idx phy_idx)
+{
+	u8 tx_state = 0;
+	bool idle = false;
+	u32 dbg_port = 0x30002;
+
+	BB_DBG(bb, DBG_PHY_CONFIG, "<====== %s ======>\n", __func__);
+
+	if (phy_idx == HW_PHY_1)
+		return false;
+
+	if (halbb_bb_dbg_port_racing(bb, DBGPORT_PRI_3)) {
+		halbb_dbg_port_sel(bb, (u16)(dbg_port & 0xffff),
+				   (u8)((dbg_port & 0xff0000) >> 16), 0x0, 0x1);
+		BB_DBG(bb, DBG_PHY_CONFIG,
+		       "*Set dbg_port=(0x%x)\n", dbg_port);
+	} else {
+		dbg_port = halbb_get_bb_dbg_port_idx(bb);
+		BB_DBG(bb, DBG_PHY_CONFIG,
+		       "[Set dbg_port fail!] Curr-DbgPort=0x%x\n", dbg_port);
+
+		return false;
+	}
+
+	/* Release DBG port */
+	halbb_release_bb_dbg_port(bb);
+
+	tx_state = (u8)(halbb_get_bb_dbg_port_val(bb) & 0x3f);
+
+	if (tx_state == 0)
+		idle = true;
+	else
+		idle = false;
+
+	return idle;
+}
 
 void halbb_stop_pmac_tx_8852b(struct bb_info *bb,
 			      struct halbb_pmac_info *tx_info,
@@ -174,10 +168,21 @@ void halbb_set_pmac_tx_8852b(struct bb_info *bb, struct halbb_pmac_info *tx_info
 	halbb_set_reg_cmn(bb, 0x0988, 0x3f, 0x3f, phy_idx);
 
 	/* PD hit enable */
-	halbb_set_reg(bb, 0x704, BIT(1), 0);
 	halbb_set_reg_cmn(bb, 0xc3c, BIT(9), 1, phy_idx);
 	halbb_set_reg(bb, 0x2344, BIT(31), 1);
-	halbb_set_reg(bb, 0x704, BIT(1), 1);
+
+	/*Protest SW-SI */
+	halbb_set_reg(bb, 0x1200, 0x70000000, 0x7);
+	halbb_set_reg(bb, 0x3200, 0x70000000, 0x7);
+	halbb_delay_us(bb, 1);
+
+	/*BB reset*/
+	halbb_set_reg(bb, 0x704, BIT(1), 0x0);
+	halbb_set_reg(bb, 0x1200, 0x70000000, 0x0);
+	halbb_set_reg(bb, 0x3200, 0x70000000, 0x0);
+	halbb_set_reg(bb, 0x704, BIT(1), 0x1);
+
+	//halbb_bb_reset_all_8852b(bb, HW_PHY_0);
 
 	halbb_start_pmac_tx_8852b(bb, tx_info, tx_info->mode, tx_info->tx_cnt,
 		       tx_info->period, phy_idx);
@@ -213,14 +218,49 @@ void halbb_ic_hw_setting_init_8852b(struct bb_info *bb)
 		halbb_set_reg(bb, 0xd7c, BIT(1), 0);
 		halbb_set_reg(bb, 0x2d7c, BIT(1), 0);
 	}
+
+	if (bb->hal_com->cv != CAV) {
+		//set minimum UL txpwr requirement to -10dBm
+		halbb_write_mask_pwr_reg_cmn(bb, HW_PHY_0, 0xd240, 0x3fe00, 0x1d8);
+		halbb_write_mask_pwr_reg_cmn(bb, HW_PHY_1, 0xd240, 0x3fe00, 0x1d8);
+		//set UL txpwr compensation to 0dB
+		halbb_write_mask_pwr_reg_cmn(bb, HW_PHY_0, 0xd290, 0x1f, 0);
+		halbb_write_mask_pwr_reg_cmn(bb, HW_PHY_1, 0xd290, 0x1f, 0);
+	}
 }
 
 void halbb_ic_hw_setting_8852b(struct bb_info *bb)
 {
 	bool btg_en;
+	struct bb_env_mntr_info *env = &bb->bb_env_mntr_i;
+	struct bb_link_info *link = &bb->bb_link_i;	
+	struct rtw_phl_stainfo_t *sta = NULL;
+	struct rtw_rssi_info *sta_rssi = NULL;
+#ifdef HALBB_STATISTICS_SUPPORT
+	u32 cnt_diff = 0;
+	struct bb_stat_info *stat = &bb->bb_stat_i;
+	struct bb_cca_info *cca = &stat->bb_cca_i;
+	struct bb_fa_info *fa = &stat->bb_fa_i;
+#endif
+	u16 rssi_a = 0;
+	u16 rssi_b = 0;
+	u16 rssi_path_diff = 0;
+	u32 id = bb->phl_com->id.id & 0xFFFF;
 	
 	BB_DBG(bb, DBG_PHY_CONFIG, "<====== %s ======>\n", __func__);
+
+	if (!link->is_linked)
+		return;
 	
+	if (!link->is_one_entry_only)
+		return;
+
+	sta = bb->phl_sta_info[link->one_entry_macid];
+	sta_rssi = &sta->hal_sta->rssi_stat;
+	rssi_a = sta_rssi->rssi_ma_path[0];
+	rssi_b = sta_rssi->rssi_ma_path[1];
+	rssi_path_diff = DIFF_2(rssi_a, rssi_b) >> 5;
+
 	btg_en = (bb->hal_com->band[0].cur_chandef.band == BAND_ON_24G) &&
 		((bb->rx_path == RF_PATH_B) || (bb->rx_path == RF_PATH_AB)) ? true : false;
 	
@@ -234,6 +274,32 @@ void halbb_ic_hw_setting_8852b(struct bb_info *bb)
 		BB_DBG(bb, DBG_PHY_CONFIG, "[BT][RSSI] rssi_min=0x%x\n", bb->bb_ch_i.rssi_min >> 1);
 	}
 
+	// for wrc
+	if ((bb->hal_com->band[0].cur_chandef.band == BAND_ON_5G) && (id == 0x112))
+		halbb_set_reg(bb, 0x4408, BIT(25), 0x1);
+	else
+		halbb_set_reg(bb, 0x4408, BIT(25), 0x0);
+
+	if (rssi_path_diff > 15) {
+		halbb_set_reg(bb, 0x4964, BIT(31), 0);
+		BB_DBG(bb, DBG_PHY_CONFIG,
+			"rssi(a,b)=(%d,%d),rssi_diff=(%d),ant_wgt_normalize_mode_OFF\n",
+			rssi_a, rssi_b, rssi_path_diff);
+	} else {
+		halbb_set_reg(bb, 0x4964, BIT(31), 1);
+		BB_DBG(bb, DBG_PHY_CONFIG,
+			"rssi(a,b)=(%d,%d),rssi_diff=(%d),ant_wgt_normalize_mode_ON\n",
+			rssi_a, rssi_b, rssi_path_diff);
+	}
+#ifdef HALBB_STATISTICS_SUPPORT
+	cnt_diff = cca->cnt_ofdm_cca - fa->cnt_ofdm_fail;
+#endif
+	// dynamic setting for anti-interference 
+/*	if (env->nhm_ratio > 20) {
+		halbb_set_reg(bb, 0x46F8, 0xffffffff, 0x13c6);
+		halbb_set_reg(bb, 0x4440, BIT(31), 0x1);
+	}
+*/
 }
 
 bool halbb_set_pd_lower_bound_8852b(struct bb_info *bb, u8 bound,
@@ -246,6 +312,10 @@ bool halbb_set_pd_lower_bound_8852b(struct bb_info *bb, u8 bound,
 	BW40: 92~30
 	BW80: 89~27
 	*/
+	#ifdef HALBB_DIG_TDMA_SUPPORT
+	struct bb_dig_info *bb_dig = &bb->bb_dig_i;
+	struct bb_dig_op_unit *bb_dig_u = bb_dig->p_cur_dig_unit;
+	#endif
 	u8 bw_attenuation = 0;
 	u8 subband_filter_atteniation = 7;
 	u8 bound_idx = 0;
@@ -262,7 +332,7 @@ bool halbb_set_pd_lower_bound_8852b(struct bb_info *bb, u8 bound,
 
 	bb->bb_cmn_backup_i.cur_pd_lower_bound = bound;
 
-	if (bw == CHANNEL_WIDTH_20) {
+	if ((bw == CHANNEL_WIDTH_20) || (bw == CHANNEL_WIDTH_10) || (bw == CHANNEL_WIDTH_5)) {
 		bw_attenuation = 0;
 	} else if (bw == CHANNEL_WIDTH_40) {
 		bw_attenuation = 3;
@@ -299,6 +369,16 @@ bool halbb_set_pd_lower_bound_8852b(struct bb_info *bb, u8 bound,
 
 	BB_DBG(bb, DBG_PHY_CONFIG, "[PD Bound] Set Boundary Success!\n");
 
+	#ifdef HALBB_DIG_TDMA_SUPPORT
+	if ((bb_dig->dig_mode != DIG_TDMA) && (bb_dig->dig_mode != DIG_TDMA_ADV))
+		return rpt;
+
+	if (bb_dig_u->state_identifier == DIG_TDMA_LOW)
+		bb_dig->dig_state_l_i.pd_low_th = bound;
+	else
+		bb_dig->dig_state_h_i.pd_low_th = bound;
+	#endif
+
 	return rpt;
 }
 
@@ -306,6 +386,10 @@ bool halbb_set_pd_lower_bound_cck_8852b(struct bb_info *bb, u8 bound,
 				      enum channel_width bw,
 				      enum phl_phy_idx phy_idx)
 {
+	#ifdef HALBB_DIG_TDMA_SUPPORT
+	struct bb_dig_info *bb_dig = &bb->bb_dig_i;
+	struct bb_dig_op_unit *bb_dig_u = bb_dig->p_cur_dig_unit;
+	#endif
 	u8 bw_attenuation = 0;
 	u8 subband_filter_atteniation = 5;
 	s8 bound_tmp = 0;
@@ -324,7 +408,7 @@ bool halbb_set_pd_lower_bound_cck_8852b(struct bb_info *bb, u8 bound,
 		return true;
 	}
 
-	if (bw == CHANNEL_WIDTH_20) {
+	if ((bw == CHANNEL_WIDTH_20) || (bw == CHANNEL_WIDTH_10) || (bw == CHANNEL_WIDTH_5)) {
 		bw_attenuation = 0;
 	}
 	else if (bw == CHANNEL_WIDTH_40) {
@@ -347,6 +431,16 @@ bool halbb_set_pd_lower_bound_cck_8852b(struct bb_info *bb, u8 bound,
 	halbb_set_reg_cmn(bb, 0x23b0, BIT(23), 1, phy_idx);
 
 	BB_DBG(bb, DBG_PHY_CONFIG, "[PD Bound] Set CCK Boundary Success!\n");
+
+	#ifdef HALBB_DIG_TDMA_SUPPORT
+	if ((bb_dig->dig_mode != DIG_TDMA) && (bb_dig->dig_mode != DIG_TDMA_ADV))
+		return true;
+
+	if (bb_dig_u->state_identifier == DIG_TDMA_LOW)
+		bb_dig->dig_state_l_i.rssi_nocca_low_th= bound_tmp;
+	else
+		bb_dig->dig_state_h_i.rssi_nocca_low_th = bound_tmp;
+	#endif
 
 	return true;
 }
@@ -387,4 +481,36 @@ bool halbb_querry_pop_en_8852b(struct bb_info *bb, enum phl_phy_idx phy_idx)
 
 	return en;
 }
+
+void halbb_dyn_mu_bypass_vht_sigb_8852b(struct bb_info *bb)
+{
+	struct bb_cmn_rpt_info	*cmn_rpt = &bb->bb_cmn_rpt_i;
+	struct bb_pkt_cnt_mu_info *pkt_cnt = &cmn_rpt->bb_pkt_cnt_mu_i;
+	u8 offset = 0;
+	u32 vht_mu_pkt_th = 10;
+	u32 vht_mu_pkt = 0;
+
+	for (offset = 0; offset < VHT_RATE_NUM; offset++) {
+		vht_mu_pkt += pkt_cnt->pkt_cnt_vht[offset];
+	}
+	if (vht_mu_pkt > vht_mu_pkt_th) {
+		halbb_set_reg(bb, 0x4414, BIT(5), 1); // loop filter bandwidth selection slicer for 1st step to 2nd step
+		halbb_set_reg(bb, 0x4400, 0x07000000, 0x3); // channel tracking coefficients selection slicer for 1st step to 2nd step
+		halbb_set_reg(bb, 0x4404, 0x000f8000, 0x1f); // data tracking loop filter bandwidth selection for 2nd step
+		halbb_set_reg(bb, 0x4404, 0x0000001f, 0x4); // channel tracking coefficients selection slicer for 2nd step to 3rd step
+		halbb_set_reg(bb, 0x43f8, 0x00fc0000, 0x0); // channel tracking coefficients for 2nd step
+		halbb_set_reg(bb, 0x440c, 0x000f8000, 0x1f); // pilot tracking loop filter bandwidth selection for 2nd step
+		halbb_set_reg(bb, 0x43f8, BIT(30), 0); // enable noise variance tracking
+	} else {
+		halbb_set_reg(bb, 0x4414, BIT(5), 0); // loop filter bandwidth selection slicer for 1st step to 2nd step
+		halbb_set_reg(bb, 0x4400, 0x07000000, 0x4); // channel tracking coefficients selection slicer for 1st step to 2nd step
+		halbb_set_reg(bb, 0x4404, 0x000f8000, 0x1); // data tracking loop filter bandwidth selection for 2nd step
+		halbb_set_reg(bb, 0x4404, 0x0000001f, 0x8); // channel tracking coefficients selection slicer for 2nd step to 3rd step
+		halbb_set_reg(bb, 0x43f8, 0x00fc0000, 0x4); // channel tracking coefficients for 2nd step
+		halbb_set_reg(bb, 0x440c, 0x000f8000, 0x1); // pilot tracking loop filter bandwidth selection for 2nd step
+		halbb_set_reg(bb, 0x43fc, BIT(30), 1); // enable noise variance tracking
+	}
+}
+
+
 #endif

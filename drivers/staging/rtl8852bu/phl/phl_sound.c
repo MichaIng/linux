@@ -14,6 +14,9 @@
  *****************************************************************************/
 #include "phl_headers.h"
 
+#ifdef CONFIG_PHL_BEAMFORM
+#ifdef CONFIG_PHL_CMD_BF
+
 void __reset_snd_grp(struct phl_snd_grp *grp)
 {
 	u8 i = 0;
@@ -35,18 +38,13 @@ void __reset_snd_grp(struct phl_snd_grp *grp)
 	}
 }
 
-enum rtw_phl_status _phl_snd_init_snd_grp(
-	struct phl_info_t *phl_info)
+enum rtw_phl_status phl_snd_init_snd_grp(struct phl_info_t *phl_info)
 {
 	enum rtw_phl_status status = RTW_PHL_STATUS_SUCCESS;
 	struct phl_sound_obj *snd = (struct phl_sound_obj *)phl_info->snd_obj;
 	struct phl_sound_param *param = &snd->snd_param;
 	u8 i = 0;
 	do {
-		if (param->snd_grp == NULL) {
-			status = RTW_PHL_STATUS_FAILURE;
-			break;
-		}
 		for (i = 0; i < MAX_SND_GRP_NUM; i++) {
 			__reset_snd_grp(&param->snd_grp[i]);
 			param->snd_grp[i].gidx = i;
@@ -55,58 +53,6 @@ enum rtw_phl_status _phl_snd_init_snd_grp(
 
 	return status;
 }
-#ifdef CONFIG_FSM
-/* For EXTERNAL application to create Sound object */
-/* @fsm: FSM main structure which created by phl_snd_new_fsm()
- * @phl_info: private data structure to invoke hal/phl function
- *
- * return
- */
-enum rtw_phl_status phl_snd_new_obj(
-	struct fsm_main *fsm,
-	struct phl_info_t *phl_info)
-{
-	enum rtw_phl_status status = RTW_PHL_STATUS_SUCCESS;
-	struct phl_sound_obj *snd_obj = NULL;
-	struct fsm_obj *obj = NULL;
-	void *drv_priv = phl_to_drvpriv(phl_info);
-	FUNCIN();
-
-	do {
-		snd_obj = phl_fsm_new_obj(
-				fsm, (void **)&obj, sizeof(*snd_obj));
-
-		if (snd_obj == NULL) {
-			status = RTW_PHL_STATUS_RESOURCE;
-			break;
-		}
-		phl_info->snd_obj = snd_obj;
-
-		snd_obj->fsm = fsm;
-		snd_obj->fsm_obj = obj;
-		snd_obj->phl_info = phl_info;
-
-		/*Init the snd group static resources here*/
-		status = _phl_snd_init_snd_grp(phl_info);
-
-		/* init obj local use variable */
-		PHL_INFO("snd_fsm_func_init_st_hdl : PHL SND FSM Module Start Work\n");
-		_os_spinlock_init(drv_priv, &snd_obj->snd_lock);
-		_os_spinlock_init(drv_priv, &snd_obj->cmd_lock);
-		phl_snd_func_snd_init(snd_obj->phl_info);
-
-	} while (0);
-
-	if (RTW_PHL_STATUS_SUCCESS != status) {
-		PHL_ERR("phl_snd_init_obj FAIL\n");
-		/* phl fsm module will handle to free the phl fsm related object*/
-		/* phl_snd_deinit_obj(phl_info); */
-	}
-
-	FUNCOUT();
-	return status;
-}
-#endif
 
 /* PHL SOUND EXTERNAL APIs */
 /* get sounding in progress */
@@ -124,6 +70,119 @@ u8 rtw_phl_snd_chk_in_progress(void *phl)
 	return ret;
 }
 
+enum rtw_phl_status
+rtw_phl_snd_add_grp(void *phl,
+                    struct rtw_wifi_role_link_t *rlink,
+                    u8 gidx,
+                    u16 *macid,
+                    u8 num_sta,
+                    bool he,
+                    bool mu)
+{
+	enum rtw_phl_status status = RTW_PHL_STATUS_FAILURE;
+	struct phl_info_t *phl_info = (struct phl_info_t *)phl;
+	struct phl_sound_obj *snd = (struct phl_sound_obj *)phl_info->snd_obj;
+	struct phl_sound_param *snd_param = &snd->snd_param;
+	struct phl_snd_grp *snd_grp = NULL;
+	struct rtw_phl_stainfo_t *sta_info = NULL;
+	u8 i = 0;
+	u8 cnt = 0;
+
+	do {
+		if (gidx >= MAX_SND_GRP_NUM)
+			break;
+		if ((num_sta > MAX_NUM_STA_SND_GRP) || (0 == num_sta))
+			break;
+		if ((NULL == rlink) || (NULL == macid))
+			break;
+
+
+		snd_grp = &snd_param->snd_grp[gidx];
+
+		__reset_snd_grp(snd_grp);
+		snd_grp->wrole_idx = rlink->wrole->id;
+		snd_grp->band = rlink->hw_band;
+
+		if (RTW_FW_AP == phl_info->phl_com->fw_info.fw_type) {
+			snd_grp->snd_type = (he ? PHL_SND_TYPE_HE_SW : PHL_SND_TYPE_VHT_SW);
+		} else if ((RTW_FW_NIC == phl_info->phl_com->fw_info.fw_type) ||
+		           (RTW_FW_WOWLAN == phl_info->phl_com->fw_info.fw_type) ||
+				   (RTW_FW_WOWLAN_CE == phl_info->phl_com->fw_info.fw_type)) {
+			if (num_sta > 1)
+				break;
+			snd_grp->snd_type = (he ? PHL_SND_TYPE_HE_HW : PHL_SND_TYPE_VHT_HW);
+		} else {
+			PHL_INFO("%s :Unknown FW type!!!\n", __func__);
+			break;
+		}
+
+		for (i = 0; i < num_sta; i++) {
+			sta_info = rtw_phl_get_stainfo_by_macid(phl_info, macid[i]);
+
+			if (sta_info == NULL)
+				continue;
+
+			snd_grp->sta[cnt].macid = macid[i];
+			snd_grp->sta[cnt].valid = true;
+			snd_grp->sta[cnt].bw = sta_info->chandef.bw;
+			snd_grp->sta[cnt].snd_fb_t = (mu ? PHL_SND_FB_TYPE_MU : PHL_SND_FB_TYPE_SU);
+			snd_grp->sta[cnt].snd_sts = PHL_SND_STS_PENDING;
+			cnt++;
+		}
+
+		snd_grp->num_sta = cnt;
+
+		if (cnt > 0) {
+			snd_param->grp_used_map |= BIT(gidx);
+			status = RTW_PHL_STATUS_SUCCESS;
+		}
+	} while(0);
+
+	return status;
+}
+
+/**
+ * rtw_phl_sound_start
+ * @phl:(struct phl_info_t *)
+ * @st_dlg_tkn: start dialog token value, if 0, it will use previous sounding dialog token;
+ * @period: sounding process period (group--> next group)
+ * @test_flag: test mode flags
+ **/
+enum rtw_phl_status
+rtw_phl_sound_start_ex(void *phl, u8 wrole_idx, u8 st_dlg_tkn, u8 period, u8 test_flag)
+{
+	enum rtw_phl_status status = RTW_PHL_STATUS_SUCCESS;
+	struct phl_info_t *phl_info = (struct phl_info_t *)phl;
+	struct phl_sound_obj *snd = (struct phl_sound_obj *)phl_info->snd_obj;
+	struct phl_sound_param *snd_param = &snd->snd_param;
+	struct rtw_wifi_role_t *wrole = NULL;
+	u8 i = 0;
+
+	wrole = phl_get_wrole_by_ridx(phl_info, wrole_idx);
+	do {
+		snd_param->m_wrole = (void *)wrole;
+		snd_param->snd_proc_timeout_ms = 10;/* ms */
+		snd_param->snd_dialog_token = st_dlg_tkn;
+		snd_param->snd_proc_period = period;
+		snd_param->test_flag = test_flag;
+		snd_param->bypass_snd_sts_chk = true;/* temp by pass */
+		snd_param->snd_fail_counter = 0;
+
+		/* check grp status */
+		for (i = 0; i < MAX_SND_GRP_NUM;i++) {
+			if (0 != (snd_param->grp_used_map&BIT(i)))
+				snd_param->snd_func_grp_num++;
+		}
+
+		/* start with grouping */
+		status = phl_snd_cmd_sound_evt(phl, wrole, &snd_param->snd_grp[0], SND_CMD_BFER_PRECFG);
+
+	} while (0);
+
+	return status;
+
+}
+
 /**
  * rtw_phl_sound_start
  * @phl:(struct phl_info_t *)
@@ -134,154 +193,51 @@ u8 rtw_phl_snd_chk_in_progress(void *phl)
 enum rtw_phl_status
 rtw_phl_sound_start(void *phl, u8 wrole_idx, u8 st_dlg_tkn, u8 period, u8 test_flag)
 {
-#ifdef CONFIG_FSM
+	enum rtw_phl_status status = RTW_PHL_STATUS_SUCCESS;
 	struct phl_info_t *phl_info = (struct phl_info_t *)phl;
 	struct phl_sound_obj *snd = (struct phl_sound_obj *)phl_info->snd_obj;
-	struct phl_snd_start_req snd_req;
+	struct phl_sound_param *snd_param = &snd->snd_param;
+	struct rtw_wifi_role_t *wrole = NULL;
 
-	snd_req.wrole = (void *)rtw_phl_get_wrole_by_ridx(phl_info->phl_com, wrole_idx);
+	wrole = phl_get_wrole_by_ridx(phl_info, wrole_idx);
+	do {
+		snd_param->m_wrole = (void *)wrole;
+		snd_param->snd_proc_timeout_ms = 10;/* ms */
+		snd_param->snd_dialog_token = st_dlg_tkn;
+		snd_param->snd_proc_period = period;
+		snd_param->test_flag = test_flag;
+		snd_param->bypass_snd_sts_chk = true;/* temp by pass */
+		snd_param->snd_fail_counter = 0;
 
-	snd_req.dialog_token = (st_dlg_tkn == 0) ?
-					snd->snd_param.snd_dialog_token : st_dlg_tkn;
-	snd_req.proc_timeout_ms = SND_PROC_DEFAULT_TIMEOUT; /* Default Value */
-	snd_req.proc_period = (period > SND_PROC_DEFAULT_PERIOD) ?
-					SND_PROC_DEFAULT_PERIOD : period; /*MAX = Default Value */
-	snd_req.test_flag = test_flag;
-	if (test_flag&PHL_SND_TEST_F_PASS_STS_CHK)
-		snd_req.bypass_sts_chk = true;
-	else
-		snd_req.bypass_sts_chk = false; /* Default False */
+		/* start with grouping */
+		status = phl_snd_cmd_sound_evt(phl, wrole, &snd_param->snd_grp[0], SND_CMD_BFER_GROUPING);
 
-	return phl_snd_fsm_ev_start_func(phl, &snd_req);
-#else
-	return RTW_PHL_STATUS_FAILURE;
-#endif
-}
+	} while (0);
 
-enum rtw_phl_status
-rtw_phl_sound_down_ev(void *phl)
-{
-	enum rtw_phl_status status = RTW_PHL_STATUS_SUCCESS;
-
-#ifdef CONFIG_FSM
-	status = phl_snd_fsm_ev_c2h_snd_down(phl);
-#else
-	status = RTW_PHL_STATUS_FAILURE;
-#endif
 	return status;
-}
 
+}
 
 enum rtw_phl_status
 rtw_phl_sound_abort(void *phl)
 {
-#ifdef CONFIG_FSM
-	return phl_snd_fsm_ev_abort(phl);
-#else
-	return RTW_PHL_STATUS_FAILURE;
-#endif
-}
-
-/* set fixed mode parameters APIs*/
-void rtw_phl_snd_dump_fix_para(struct phl_info_t *phl_info)
-{
+	enum rtw_phl_status status = RTW_PHL_STATUS_SUCCESS;
+	struct phl_info_t *phl_info = (struct phl_info_t *)phl;
 	struct phl_sound_obj *snd = (struct phl_sound_obj *)phl_info->snd_obj;
-	struct phl_snd_fix_param *para = NULL;
-	u8 i = 0;
+	struct phl_sound_param *snd_param = &snd->snd_param;
+	struct rtw_wifi_role_t *wrole = (struct rtw_wifi_role_t *)snd_param->m_wrole;
+	void *d = phl_to_drvpriv(phl_info);
 
-	para = &snd->snd_param.fix_param;
-	PHL_TRACE(COMP_PHL_SOUND, _PHL_INFO_, "===> rtw_phl_snd_fix_dump_para \n");
+	phl_snd_cmd_sound_cancel_msg(phl_info);
+	_os_cancel_timer(d, &(snd->snd_timer));
 
-	PHL_TRACE(COMP_PHL_SOUND, _PHL_INFO_, "test_flag = 0x%x \n", snd->snd_param.test_flag);
+	status = phl_snd_cmd_sound_evt(phl_info,
+				       wrole,
+				       &(snd_param->snd_grp[0]),
+				       SND_CMD_BFER_TERMINATE);
 
-	PHL_TRACE(COMP_PHL_SOUND, _PHL_INFO_, "en_fix_gidx = %d \n", para->en_fix_gidx ? 1 : 0);
-	PHL_TRACE(COMP_PHL_SOUND, _PHL_INFO_, "en_fix_fb_type = %d \n", para->en_fix_fb_type ? 1 : 0);
-	PHL_TRACE(COMP_PHL_SOUND, _PHL_INFO_, "en_fix_sta = %d \n", para->en_fix_sta ? 1 : 0);
-	PHL_TRACE(COMP_PHL_SOUND, _PHL_INFO_, "en_fix_snd_bw = %d \n", para->en_fix_snd_bw ? 1 : 0);
-
-	PHL_TRACE(COMP_PHL_SOUND, _PHL_INFO_, "grp_idx = %d \n", para->grp_idx);
-	PHL_TRACE(COMP_PHL_SOUND, _PHL_INFO_, "snd_fb_type = %d \n", para->snd_fb_type);
-
-	for (i = 0; i < MAX_NUM_STA_SND_GRP; i++) {
-		PHL_TRACE(COMP_PHL_SOUND, _PHL_INFO_, "sta_macid[i] = 0x%x \n", para->sta_macid[i]);
-		PHL_TRACE(COMP_PHL_SOUND, _PHL_INFO_, "bw[i] = %d \n",para->bw[i]);
-	}
-
-	PHL_TRACE(COMP_PHL_SOUND, _PHL_INFO_, "<=== rtw_phl_snd_fix_dump_para \n");
+	return status;
 }
-/* fixed group idx */
-void rtw_phl_snd_fix_gidx(struct phl_info_t *phl_info, bool en, u8 gidx)
-{
-	struct phl_sound_obj *snd = (struct phl_sound_obj *)phl_info->snd_obj;
-	PHL_TRACE(COMP_PHL_SOUND, _PHL_INFO_, "rtw_phl_snd_fix_gidx() set sounding gidx = 0x%x\n", gidx);
-	if (en) {
-		snd->snd_param.fix_param.en_fix_gidx = 1;
-		snd->snd_param.fix_param.grp_idx = gidx;
-	} else {
-		snd->snd_param.fix_param.en_fix_gidx = 0;
-	}
-}
-/* fixed snd feedback type */
-void rtw_phl_snd_fix_snd_fb_type(struct phl_info_t *phl_info,
-				 bool en, enum snd_fb_type fb_type)
-{
-	struct phl_sound_obj *snd = (struct phl_sound_obj *)phl_info->snd_obj;
-	PHL_TRACE(COMP_PHL_SOUND, _PHL_INFO_, "rtw_phl_snd_fix_gidx() set sounding fb_type = 0x%x\n",
-		 fb_type);
-	if (en) {
-		snd->snd_param.fix_param.en_fix_fb_type = 1;
-		snd->snd_param.fix_param.snd_fb_type = fb_type;
-	} else {
-		snd->snd_param.fix_param.en_fix_fb_type = 0;
-	}
-}
-
-/* fixed sounding sta macids */
-void rtw_phl_snd_fix_set_sta(struct phl_info_t *phl_info,
-					bool en, u8 sidx, u16 macid)
-{
-	struct phl_sound_obj *snd = (struct phl_sound_obj *)phl_info->snd_obj;
-	PHL_TRACE(COMP_PHL_SOUND, _PHL_INFO_, "rtw_phl_snd_fix_set_sta() set sta[%d] macid = 0x%x\n",
-		 sidx, macid);
-	if (en) {
-		snd->snd_param.fix_param.en_fix_sta = 1;
-		if (sidx < MAX_NUM_STA_SND_GRP)
-			snd->snd_param.fix_param.sta_macid[sidx] = macid;
-		else
-			PHL_TRACE(COMP_PHL_SOUND, _PHL_INFO_, "ERROR, sidx >= 4\n");
-	} else {
-		snd->snd_param.fix_param.en_fix_sta = 0;
-	}
-}
-
-/* fixed sounding sta bw */
-void rtw_phl_snd_fix_set_bw(struct phl_info_t *phl_info,
-					bool en, u8 sidx, enum channel_width bw)
-{
-	struct phl_sound_obj *snd = (struct phl_sound_obj *)phl_info->snd_obj;
-	PHL_TRACE(COMP_PHL_SOUND, _PHL_INFO_, "rtw_phl_snd_fix_set_bw() set sta[%d] bw = 0x%x\n", sidx, bw);
-	if (en) {
-		snd->snd_param.fix_param.en_fix_snd_bw = 1;
-		if (sidx < MAX_NUM_STA_SND_GRP)
-			snd->snd_param.fix_param.bw[sidx] = bw;
-		else
-			PHL_TRACE(COMP_PHL_SOUND, _PHL_INFO_, "ERROR, sidx >= 4\n");
-	} else {
-		snd->snd_param.fix_param.en_fix_snd_bw = 0;
-	}
-}
-
-/* set forced fw tx mu-mimo (forced fw tx decision) */
-void rtw_phl_snd_fix_tx_he_mu(struct phl_info_t *phl_info, u8 gid, bool en)
-{
-	PHL_TRACE(COMP_PHL_SOUND, _PHL_INFO_, "rtw_phl_snd_fix_tx_mu_para()\n");
-
-	rtw_hal_bf_set_txmu_para(phl_info->hal, gid, en,
-				 HAL_PROT_NO_PROETCT, HAL_ACK_N_USER_BA);
-
-	rtw_hal_bf_set_fix_mode(phl_info->hal, gid, en);
-}
-
 
 /* PHL SOUND INTERNAL APIs */
 /* SND FUNC */
@@ -314,6 +270,7 @@ phl_snd_func_snd_init(struct phl_info_t *phl_info)
 	snd->snd_param.grp_used_map = 0;
 	snd->snd_param.snd_proc_period = SND_PROC_DEFAULT_PERIOD;
 	snd->snd_param.snd_fail_counter = 0;
+	snd->snd_in_progress = 0;
 
 	/*fixed_ru_tbl*/
 	_os_mem_cpy(d, snd->snd_param.fix_param.f_ru_tbl_20, f_ru_tbl_20m,
@@ -323,30 +280,6 @@ phl_snd_func_snd_init(struct phl_info_t *phl_info)
 
 	return pstatus;
 }
-
-enum rtw_phl_status
-phl_snd_func_pre_config(struct phl_info_t *phl_info)
-{
-	struct phl_sound_obj *snd = (struct phl_sound_obj *)phl_info->snd_obj;
-	struct phl_sound_param *snd_param = &snd->snd_param;
-	enum rtw_phl_status pstatus = RTW_PHL_STATUS_SUCCESS;
-	void *d = phl_to_drvpriv(phl_info);
-
-	snd_param->proc_start_time = _os_get_cur_time_ms();
-	snd_param->cur_proc_grp_idx = 0; /* default start from group idx 0 */
-	snd_param->pre_proc_grp_idx = 0;
-	_os_spinlock(d, &snd->snd_lock, _bh, NULL);
-	snd->is_terminated = 0;
-	snd->snd_in_progress = 1;
-	_os_spinunlock(d, &snd->snd_lock, _bh, NULL);
-
-	PHL_TRACE(COMP_PHL_SOUND, _PHL_INFO_, "PHL SND FUNC Start with SND Dialog Token = 0x%x\n",
-		 snd_param->snd_dialog_token);
-
-
-	return pstatus;
-}
-
 
 /* SND_FUNC : GROUP related */
 /**
@@ -561,7 +494,7 @@ phl_snd_func_add_snd_grp(
 		}
 
 		grp = &(snd_param->snd_grp[*gidx]);
-		grp->band = psta->wrole->hw_band;
+		grp->band = psta->rlink->hw_band;
 		grp->snd_type = he_snd ? PHL_SND_TYPE_HE_SW :
 					 PHL_SND_TYPE_VHT_SW;
 		grp->wrole_idx = wrole_idx;
@@ -615,77 +548,90 @@ phl_snd_func_grouping(struct phl_info_t *phl_info, u8 wroleidx)
 	struct phl_sound_param *snd_param = &snd->snd_param;
 	struct phl_snd_fix_param *fix_para = &snd->snd_param.fix_param;
 	struct rtw_wifi_role_t *wrole = NULL;
-	struct rtw_phl_stainfo_t *self = NULL, *sta;
+	struct rtw_wifi_role_link_t *rlink = NULL;
+	struct rtw_phl_mld_t *mld_self = NULL;
+	struct rtw_phl_stainfo_t *sta_self = NULL, *sta;
 	struct phl_snd_grp *grp = NULL;
 	void *drv = phl_to_drvpriv(phl_info);
 	struct phl_queue *sta_queue;
 	u8 gidx = 0;
-	u8 cnt = 0;
+	u8 cnt = 0, ridx = 0, midx = 0;
 
-	wrole = rtw_phl_get_wrole_by_ridx(phl_info->phl_com, wroleidx);
+	wrole = phl_get_wrole_by_ridx(phl_info, wroleidx);
 
 	/* if wrole(STA) is linked, seft = AP */
 	/* if wrole is AP, self = ???? */
-	self = rtw_phl_get_stainfo_self(phl_info, wrole);
-	if (self == NULL) {
+	mld_self = rtw_phl_get_mld_self(phl_info, wrole);
+	if (mld_self == NULL) {
 		PHL_ERR("Cannot get self's phl_sta\n");
 		return pstatus;
 	}
-	sta_queue = &wrole->assoc_sta_queue;
-	if (PHL_RTYPE_STATION == wrole->type) {
-		PHL_TRACE(COMP_PHL_SOUND, _PHL_INFO_, " PHL_RTYPE_STATION == wrole->type \n");
+
+	PHL_TRACE(COMP_PHL_SOUND, _PHL_INFO_, " PHL_RTYPE_STATION == wrole->type \n");
+
+	if (rtw_phl_role_is_client_category(wrole)) {
 		/* STA Mode : Only SU TxBF with AP */
+		for (midx = 0; midx < mld_self->sta_num; midx++) {
+			sta_self = mld_self->phl_sta[midx];
+			PHL_TRACE(COMP_PHL_SOUND, _PHL_INFO_, "sta_self->macid = 0x%x \n", sta_self->macid);
+			debug_dump_mac_address(sta_self->mac_addr);
 
-		PHL_TRACE(COMP_PHL_SOUND, _PHL_INFO_, "self->macid = 0x%x \n", self->macid);
-		debug_dump_mac_address(self->mac_addr);
-
-		pstatus = phl_snd_func_add_snd_grp(
-				phl_info,
-				(self->wmode & WLAN_MD_11AX) ? true :
-							       false,
-				wrole->id, self, &gidx);
-		grp = &snd_param->snd_grp[gidx];
-		grp->grp_tier = PHL_SND_GRP_TIER_0;
-		grp->sta[0].snd_fb_t = PHL_SND_FB_TYPE_SU;
-		grp->snd_type = (self->wmode & WLAN_MD_11AX) ?
-				PHL_SND_TYPE_HE_HW : PHL_SND_TYPE_VHT_HW;
+			pstatus = phl_snd_func_add_snd_grp(
+					phl_info,
+					(sta_self->wmode & WLAN_MD_11AX) ? true :
+								       false,
+					wrole->id, sta_self, &gidx);
+			grp = &snd_param->snd_grp[gidx];
+			grp->grp_tier = PHL_SND_GRP_TIER_0;
+			grp->sta[0].snd_fb_t = PHL_SND_FB_TYPE_SU;
+			grp->snd_type = (sta_self->wmode & WLAN_MD_11AX) ?
+					PHL_SND_TYPE_HE_HW : PHL_SND_TYPE_VHT_HW;
+		}
 	} else {
-#if 1
 		/* Test Code: Group-1 :Forced MU Sounding with first 1~4 STAs */
 		/* the mu sounding list shall get from mu grouping module */
-		cnt = 0;
-		_os_spinlock(drv, &sta_queue->lock, _bh, NULL);
-		phl_list_for_loop(sta, struct rtw_phl_stainfo_t,
-				  &wrole->assoc_sta_queue.queue, list) {
-			if (is_broadcast_mac_addr(sta->mac_addr))
-				continue;
-			if (sta == self)
-				continue;
-			/* First STA */
-			if (cnt == 0) {
-				pstatus = phl_snd_func_add_snd_grp(
-						phl_info,
-						(sta->wmode & WLAN_MD_11AX) ?
-							 true : false,
-						wrole->id, sta, &gidx);
-				if (pstatus != RTW_PHL_STATUS_SUCCESS)
+		for (ridx = 0; ridx < wrole->rlink_num; ridx++) {
+			rlink = get_rlink(wrole, ridx);
+			sta_queue = &rlink->assoc_sta_queue;
+			cnt = 0;
+
+			_os_spinlock(drv, &sta_queue->lock, _bh, NULL);
+			phl_list_for_loop(sta, struct rtw_phl_stainfo_t,
+					  &sta_queue->queue, list) {
+				if (is_broadcast_mac_addr(sta->mac_addr))
+					continue;
+
+				for (midx = 0; midx < mld_self->sta_num; midx++) {
+					if (sta == mld_self->phl_sta[midx])
+						continue;
+				}
+				/* First STA */
+				if (cnt == 0) {
+					pstatus = phl_snd_func_add_snd_grp(
+							phl_info,
+							(sta->wmode & WLAN_MD_11AX) ?
+								 true : false,
+							wrole->id, sta, &gidx);
+					if (pstatus != RTW_PHL_STATUS_SUCCESS)
+						break;
+				} else {
+					/* get next associated sta and add to group */
+					_phl_snd_func_grp_add_sta(phl_info, sta, gidx);
+				}
+				cnt++;
+				if (cnt >= 4)
 					break;
-			} else {
-				/* get next associated sta and add to group */
-				_phl_snd_func_grp_add_sta(phl_info, sta, gidx);
 			}
-			cnt++;
-			if (cnt >= 4)
-				break;
+			_os_spinunlock(drv, &sta_queue->lock, _bh, NULL);
+
+			if(pstatus != RTW_PHL_STATUS_SUCCESS)
+				return RTW_PHL_STATUS_FAILURE;
+
+			grp = &snd_param->snd_grp[gidx];
+			grp->grp_tier = PHL_SND_GRP_TIER_0;
+			/* Test : forced MU */
+			_phl_snd_func_set_grp_fb_mu(&snd_param->snd_grp[gidx]);
 		}
-		_os_spinunlock(drv, &sta_queue->lock, _bh, NULL);
-		if(pstatus != RTW_PHL_STATUS_SUCCESS)
-			return RTW_PHL_STATUS_FAILURE;
-		grp = &snd_param->snd_grp[gidx];
-		grp->grp_tier = PHL_SND_GRP_TIER_0;
-		/* Test : forced MU */
-		_phl_snd_func_set_grp_fb_mu(&snd_param->snd_grp[gidx]);
-#endif
 	}
 
 	/*TODO: fixed paramters gidx when multi-group */
@@ -721,7 +667,6 @@ phl_snd_func_grouping(struct phl_info_t *phl_info, u8 wroleidx)
 		snd_param->snd_grp[gidx].en_fix_mode = 1; /* post confg forced mode setting */
 	}
 	return pstatus;
-
 }
 
 /* SND PROC */
@@ -1038,7 +983,7 @@ phl_snd_cal_mu_grp_bitmap(struct phl_info_t *phl_info, struct phl_snd_grp *grp)
 			 *  MU_5 : MU_0  MU_1  MU_2  MU_3  MU_4
 			 **/
 
-			if (bfmu_idx_tmp > bfmu_idx) {
+			if ((bfmu_idx_tmp > bfmu_idx) && (bfmu_idx_tmp >= 1)) {
 				psta_info->hal_sta->mugrp_bmp |=
 							BIT(bfmu_idx_tmp - 1);
 			} else {
@@ -1062,12 +1007,9 @@ phl_snd_proc_precfg(struct phl_info_t *phl_info, struct phl_snd_grp *grp)
 	struct phl_snd_sta *sta = NULL;
 	u8 idx = 0;
 	struct rtw_phl_stainfo_t *psta_info = NULL;
+
 	FUNCIN_WSTS(pstatus);
 	do {
-		if (grp == NULL) {
-			pstatus = RTW_PHL_STATUS_FAILURE;
-			break;
-		}
 		if (PHL_SND_TYPE_INVALID == grp->snd_type) {
 			/* both SW/HW mode need to set call halmac api to set bf entry */
 			break;
@@ -1091,6 +1033,12 @@ phl_snd_proc_precfg(struct phl_info_t *phl_info, struct phl_snd_grp *grp)
 				}
 			}
 		}
+
+		/* config for each sounding sequence */
+		if (RTW_HAL_STATUS_SUCCESS != rtw_hal_snd_proc_pre_cfg(phl_info->hal)) {
+				pstatus = RTW_PHL_STATUS_FAILURE;
+		}
+
 		/* Prepare Group bitmap for Tx MU-MIMO */
 		if (PHL_SND_FB_TYPE_MU == grp->sta[0].snd_fb_t)
 			pstatus = phl_snd_cal_mu_grp_bitmap(phl_info, grp);
@@ -1100,6 +1048,7 @@ phl_snd_proc_precfg(struct phl_info_t *phl_info, struct phl_snd_grp *grp)
 
 	if(pstatus != RTW_PHL_STATUS_SUCCESS)
 		grp->snd_sts = PHL_SND_STS_FAILURE;
+
 	FUNCOUT_WSTS(pstatus);
 	return pstatus;
 }
@@ -1273,7 +1222,7 @@ _phl_snd_proc_fw_cmd_he_tb_4sta(struct phl_info_t *phl_info,
 			sta_info,
 			f_ru_tbl[1],
 			1,
-			(bfrp_num == 1) ? 0 : 0,
+			0,
 			(bfrp_num == 1) ? 1 : 1);
 	/*get third sta*/
 	sta_info = rtw_phl_get_stainfo_by_macid(phl_info, grp->sta[2].macid);
@@ -1422,10 +1371,11 @@ phl_snd_proc_start_sounding_fw(struct phl_info_t *phl_info,
 				  "PHL_SND_TYPE_VHT_HW:\n");
 			if(NULL == snd->ops.snd_send_ndpa)
 				break;
-			rtw_hal_snd_mac_ctrl(phl_info->hal, sta_info->wrole->hw_band, 0);
+
+			rtw_hal_snd_mac_ctrl(phl_info->hal, sta_info->rlink->hw_band, 0);
 			pstatus = snd->ops.snd_send_ndpa(
 					phl_to_drvpriv(phl_info),
-					sta_info->wrole,
+					sta_info->rlink,
 					&dialog_tkn,
 					&grp->sta[0].npda_sta_info,
 					grp->sta[0].bw);
@@ -1438,10 +1388,11 @@ phl_snd_proc_start_sounding_fw(struct phl_info_t *phl_info,
 				  "PHL_SND_TYPE_HE_HW:\n");
 			if(NULL == snd->ops.snd_send_ndpa)
 				break;
-			rtw_hal_snd_mac_ctrl(phl_info->hal, sta_info->wrole->hw_band, 0);
+
+			rtw_hal_snd_mac_ctrl(phl_info->hal, sta_info->rlink->hw_band, 0);
 			pstatus = snd->ops.snd_send_ndpa(
 					phl_to_drvpriv(phl_info),
-					sta_info->wrole,
+					sta_info->rlink,
 					&dialog_tkn,
 					&grp->sta[0].npda_sta_info,
 					grp->sta[0].bw);
@@ -1452,6 +1403,7 @@ phl_snd_proc_start_sounding_fw(struct phl_info_t *phl_info,
 			PHL_TRACE(COMP_PHL_SOUND, _PHL_INFO_, "ERROR: grp->snd_type invalid\n");
 			break;
 		}
+		snd->snd_param.snd_dialog_token++;
 		pstatus = RTW_PHL_STATUS_SUCCESS;
 	} while (0);
 	PHL_TRACE(COMP_PHL_SOUND, _PHL_INFO_, "<== phl_snd_proc_start_sounding_fw \n");
@@ -1570,10 +1522,6 @@ phl_snd_proc_postcfg(struct phl_info_t *phl_info, struct phl_snd_grp *grp)
 	FUNCIN();
 
 	do {
-		if (grp == NULL) {
-			pstatus = RTW_PHL_STATUS_FAILURE;
-			break;
-		}
 		he = (grp->snd_type >= PHL_SND_TYPE_HE_HW) ? true : false;
 		mu = (grp->sta[0].snd_fb_t == PHL_SND_FB_TYPE_MU) ? true :
 								    false;
@@ -1621,134 +1569,97 @@ phl_snd_proc_chk_condition(struct phl_info_t *phl_info, struct phl_snd_grp *grp)
 {
 	enum rtw_phl_status pstatus = RTW_PHL_STATUS_FAILURE;
 	struct phl_sound_obj *snd = (struct phl_sound_obj *)phl_info->snd_obj;
-	struct rtw_wifi_role_t *role =
-		(struct rtw_wifi_role_t *)snd->snd_param.m_wrole;
+	struct rtw_wifi_role_t *role = NULL;
 	struct phl_snd_sta *sta = NULL;
+	struct rtw_phl_mld_t *mld = NULL;
 	struct rtw_phl_stainfo_t *psta = NULL;
 	struct phl_sound_param *para = &snd->snd_param;
 	u8 i = 0;
 	u8 terminate = 0;
+	u8 idx = 0;
+
 	/* TODO: Add any conditions to stop the sounding fsm here */
 	do {
 		if (true == snd->is_terminated)
 			break;
 
+		/* get role from group */
+		role = phl_get_wrole_by_ridx(phl_info, grp->wrole_idx);
+
 		if (NULL != role) {
-			if (PHL_RTYPE_STATION == role->type) {
+			if (rtw_phl_role_is_client_category(role)) {
 				if (MLME_NO_LINK == role->mstate)
-					break;
-				psta = rtw_phl_get_stainfo_self(phl_info, role);
-				if (rtw_hal_bf_get_entry_snd_sts(
-						psta->hal_sta->bf_entry)) {
-					para->snd_fail_counter++;
-					if (para->snd_fail_counter > 10) {
-						PHL_TRACE(COMP_PHL_SOUND, _PHL_INFO_ ,
-							  "Sounding Fail Count > 10, break sounding !!!!\n");
-						break;
+					goto exit;
+
+				mld = rtw_phl_get_mld_self(phl_info, role);
+				for (idx = 0; idx < role->rlink_num; idx++) {
+					psta = mld->phl_sta[idx];
+					if (rtw_hal_bf_get_entry_snd_sts(
+							psta->hal_sta->bf_entry)) {
+						para->snd_fail_counter++;
+						if (para->snd_fail_counter > 10) {
+							PHL_TRACE(COMP_PHL_SOUND, _PHL_INFO_ ,
+								  "Sounding Fail Count > 10, break sounding !!!!\n");
+							goto exit;
+						}
+					} else {
+						para->snd_fail_counter = 0;
 					}
-				} else {
-					para->snd_fail_counter = 0;
 				}
-			} else if (PHL_RTYPE_AP == role->type) {
+			} else if (rtw_phl_role_is_ap_category(role)) {
 				if (false == role->active)
-					break;
-				if (grp->sta[0].bw > role->chandef.bw)
-					break;
+					goto exit;
+
+				for (idx = 0; idx < role->rlink_num; idx++) {
+					if (grp->sta[0].bw > role->rlink[idx].chandef.bw)
+						goto exit;
+				}
+
 				if (0 == grp->num_sta)
-					break;
+					goto exit;
+
 				for (i = 0; i < grp->num_sta; i++) {
 					sta = &grp->sta[i];
 					psta = rtw_phl_get_stainfo_by_macid(phl_info, sta->macid);
 					if (NULL == psta) {
 						terminate = 1;
-						break;
+						goto exit;
 					}
 					if (false == psta->active) {
 						terminate = 1;
-						break;
+						goto exit;
 					}
 					if (sta->bw != psta->chandef.bw) {
 						terminate = 1;
-						break;
+						goto exit;
 					}
 				}
-				if(terminate)
-					break;
 			}
 		}
 
 		pstatus = RTW_PHL_STATUS_SUCCESS;
 	} while (0);
 
-	return pstatus;
-}
-
-
-
-/**
- * Check the previous sounding group sounding status and free the resource.
- * if grp is TIER0 grp, skip release BF/CQI resource.
- **/
-void
-phl_snd_proc_chk_prev_grp(struct phl_info_t *phl_info,
-			  struct phl_snd_grp *grp)
-{
-	enum rtw_phl_status pstatus = RTW_PHL_STATUS_SUCCESS;
-	bool free_res = false;
-
-	if (PHL_SND_STS_FAILURE == grp->snd_sts) {
-		/* Sounding Fail */
-		free_res = true;
-	} else if ((PHL_SND_GRP_TIER_1 == grp->grp_tier) && (PHL_SND_STS_PENDING != grp->snd_sts)) {
-		/* Sounding Success and Group is TIER_1 */
-		free_res = true;
-	}
-
-	if (free_res) {
-		PHL_TRACE(COMP_PHL_SOUND, _PHL_INFO_, "Free Previous SND Group's Resource\n");
-		pstatus = phl_snd_proc_release_res(phl_info, grp);
-	}
-
-	return;
-}
-
-enum rtw_phl_status
-phl_snd_polling_pri_sta_sts(struct phl_info_t *phl_info,
-			    struct phl_snd_grp *grp)
-{
-	enum rtw_phl_status pstatus = RTW_PHL_STATUS_SUCCESS;
-	struct rtw_phl_stainfo_t *sta = NULL;
-
-	PHL_TRACE(COMP_PHL_SOUND, _PHL_INFO_,
-		  "phl_snd_polling_stutus : polling primay sta sounding status\n");
-	sta = rtw_phl_get_stainfo_by_macid(phl_info, grp->sta[0].macid);
-	if (sta != NULL) {
-		if (sta->active == true)
-			rtw_hal_snd_polling_snd_sts(phl_info->hal, sta);
-		else
-			pstatus = RTW_PHL_STATUS_FAILURE;
-	} else {
-		pstatus = RTW_PHL_STATUS_FAILURE;
-	}
-
+exit:
 	return pstatus;
 }
 
 void
 phl_snd_mac_ctrl(struct phl_info_t *phl_info,
-		 struct rtw_wifi_role_t *wrole, u8 ctrl)
+		 enum phl_band_idx band, u8 ctrl)
 {
 	enum rtw_hal_status hstatus = RTW_HAL_STATUS_SUCCESS;
-	hstatus = rtw_hal_snd_mac_ctrl(phl_info->hal, wrole->hw_band, ctrl);
+
+	hstatus = rtw_hal_snd_mac_ctrl(phl_info->hal, band, ctrl);
 }
 
 enum rtw_phl_status
 rtw_phl_snd_init_ops_send_ndpa(void *phl,
                                enum rtw_phl_status (*snd_send_ndpa)(void *,
-                                                                  struct rtw_wifi_role_t *,
-                                                                  u8 *,
-                                                                  u32 *,
-                                                                  enum channel_width))
+                                                                    struct rtw_wifi_role_link_t *,
+                                                                    u8 *,
+                                                                    u32 *,
+                                                                    enum channel_width))
 {
 	enum rtw_phl_status pstatus = RTW_PHL_STATUS_FAILURE;
 	struct phl_info_t *phl_info = (struct phl_info_t *)phl;
@@ -1762,3 +1673,54 @@ rtw_phl_snd_init_ops_send_ndpa(void *phl,
 	}
 	return pstatus;
 }
+
+#else
+
+enum rtw_phl_status
+rtw_phl_snd_init_ops_send_ndpa(void *phl,
+                               enum rtw_phl_status (*snd_send_ndpa)(void *,
+                                                                    struct rtw_wifi_role_link_t *,
+                                                                    u8 *,
+                                                                    u32 *,
+                                                                    enum channel_width))
+{
+	return RTW_PHL_STATUS_SUCCESS;
+}
+
+u8 rtw_phl_snd_chk_in_progress(void *phl)
+{
+	return 0;
+}
+
+enum rtw_phl_status
+rtw_phl_snd_add_grp(void *phl,
+                    struct rtw_wifi_role_link_t *rlink,
+                    u8 gidx,
+                    u16 *macid,
+                    u8 num_sta,
+                    bool he,
+                    bool mu)
+{
+	return RTW_PHL_STATUS_SUCCESS;
+}
+enum rtw_phl_status
+rtw_phl_sound_start_ex(void *phl, u8 wrole_idx, u8 st_dlg_tkn, u8 period, u8 test_flag)
+{
+	return RTW_PHL_STATUS_SUCCESS;
+}
+
+enum rtw_phl_status
+rtw_phl_sound_start(void *phl, u8 wrole_idx, u8 st_dlg_tkn, u8 period, u8 test_flag)
+{
+	return RTW_PHL_STATUS_SUCCESS;
+}
+
+
+enum rtw_phl_status
+rtw_phl_sound_abort(void *phl)
+{
+	return RTW_PHL_STATUS_SUCCESS;
+}
+
+#endif
+#endif

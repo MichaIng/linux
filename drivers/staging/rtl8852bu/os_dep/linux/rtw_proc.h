@@ -59,6 +59,11 @@ struct proc_dir_entry *rtw_adapter_proc_init(struct net_device *dev);
 void rtw_adapter_proc_deinit(struct net_device *dev);
 void rtw_adapter_proc_replace(struct net_device *dev);
 
+#ifdef CONFIG_SELF_DIAG_INFO
+static int proc_get_self_diag_info(struct seq_file *m, void *v);
+static ssize_t proc_set_self_diag_info(struct file *file, const char __user *buffer, size_t count, loff_t *pos, void *data);
+#endif
+
 #else /* !CONFIG_PROC_DEBUG */
 
 static inline int rtw_drv_proc_init(void) {return _FAIL;}

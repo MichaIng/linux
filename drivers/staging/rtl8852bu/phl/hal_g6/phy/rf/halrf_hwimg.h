@@ -33,6 +33,11 @@ struct halrf_radio_info {
 	u32 write_times_b;
 	u32 radio_a_parameter[RADIO_TO_FW_PAGE_SIZE][RADIO_TO_FW_DATA_SIZE];
 	u32 radio_b_parameter[RADIO_TO_FW_PAGE_SIZE][RADIO_TO_FW_DATA_SIZE];
+	bool radio_a_form_folder;
+	bool radio_b_form_folder;
+	bool radio_c_form_folder;
+	bool radio_d_form_folder;
+	bool radio_e_form_folder;
 };
 
 #endif /*  _HALRF_HW_IMG_8852A_H_ */

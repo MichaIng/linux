@@ -22,7 +22,11 @@ enum rtw_hal_status hal_wow_deinit_8852bu(struct rtw_phl_com_t *phl_com, struct 
 #endif /* CONFIG_WOWLAN */
 enum rtw_hal_status hal_get_efuse_8852bu(struct rtw_phl_com_t *phl_com,
 					 struct hal_info_t *hal);
+enum rtw_hal_status hal_fast_start_8852bu(struct rtw_phl_com_t *phl_com,
+					 struct hal_info_t *hal);
 
+enum rtw_hal_status hal_fast_stop_8852bu(struct rtw_phl_com_t *phl_com,
+					 struct hal_info_t *hal);
 enum rtw_hal_status hal_init_8852bu(struct rtw_phl_com_t *phl_com,
 				    struct hal_info_t *hal);
 void hal_deinit_8852bu(struct rtw_phl_com_t *phl_com,
@@ -35,6 +39,7 @@ enum rtw_hal_status hal_stop_8852bu(struct rtw_phl_com_t *phl_com,
 
 enum rtw_hal_status hal_mp_init_8852bu(struct rtw_phl_com_t *phl_com, struct hal_info_t *hal);
 enum rtw_hal_status hal_mp_deinit_8852bu(struct rtw_phl_com_t *phl_com, struct hal_info_t *hal);
+bool hal_mp_path_chk_8852bu(struct rtw_phl_com_t *phl_com, u8 ant_tx, u8 cur_phy);
 
 u32 hal_hci_cfg_8852bu(struct rtw_phl_com_t *phl_com,
 		struct hal_info_t *hal, struct rtw_ic_info *ic_info);
@@ -44,5 +49,11 @@ void init_hal_spec_8852bu(struct rtw_phl_com_t *phl_com,
 
 bool hal_recognize_int_8852bu(struct hal_info_t *hal);
 u32 hal_int_hdler_8852bu(struct hal_info_t *hal);
+
+void hal_enable_int_8852bu(struct hal_info_t *hal);
+void hal_disable_int_8852bu(struct hal_info_t *hal);
+void hal_config_int_8852bu(struct hal_info_t *hal, enum rtw_phl_config_int int_mode);
+bool hal_recognize_halt_c2h_int_8852bu(struct hal_info_t *hal);
+void hal_clear_interrupt_8852bu(struct hal_info_t *hal);
 
 #endif /* _RTL8852BU_HAL_H_ */

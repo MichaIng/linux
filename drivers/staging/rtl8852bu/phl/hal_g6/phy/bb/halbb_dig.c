@@ -1,27 +1,35 @@
-/******************************************************************************
+/*
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Copyright(c) 2007 - 2020  Realtek Corporation.
+ * Copyright (c) 2021, Realtek Semiconductor Corp. All rights reserved.
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of version 2 of the GNU General Public License as
- * published by the Free Software Foundation.
+ * Redistribution and use in source and binary forms, with or without modification,
+ * are permitted provided that the following conditions are met:
  *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
- * more details.
+ *   * Redistributions of source code must retain the above copyright notice, this
+ *     list of conditions and the following disclaimer.
  *
- * The full GNU General Public License is included in this distribution in the
- * file called LICENSE.
+ *   * Redistributions in binary form must reproduce the above copyright notice,
+ *     this list of conditions and the following disclaimer in the documentation
+ *     and/or other materials provided with the distribution.
  *
- * Contact Information:
- * wlanfae <wlanfae@realtek.com>
- * Realtek Corporation, No. 2, Innovation Road II, Hsinchu Science Park,
- * Hsinchu 300, Taiwan.
+ *   * Neither the name of the Realtek nor the names of its contributors may
+ *     be used to endorse or promote products derived from this software without
+ *     specific prior written permission.
  *
- * Larry Finger <Larry.Finger@lwfinger.net>
  *
- *****************************************************************************/
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR
+ * ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
+ * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+ * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
+ * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
+
 #include "halbb_precomp.h"
 
 #ifdef HALBB_DIG_SUPPORT
@@ -94,8 +102,19 @@ void halbb_dig_set_igi_cr_8852a(struct bb_info *bb, const struct agc_gaincode_se
 	if (bb->ic_type != BB_RTL8852A)
 		return;
 
-	halbb_set_igi_8852a_2(bb, set.lna_idx, set.tia_idx, set.rxb_idx, RF_PATH_A);
-	halbb_set_igi_8852a_2(bb, set.lna_idx, set.tia_idx, set.rxb_idx, RF_PATH_B);
+	if (bb->hal_com->dbcc_en) {
+		if (bb->bb_phy_idx == HW_PHY_0)
+			halbb_set_igi_8852a_2(bb, set.lna_idx, set.tia_idx,
+					      set.rxb_idx, RF_PATH_A);
+		else
+			halbb_set_igi_8852a_2(bb, set.lna_idx, set.tia_idx,
+					      set.rxb_idx, RF_PATH_B);
+	} else {
+		halbb_set_igi_8852a_2(bb, set.lna_idx, set.tia_idx,
+				      set.rxb_idx, RF_PATH_A);
+		halbb_set_igi_8852a_2(bb, set.lna_idx, set.tia_idx,
+				      set.rxb_idx, RF_PATH_B);
+	}
 
 	BB_DIG_DBG(bb, DIG_DBG_LV1, "Set (lna,tia,rxb)=((%d,%d,%02d))\n",
 		   set.lna_idx, set.tia_idx, set.rxb_idx);
@@ -384,20 +403,18 @@ void halbb_dig_damping_chk_init(struct bb_info *bb)
 u8 halbb_get_lna_idx(struct bb_info *bb, enum rf_path path)
 {
 	struct bb_dig_info *bb_dig = &bb->bb_dig_i;
-	const struct bb_dig_cr_info *cr = &bb_dig->bb_dig_cr_i;
+	const struct bb_dig_cr_info *cr = &bb->bb_cmn_hooker->bb_dig_cr_i;
 	u8 lna_idx = LNA_IDX_MAX;
 
 	/*lna initial gain index*/
 	switch (path) {
 	case RF_PATH_A:
-		lna_idx = (u8)halbb_get_reg_cmn(bb, cr->path0_lna_init_idx,
-					        cr->path0_lna_init_idx_m,
-					        bb->bb_phy_idx);
+		lna_idx = (u8)halbb_get_reg(bb, cr->path0_lna_init_idx,
+					    cr->path0_lna_init_idx_m);
 		break;
 	case RF_PATH_B:
-		lna_idx = (u8)halbb_get_reg_cmn(bb, cr->path1_lna_init_idx,
-					        cr->path1_lna_init_idx_m,
-					        bb->bb_phy_idx);
+		lna_idx = (u8)halbb_get_reg(bb, cr->path1_lna_init_idx,
+					    cr->path1_lna_init_idx_m);
 		break;
 	default:
 		break;
@@ -409,19 +426,17 @@ u8 halbb_get_lna_idx(struct bb_info *bb, enum rf_path path)
 u8 halbb_get_tia_idx(struct bb_info *bb, enum rf_path path)
 {
 	struct bb_dig_info *bb_dig = &bb->bb_dig_i;
-	const struct bb_dig_cr_info *cr = &bb_dig->bb_dig_cr_i;
+	const struct bb_dig_cr_info *cr = &bb->bb_cmn_hooker->bb_dig_cr_i;
 	u8 tia_idx = TIA_IDX_MAX;
 
 	switch (path) {
 	case RF_PATH_A:
-		tia_idx = (u8)halbb_get_reg_cmn(bb, cr->path0_tia_init_idx,
-						cr->path0_tia_init_idx_m,
-						bb->bb_phy_idx);
+		tia_idx = (u8)halbb_get_reg(bb, cr->path0_tia_init_idx,
+					    cr->path0_tia_init_idx_m);
 		break;
 	case RF_PATH_B:
-		tia_idx = (u8)halbb_get_reg_cmn(bb, cr->path1_tia_init_idx,
-					        cr->path1_tia_init_idx_m,
-					        bb->bb_phy_idx);
+		tia_idx = (u8)halbb_get_reg(bb, cr->path1_tia_init_idx,
+					    cr->path1_tia_init_idx_m);
 		break;
 	default:
 		break;
@@ -433,27 +448,30 @@ u8 halbb_get_tia_idx(struct bb_info *bb, enum rf_path path)
 u8 halbb_get_rxb_idx(struct bb_info *bb, enum rf_path path)
 {
 	struct bb_dig_info *bb_dig = &bb->bb_dig_i;
-	const struct bb_dig_cr_info *cr = &bb_dig->bb_dig_cr_i;
+	const struct bb_dig_cr_info *cr = &bb->bb_cmn_hooker->bb_dig_cr_i;
 	u8 rxb_idx = RXB_IDX_MAX;
 
 	switch (path) {
 	case RF_PATH_A:
-		rxb_idx = (u8)halbb_get_reg_cmn(bb,
-						cr->path0_rxb_init_idx,
-					        cr->path0_rxb_init_idx_m,
-					        bb->bb_phy_idx);
+		rxb_idx = (u8)halbb_get_reg(bb, cr->path0_rxb_init_idx,
+					    cr->path0_rxb_init_idx_m);
 		break;
 	case RF_PATH_B:
-		rxb_idx = (u8)halbb_get_reg_cmn(bb,
-						cr->path1_rxb_init_idx,
-					        cr->path1_rxb_init_idx_m,
-					        bb->bb_phy_idx);
+		rxb_idx = (u8)halbb_get_reg(bb, cr->path1_rxb_init_idx,
+					    cr->path1_rxb_init_idx_m);
 		break;
 	default:
 		break;
 	}
 
 	return rxb_idx;
+}
+
+u8 halbb_get_dig_igi(struct bb_info *bb)
+{
+	struct bb_dig_info *bb_dig = &bb->bb_dig_i;
+
+	return bb_dig->dig_state_h_i.igi_fa_rssi;
 }
 
 u8 halbb_igi_by_edcca(struct bb_info *bb, u8 igi)
@@ -542,6 +560,7 @@ u8 halbb_dig_igi_by_ofst(struct bb_info *bb, u8 igi_pre, s8 ofst)
 {
 	struct bb_dig_info *dig = &bb->bb_dig_i;
 	struct bb_dig_op_unit *dig_u = dig->p_cur_dig_unit;
+	struct bb_dig_op_para_unit *para = &dig_u->dig_op_para;
 	#ifdef HALBB_DIG_DAMPING_CHK
 	struct bb_dig_record_info *dig_rc = &dig->bb_dig_record_i;
 	#endif
@@ -552,6 +571,7 @@ u8 halbb_dig_igi_by_ofst(struct bb_info *bb, u8 igi_pre, s8 ofst)
 	igi_new = (u8)((s8)igi_pre + ofst);
 	dyn_min = SUBTRACT_TO_0(dig->igi_rssi, 10);
 	dyn_max = dyn_min + IGI_OFFSET_MAX;
+	dyn_min = SUBTRACT_TO_0(dyn_min, (dig->sr_coexist_en)? dig->igi_ofst_sr_coexist : 0);
 
 	#ifdef HALBB_DIG_DAMPING_CHK
 	/*@Limit Dyn min by damping*/
@@ -577,6 +597,14 @@ u8 halbb_dig_igi_by_ofst(struct bb_info *bb, u8 igi_pre, s8 ofst)
 	} else {
 		igi_new = joint_max;
 	}
+	#ifdef HALBB_SELF_DIAG_SUPPORT
+	/*Slef diagnostic : igi_new is joint_max and FA avg exceeds max threshold*/
+	if (joint_max == igi_new && dig_u->fa_r_avg >= para->fa_th[3]) {
+		dig->dig_event_cnt++;
+	} else {
+		dig->dig_event_cnt = 0;
+	}
+	#endif
 
 	BB_DIG_DBG(bb, DIG_DBG_LV0,
 		   "rssi=%02d, dyn(max,min)=(%d,%d), abs(max,min)=(%d,%d), Joint(max,min)=(%d,%d), igi=%d\n",
@@ -671,62 +699,70 @@ u8 halbb_dig_igi_bound_decision(struct bb_info *bb)
 	return igi_new;
 }
 
-bool halbb_dig_ifs_clm_trig(struct bb_info *bb, u16 mntr_time)
+bool halbb_dig_fahm_trig(struct bb_info *bb, u16 mntr_time)
 {
 	struct bb_dig_info *bb_dig = &bb->bb_dig_i;
 	bool is_trig_success = false;
 #ifdef HALBB_ENV_MNTR_SUPPORT
-	struct env_trig_rpt rpt = {0};
+	struct fahm_trig_report rpt = {0};
 
-	/* trigger env_mntr_rpt */
-	bb_dig->ccx_para_i.mntr_time = mntr_time - 15;
-	if (halbb_env_mntr_trigger(bb, &bb_dig->ccx_para_i, &rpt)
-	    & IFS_CLM_SUCCESS) {
-		BB_DIG_DBG(bb, DIG_DBG_LV2, "ifs_clm trigger ok, timestamp %d, mntr_time %d ms.\n",
-			   rpt.ccx_rpt_stamp, bb_dig->ccx_para_i.mntr_time);
-		bb_dig->ccx_timestamp = rpt.ccx_rpt_stamp;
-		bb_dig->ccx_is_triggered = true;
+	/* trigger fahm_rpt */
+	bb_dig->fahm_para_i.fahm_mntr_time = mntr_time - 15;
+	if (halbb_fahm_trigger(bb, &bb_dig->fahm_para_i, &rpt)) {
+		BB_DIG_DBG(bb, DIG_DBG_LV2,
+			   "fahm trigger ok, timestamp %d, mntr_time %d ms.\n",
+			   rpt.fahm_rpt_stamp,
+			   bb_dig->fahm_para_i.fahm_mntr_time);
+		bb_dig->fahm_timestamp = rpt.fahm_rpt_stamp;
+		bb_dig->fahm_is_triggered = true;
 		is_trig_success = true;
 	} else {
-		BB_DIG_DBG(bb, DIG_DBG_LV1, "ifs_clm trigger fail.\n");
+		BB_DIG_DBG(bb, DIG_DBG_LV1, "fahm trigger fail.\n");
 	}
 #endif
 	return is_trig_success;
 }
 
-bool halbb_dig_ifs_clm_latch(struct bb_info *bb)
+bool halbb_dig_fahm_latch(struct bb_info *bb)
 {
 	struct bb_dig_info *dig = &bb->bb_dig_i;
 	struct bb_dig_op_unit *dig_u = dig->p_cur_dig_unit;
 #ifdef HALBB_ENV_MNTR_SUPPORT
-	struct env_mntr_rpt rpt = {0};
-	u8 ifs_clm_rpt = halbb_env_mntr_result(bb, &rpt) & IFS_CLM_SUCCESS;
+	struct bb_env_mntr_info *env = &bb->bb_env_mntr_i;
+	struct fahm_report rpt = {0};
+	bool fahm_rpt_result = false;
 
-	/* get env_mntr_rpt and accumulate */
-	if (!dig->ccx_is_triggered) {
+	if (env->fahm_manual_ctrl) {
+		BB_DIG_DBG(bb, DIG_DBG_LV1, "FAHM in manual ctrl\n");
+		return false;
+	}
+
+	fahm_rpt_result = halbb_fahm_result(bb, &rpt);
+
+	/* get fahm_rpt and accumulate */
+	if (!dig->fahm_is_triggered) {
 		BB_DIG_DBG(bb, DIG_DBG_LV1, "[Latch Err] DIG not trigger.\n");
 		return false;
 	} else {
-		dig->ccx_is_triggered = false;
+		dig->fahm_is_triggered = false;
 	}
 
-	if (ifs_clm_rpt == 0) {
+	if (fahm_rpt_result == false) {
 		BB_DIG_DBG(bb, DIG_DBG_LV1, "[Latch Err] FA rpt not valid.\n");
 		return false;
 	}
 
-	if (dig->ccx_timestamp != rpt.ccx_rpt_stamp) {
+	if (dig->fahm_timestamp != rpt.fahm_rpt_stamp) {
 		BB_DIG_DBG(bb, DIG_DBG_LV1, "[Stamp Err] %d, mine: %d.\n",
-			   rpt.ccx_rpt_stamp, dig->ccx_timestamp);
+			   rpt.fahm_rpt_stamp, dig->fahm_timestamp);
 		return false;
 	}
 
-	dig_u->fa_r_acc += (rpt.ifs_clm_ofdm_fa_permil + rpt.ifs_clm_cck_fa_permil);
+	dig_u->fa_r_acc += rpt.fahm_permil;
 	dig_u->fa_valid_state_cnt++;
 
-	BB_DIG_DBG(bb, DIG_DBG_LV2, "[FA] CCK(%d) + OFDM(%d) = ALL(%d)\n",
-		   rpt.ifs_clm_cck_fa_permil, rpt.ifs_clm_ofdm_fa_permil,
-		   rpt.ifs_clm_cck_fa_permil + rpt.ifs_clm_ofdm_fa_permil);
+	BB_DIG_DBG(bb, DIG_DBG_LV2, "[FA] CCK + OFDM = ALL(%d)\n",
+		   rpt.fahm_permil);
 
 	BB_DIG_DBG(bb, DIG_DBG_LV2, "[FA] acc: %d, cnt: %d\n",
 		   dig_u->fa_r_acc, dig_u->fa_valid_state_cnt);
@@ -738,11 +774,14 @@ bool halbb_dig_ifs_clm_latch(struct bb_info *bb)
 void halbb_sdagc_follow_pagc_config(struct bb_info *bb, bool set_en)
 {
 	struct bb_dig_info *bb_dig = &bb->bb_dig_i;
-	const struct bb_dig_cr_info *cr = &bb_dig->bb_dig_cr_i;
+	const struct bb_dig_cr_info *cr = &bb->bb_cmn_hooker->bb_dig_cr_i;
 	u32 val = (set_en) ? 1 : 0;
 	u8 i = 0;
 
 	if (bb_dig->p_cur_dig_unit->sdagc_follow_pagc_en == set_en)
+		return;
+
+	if (bb->ic_type != BB_RTL8852A)
 		return;
 
 	bb_dig->p_cur_dig_unit->sdagc_follow_pagc_en = set_en;
@@ -763,7 +802,7 @@ void halbb_dyn_pd_th_cck(struct bb_info *bb, u8 rssi, bool set_en)
 {
 	struct bb_dig_info *bb_dig = &bb->bb_dig_i;
 	struct bb_dig_op_unit *bb_dig_u = bb_dig->p_cur_dig_unit;
-	const struct bb_dig_cr_info *cr = &bb_dig->bb_dig_cr_i;
+	const struct bb_dig_cr_info *cr = &bb->bb_cmn_hooker->bb_dig_cr_i;
 	u8 pd_dyn_max = bb_dig->igi_rssi + 5; /* PD_low upper bound */
 	u8 margin = bb_dig_u->pd_low_th_ofst; /* backoff of CCA ability */
 	u8 phy = bb->bb_phy_idx == HW_PHY_1 ? 1 : 0;
@@ -773,6 +812,7 @@ void halbb_dyn_pd_th_cck(struct bb_info *bb, u8 rssi, bool set_en)
 
 	rssi = MIN_2(rssi, pd_dyn_max);
 	rssi -= MIN_2(rssi, margin);
+	cbw = cbw == CHANNEL_WIDTH_20 ? bb->phl_com->dev_cap.nb_config : cbw;
 
 	if(!set_en) {
 		halbb_set_pd_lower_bound_cck(bb, RSSI_MIN, cbw, bb->bb_phy_idx);
@@ -791,7 +831,7 @@ void halbb_dyn_pd_th_ofdm(struct bb_info *bb, u8 rssi, bool set_en)
 {
 	struct bb_dig_info *bb_dig = &bb->bb_dig_i;
 	struct bb_dig_op_unit *bb_dig_u = bb_dig->p_cur_dig_unit;
-	const struct bb_dig_cr_info *cr = &bb_dig->bb_dig_cr_i;
+	const struct bb_dig_cr_info *cr = &bb->bb_cmn_hooker->bb_dig_cr_i;
 	u8 pd_dyn_max = bb_dig->igi_rssi + 5; /* PD_low upper bound */
 	u8 margin = bb_dig_u->pd_low_th_ofst; /* backoff of CCA ability */
 	u8 phy = bb->bb_phy_idx == HW_PHY_1 ? 1 : 0;
@@ -801,6 +841,8 @@ void halbb_dyn_pd_th_ofdm(struct bb_info *bb, u8 rssi, bool set_en)
 
 	rssi = MIN_2(rssi, pd_dyn_max);
 	rssi -= MIN_2(rssi, margin);
+	cbw = cbw == CHANNEL_WIDTH_20 ? bb->phl_com->dev_cap.nb_config : cbw;
+	bb_dig_u->cca_pd_fa_rssi = rssi;
 
 	if(!set_en) {
 		halbb_set_pd_lower_bound(bb, RSSI_MIN, cbw, bb->bb_phy_idx);
@@ -815,7 +857,7 @@ void halbb_dyn_pd_th_ofdm(struct bb_info *bb, u8 rssi, bool set_en)
 	}
 }
 
-void halbb_dig_mode_update(struct bb_info *bb, enum dig_op_mode mode)
+void halbb_dig_mode_update(struct bb_info *bb, enum dig_op_mode mode, enum phl_phy_idx phy_idx)
 {
 	struct bb_dig_info *bb_dig = &bb->bb_dig_i;
 
@@ -838,7 +880,7 @@ void halbb_dig_mode_update(struct bb_info *bb, enum dig_op_mode mode)
 void halbb_dig_gain_para_init(struct bb_info *bb)
 {
 	struct bb_dig_info *bb_dig = &bb->bb_dig_i;
-	struct bb_dig_cr_info *cr = &bb_dig->bb_dig_cr_i;
+	struct bb_dig_cr_info *cr = &bb->bb_cmn_hooker->bb_dig_cr_i;
 	s8 *gain_arr = NULL;
 	u32 tmp_val, i = 0;
 
@@ -935,10 +977,16 @@ void halbb_dig_gain_para_init(struct bb_info *bb)
 			   i, bb_dig->tia_gain_a[i]);
 
 	/*lna initial gain index*/
-	bb_dig->max_gaincode.lna_idx = halbb_get_lna_idx(bb, RF_PATH_A);
-	bb_dig->max_gaincode.tia_idx = halbb_get_tia_idx(bb, RF_PATH_A);
-	bb_dig->max_gaincode.rxb_idx = halbb_get_rxb_idx(bb, RF_PATH_A);
+	if (bb->hal_com->dbcc_en && (bb->bb_phy_idx == HW_PHY_1)) {
+		bb_dig->max_gaincode.lna_idx = halbb_get_lna_idx(bb, RF_PATH_B);
+		bb_dig->max_gaincode.tia_idx = halbb_get_tia_idx(bb, RF_PATH_B);
+		bb_dig->max_gaincode.rxb_idx = halbb_get_rxb_idx(bb, RF_PATH_B);
 
+	} else {
+		bb_dig->max_gaincode.lna_idx = halbb_get_lna_idx(bb, RF_PATH_A);
+		bb_dig->max_gaincode.tia_idx = halbb_get_tia_idx(bb, RF_PATH_A);
+		bb_dig->max_gaincode.rxb_idx = halbb_get_rxb_idx(bb, RF_PATH_A);
+	}
 	BB_DIG_DBG(bb, DIG_DBG_LV0, "Read max gaincode = (%d,%d,%2d)\n",
 		   bb_dig->max_gaincode.lna_idx, bb_dig->max_gaincode.tia_idx,
 		   bb_dig->max_gaincode.rxb_idx);
@@ -1006,7 +1054,11 @@ void halbb_dig_op_unit_para_reset_h(struct bb_info *bb)
 	unit_cur->force_gaincode = bb_dig->max_gaincode;
 	unit_cur->abs_igi_max = IGI_MAX_PERFORMANCE_MODE;
 	unit_cur->abs_igi_min = 0xc;
-	unit_cur->pd_low_th_ofst = 16;
+	/* Jira: PCIE-9751*/
+	if (bb->ic_type == BB_RTL8922A)
+		unit_cur->pd_low_th_ofst = 26;
+	else
+		unit_cur->pd_low_th_ofst = 16;
 #ifdef HALBB_DIG_TDMA_SUPPORT
 	unit_cur->state_identifier = DIG_TDMA_HIGH;
 #endif
@@ -1026,38 +1078,48 @@ void halbb_dig_op_unit_para_reset_l(struct bb_info *bb)
 	unit_cur->pd_low_th_ofst = 16;
 	unit_cur->state_identifier = DIG_TDMA_LOW;
 }
+
+void halbb_query_dig_info(struct bb_info *bb_0, struct bb_bkp_dig_info *dig_i, enum phl_phy_idx phy_idx)
+{
+	struct bb_info *bb = bb_0;
+	struct bb_dig_info *bb_dig = NULL;
+
+	#ifdef HALBB_DBCC_SUPPORT
+	HALBB_GET_PHY_PTR(bb_0, bb, phy_idx);
+	#endif
+
+	bb_dig = &bb->bb_dig_i;
+
+	BB_DBG(bb, DBG_DIG, "[%s]\n", __func__);
+
+	dig_i->h_pd_low_th = bb_dig->dig_state_h_i.pd_low_th;
+	dig_i->h_rssi_nocca_low_th = bb_dig->dig_state_h_i.rssi_nocca_low_th;
+	dig_i->l_pd_low_th = bb_dig->dig_state_l_i.pd_low_th;
+	dig_i->l_rssi_nocca_low_th = bb_dig->dig_state_l_i.rssi_nocca_low_th;
+}
 #endif
 
-void halbb_dig_ifs_clm_para_init(struct bb_info *bb)
+void halbb_dig_fahm_para_init(struct bb_info *bb)
 {
 	struct bb_dig_info *dig = &bb->bb_dig_i;
 #ifdef HALBB_ENV_MNTR_SUPPORT
-	struct ccx_para_info *para = &dig->ccx_para_i;
+	struct fahm_para_info *para = &dig->fahm_para_i;
 
-	para->rac_lv = RAC_LV_2;
-	para->mntr_time = DIG_CCX_WD_TRIGTIME;
-
-	para->clm_app = CLM_DIG;
-	para->clm_input_opt = CLM_CCA_S80_S40_S20;
-
-	para->nhm_app = NHM_DIG;
-	para->nhm_incld_cca = NHM_EXCLUDE_CCA;
+	para->fahm_rac_lv = RAC_LV_2;
+	para->fahm_mntr_time = DIG_CCX_WD_TRIGTIME;
 
 	para->fahm_app = FAHM_DIG;
 	para->fahm_numer_opt = FAHM_INCLU_FA;
 	para->fahm_denom_opt = FAHM_INCLU_CRC_ERR;
-
-	para->ifs_clm_app = IFS_CLM_DIG;
-
-	para->edcca_clm_app = EDCCA_CLM_DIG;
-	para->ccx_edcca_opt_sc_idx = CCX_EDCCA_SEG0_P0;
 #endif
-	dig->ccx_is_triggered = false;
+	dig->fahm_is_triggered = false;
 }
 
 void halbb_dig_para_reset(struct bb_info *bb)
 {
 	struct bb_dig_info *bb_dig = &bb->bb_dig_i;
+
+	halbb_mem_set(bb, &bb_dig->dig_fa_i, 0, sizeof(struct bb_dig_fa_info));
 
 	bb_dig->pre_dig_mode = bb_dig->dig_mode;
 	bb_dig->p_cur_dig_unit = &bb_dig->dig_state_h_i;
@@ -1071,8 +1133,8 @@ void halbb_dig_para_reset(struct bb_info *bb)
 	bb_dig->tdma_timestamp_pre = bb_dig->tdma_timestamp_cur;
 #endif
 #ifdef HALBB_ENV_MNTR_SUPPORT
-	bb_dig->ccx_timestamp = 0;
-	bb_dig->ccx_is_triggered = false;
+	bb_dig->fahm_timestamp = 0;
+	bb_dig->fahm_is_triggered = false;
 #endif
 }
 
@@ -1082,8 +1144,13 @@ void halbb_dig_reset(struct bb_info *bb)
 
 	BB_DIG_DBG(bb, DIG_DBG_LV0, "[%s]=========>\n", __func__);
 
-	halbb_mem_set(bb, &bb_dig->dig_fa_i, 0, sizeof(struct bb_dig_fa_info));
 	halbb_dig_para_reset(bb);
+
+#ifdef HALBB_FW_OFLD_SUPPORT
+	if (bb->bb_cmn_hooker->skip_io_init_en && !bb_dig->init_dig_cr_success)
+		return;
+#endif
+
 #ifdef BB_8852A_2_SUPPORT
 	halbb_dig_set_igi_cr_8852a(bb, bb_dig->max_gaincode);
 #endif
@@ -1092,10 +1159,24 @@ void halbb_dig_reset(struct bb_info *bb)
 	halbb_sdagc_follow_pagc_config(bb, false);
 }
 
+void halbb_dig_init_io_en(struct bb_info *bb)
+{
+	struct bb_dig_info *dig = &bb->bb_dig_i;
+	u8 igi_new;
+
+	BB_DBG(bb, DBG_DIG, "[%s]=========>\n", __func__);
+
+	halbb_dig_gain_para_init(bb);
+	halbb_dig_para_update(bb);
+	igi_new = halbb_dig_igi_by_ofst(bb, dig->igi_rssi, 0);
+	halbb_dig_cfg_bbcr(bb, igi_new);
+
+	dig->init_dig_cr_success = true;
+}
+
 void halbb_dig_init(struct bb_info *bb)
 {
 	struct bb_dig_info *bb_dig = &bb->bb_dig_i;
-	u8 igi_new;
 
 	if(phl_is_mp_mode(bb->phl_com))
 		return;
@@ -1103,35 +1184,39 @@ void halbb_dig_init(struct bb_info *bb)
 	BB_DIG_DBG(bb, DIG_DBG_LV0, "[%s]=========>\n", __func__);
 
 	/* DIG sub-DM configurations */
-	halbb_dig_mode_update(bb, DIG_ORIGIN);
+	halbb_dig_mode_update(bb, DIG_ORIGIN, bb->bb_phy_idx);
+	bb_dig->igi_rssi = IGI_NOLINK - 10; /*init IGI state*/
 	bb_dig->igi_pause_cnt = 0;
 	bb_dig->le_igi_ofst = 0;
 	bb_dig->dbg_lv = DIG_DBG_LV2;
+	bb_dig->sr_coexist_en = false;
+	bb_dig->igi_ofst_sr_coexist = 6;
 	bb_dig->dig_state_h_i.state_num_lmt = 3;
 	bb_dig->dig_state_h_i.sdagc_follow_pagc_en = false;
+#ifdef HALBB_SELF_DIAG_SUPPORT
+	bb_dig->dig_event_cnt = 0;
+#endif
 #ifdef HALBB_DIG_TDMA_SUPPORT
 	bb_dig->dig_state_l_i.state_num_lmt = 1;
 	bb_dig->dig_state_l_i.sdagc_follow_pagc_en = false;
 	bb_dig->dig_timer_i.cb_time = 50;
 #endif
-	halbb_dig_ifs_clm_para_init(bb);
-	halbb_dig_gain_para_init(bb);
-	halbb_dig_reset(bb);
-	bb_dig->dig_state_h_i.igi_fa_rssi = 1; /*init state*/
-	halbb_dig_para_update(bb);
-
+	halbb_dig_fahm_para_init(bb);
 #ifdef HALBB_DIG_DAMPING_CHK
 	halbb_dig_damping_chk_init(bb);
 #endif
-	igi_new = halbb_dig_igi_by_ofst(bb, IGI_NOLINK, 0);
-	halbb_dig_cfg_bbcr(bb, igi_new);
-}
+	halbb_dig_para_reset(bb);
 
-void halbb_dig_deinit(struct bb_info *bb)
-{
-#ifdef HALBB_DIG_TDMA_SUPPORT
-	BB_DBG(bb, DBG_INIT, "halbb_dig_deinit");
+#ifdef HALBB_FW_OFLD_SUPPORT
+	BB_DBG(bb, DBG_DIG, "[%s][phy=%d]skip_io_init_en = %d\n",
+	       __func__, bb->bb_phy_idx, bb->bb_cmn_hooker->skip_io_init_en);
+
+	if (bb->bb_cmn_hooker->skip_io_init_en) {
+		bb_dig->init_dig_cr_success = false;
+		return;
+	}
 #endif
+	halbb_dig_init_io_en(bb);
 }
 
 bool halbb_dig_abort(struct bb_info *bb)
@@ -1199,25 +1284,6 @@ void halbb_dig_cfg_bbcr(struct bb_info *bb, u8 igi_new)
 		halbb_sdagc_follow_pagc_config(bb, false);
 }
 
-void halbb_dig_new_entry_connect(struct bb_info *bb)
-{
-	struct bb_dig_info *dig = &bb->bb_dig_i;
-	u8 igi_new;
-	u8 rssi_min_new = halbb_get_rssi_min(bb);
-
-	BB_DIG_DBG(bb, DIG_DBG_LV0, "%s ======>\n", __func__);
-	if (rssi_min_new == 0)
-		return;
-
-	BB_DIG_DBG(bb, DIG_DBG_LV0, "rssi_min_new=%d\n", rssi_min_new);
-	/* Update igi_rssi */
-	dig->igi_rssi = rssi_min_new >> 1;
-	igi_new = halbb_dig_igi_by_ofst(bb, dig->igi_rssi, 0);
-	halbb_dig_cfg_bbcr(bb, igi_new);
-	/*Update EDCCA threshold*/
-	halbb_edcca_thre_calc(bb);
-}
-
 void halbb_dig_lps(struct bb_info *bb)
 {
 	struct bb_dig_info *bb_dig = &bb->bb_dig_i;
@@ -1239,17 +1305,57 @@ void halbb_dig_lps(struct bb_info *bb)
 	halbb_dig_cfg_bbcr(bb, (u8)final_rssi);
 }
 
+void halbb_dig_simple(struct bb_info *bb, u8 rssi_ofst)
+{
+	struct bb_dig_info *bb_dig = &bb->bb_dig_i;
+	struct bb_dig_op_unit *bb_dig_u = bb_dig->p_cur_dig_unit;
+	struct bb_link_info *bb_link = &bb->bb_link_i;
+	s16 final_rssi = 0;
+	u8 bound = 0;
+	u8 phy = bb->bb_phy_idx == HW_PHY_1 ? 1 : 0;
+	enum channel_width cbw = bb->hal_com->band[phy].cur_chandef.bw;
+
+	BB_DBG(bb, DBG_DIG, "%s ======>\n", __func__);
+	/* Simple DIG for control PD LB only*/
+	/* Update igi_rssi */
+	bb_dig->igi_rssi = (bb_link->is_linked) ? (bb->bb_ch_i.rssi_min >> 1) : IGI_NOLINK;
+
+	/*final_rssi = MIN_2(bb_dig->igi_rssi + bb_dig->le_igi_ofst, RSSI_MAX);*/
+	/* Remove 10 dB offset */
+	final_rssi = MIN_2(bb_dig->igi_rssi, RSSI_MAX);
+	final_rssi = SUBTRACT_TO_0(final_rssi, rssi_ofst);
+	bound = 110 - final_rssi;
+
+	BB_DBG(bb, DBG_DIG, "rssi=%03d, rssi_ofst=(%03d), bound = %03d\n",
+		   bb_dig->igi_rssi, rssi_ofst, bound);
+
+	/* Dynamic PD lower bound */
+	halbb_set_pd_lower_bound(bb, bound, cbw, phy);
+	/*halbb_dyn_pd_th(bb, (u8)final_rssi, true);*/
+}
+
 void halbb_dig(struct bb_info *bb)
 {
 	struct bb_dig_info *dig = &bb->bb_dig_i;
 	struct bb_dig_op_unit *dig_u = &dig->dig_state_h_i;
 	struct bb_dig_op_para_unit *para = &dig_u->dig_op_para;
 	struct bb_link_info *bb_link = &bb->bb_link_i;
-	u16 fa_avg;
 	u8 igi_new, igi_pre = dig_u->igi_fa_rssi;
 	s8 ofst;
 
+	halbb_show_cr_cnt(bb, BB_WD_DIG);
 	BB_DIG_DBG(bb, DIG_DBG_LV0, "%s ======>\n", __func__);
+
+#ifdef HALBB_FW_OFLD_SUPPORT
+	if (bb->bb_cmn_hooker->skip_io_init_en) {
+		if (!dig->init_dig_cr_success) {
+			halbb_dig_init_io_en(bb);
+			BB_DBG(bb, DBG_DIG, "init_dig_cr_success = %d\n",
+			       dig->init_dig_cr_success);
+			return;
+		}
+	}
+#endif
 
 	dig->need_update |= (bb_link->first_connect | bb_link->first_disconnect);
 
@@ -1271,6 +1377,9 @@ void halbb_dig(struct bb_info *bb)
 		igi_new = halbb_dig_igi_by_ofst(bb, dig->igi_rssi, 0);
 		halbb_dig_cfg_bbcr(bb, igi_new);
 		dig->need_update = false;
+		#ifdef HALBB_SELF_DIAG_SUPPORT
+		dig->dig_event_cnt = 0;
+		#endif
 		return;
 	}
 
@@ -1289,35 +1398,42 @@ void halbb_dig(struct bb_info *bb)
 	}
 
 	/* FA info handling */
-	if (!halbb_dig_ifs_clm_latch(bb)) {
-		BB_DIG_DBG(bb, DIG_DBG_LV0, "IFS CLM Get Rpt Fail\n");
+	if (!halbb_dig_fahm_latch(bb)) {
+		BB_DIG_DBG(bb, DIG_DBG_LV0, "FAHM Get Rpt Fail\n");
 		goto DIG_END;
 	}
 
-	fa_avg = HALBB_DIV(dig_u->fa_r_acc, dig_u->fa_valid_state_cnt);
+	dig_u->fa_r_avg = HALBB_DIV(dig_u->fa_r_acc, dig_u->fa_valid_state_cnt);
 	dig_u->fa_r_acc = 0;
 	dig_u->fa_valid_state_cnt = 0;
 
 #ifdef HALBB_DIG_DAMPING_CHK
 	/*Record IGI History*/
-	halbb_dig_recorder(bb, igi_pre, fa_avg);
+	halbb_dig_recorder(bb, igi_pre, dig_u->fa_r_avg);
 	/*DIG Damping Check*/
 	halbb_dig_damping_chk(bb);
 #endif
-	ofst = halbb_dig_ofst_by_fa(bb, fa_avg);
+	ofst = halbb_dig_ofst_by_fa(bb, dig_u->fa_r_avg);
 	igi_new = halbb_dig_igi_by_ofst(bb, igi_pre, ofst);
 	halbb_dig_cfg_bbcr(bb, igi_new);
 
+#ifdef HALBB_SELF_DIAG_SUPPORT
+	if (dig->dig_event_cnt >= DIG_EVENT_PERIOD && bb_link->is_linked) {
+		halbb_diagnostic_event_notify(bb, F_DIG, MAX_DYN_PD);
+		BB_DBG(bb, DBG_DIG, "[Self Diag] DIG event count = %d\n", dig->dig_event_cnt);
+	}
+#endif
+
 DIG_END:
-	if (!halbb_dig_ifs_clm_trig(bb, DIG_CCX_WD_TRIGTIME))
-		BB_DIG_DBG(bb, DIG_DBG_LV0, "IFS CLM Trig Fail\n");
+	if (!halbb_dig_fahm_trig(bb, DIG_CCX_WD_TRIGTIME))
+		BB_DIG_DBG(bb, DIG_DBG_LV0, "FAHM Trig Fail\n");
 }
 
 #ifdef HALBB_DIG_TDMA_SUPPORT
 void halbb_tdma_dig(struct bb_info *bb) {
 	struct bb_dig_info *bb_dig = &bb->bb_dig_i;
 	struct bb_dig_op_unit *bb_dig_u = bb_dig->p_cur_dig_unit;
-	bool ifs_clm_op_status = false;
+	bool fahm_op_status = false;
 	bool igi_update_en_h = false, igi_update_en_l = false;
 
 	bb_dig->tdma_timestamp_cur++;
@@ -1327,7 +1443,7 @@ void halbb_tdma_dig(struct bb_info *bb) {
 		   bb_dig_u->passed_state_cnt, bb_dig_u->state_num_lmt);
 
 	/* FA info handling */
-	ifs_clm_op_status = halbb_dig_ifs_clm_latch(bb);
+	fahm_op_status = halbb_dig_fahm_latch(bb);
 
 	/* Two seconds periodic procedure */
 	if (bb_dig->tdma_passed_time_acc >= WACHDOG_PERIOD_IN_MS) {
@@ -1341,7 +1457,7 @@ void halbb_tdma_dig(struct bb_info *bb) {
 		halbb_dig_noisy_lv_decision(bb);
 		halbb_dig_igi_ofst_by_env(bb);
 		/* IGI and boundary decision */
-		bb_dig_u->igi_fa_rssi = halbb_dig_igi_bound_decision(bb);
+		bb_dig->p_cur_dig_unit->igi_fa_rssi = halbb_dig_igi_bound_decision(bb);
 #ifdef BB_8852A_2_SUPPORT
 		/* IGI decision */
 		igi_update_en_h = halbb_dig_gaincode_update_en_8852a(bb);
@@ -1355,7 +1471,7 @@ void halbb_tdma_dig(struct bb_info *bb) {
 		halbb_dig_noisy_lv_decision(bb);
 		halbb_dig_igi_ofst_by_env(bb);
 		/* IGI and boundary decision */
-		bb_dig_u->igi_fa_rssi = halbb_dig_igi_bound_decision(bb);
+		bb_dig->p_cur_dig_unit->igi_fa_rssi = halbb_dig_igi_bound_decision(bb);
 #ifdef BB_8852A_2_SUPPORT
 		/* IGI decision */
 		igi_update_en_l = halbb_dig_gaincode_update_en_8852a(bb);
@@ -1405,7 +1521,7 @@ void halbb_tdma_dig(struct bb_info *bb) {
 			halbb_sdagc_follow_pagc_config(bb, false);
 	}
 
-	ifs_clm_op_status = halbb_dig_ifs_clm_trig(bb, (u16)bb_dig->dig_timer_i.cb_time);
+	fahm_op_status = halbb_dig_fahm_trig(bb, (u16)bb_dig->dig_timer_i.cb_time);
 }
 
 void halbb_dig_timercheck_watchdog(struct bb_info *bb)
@@ -1451,17 +1567,14 @@ void halbb_tdmadig_callback(void *context)
 
 	timer->timer_state = BB_TIMER_IDLE;
 
-	if (bb->phl_com->hci_type == RTW_HCI_PCIE)
-		halbb_tdmadig_io_en(bb);
-	else
-		rtw_hal_cmd_notify(bb->phl_com, MSG_EVT_NOTIFY_BB, (void *)(&timer->event_idx), bb->bb_phy_idx);
+	rtw_hal_cmd_notify(bb->phl_com, MSG_EVT_NOTIFY_BB, (void *)(&timer->event_idx), bb->bb_phy_idx);
 }
 
 void halbb_dig_timer_init(struct bb_info *bb)
 {
 	struct halbb_timer_info *timer = &bb->bb_dig_i.dig_timer_i;
 
-	BB_DBG(bb, DBG_DIG, "[%s]\n", __func__);
+	BB_DBG(bb, DBG_INIT, "[%s]\n", __func__);
 
 	timer->event_idx = BB_EVENT_TIMER_DIG;
 	timer->timer_state = BB_TIMER_IDLE;
@@ -1475,10 +1588,14 @@ void halbb_set_dig_pause_val(struct bb_info *bb, u32 *buf, u8 val_len)
 {
 	struct bb_dig_info *bb_dig = &bb->bb_dig_i;
 	struct bb_dig_op_unit *dig_u = bb_dig->p_cur_dig_unit;
-	struct agc_gaincode_set gaincode = bb_dig->max_gaincode;
 	u8 phy = bb->bb_phy_idx == HW_PHY_1 ? 1 : 0;
 	enum channel_width cbw = bb->hal_com->band[phy].cur_chandef.bw;
-	u8 target_pwr, margin = dig_u->pd_low_th_ofst;
+	u8 margin = dig_u->pd_low_th_ofst;
+	u8 target_pwr = 0;
+	u8 igi_new = 0;
+#ifdef BB_8852A_2_SUPPORT
+	struct agc_gaincode_set gaincode = bb_dig->max_gaincode;
+#endif
 
 	if (val_len != DIG_PAUSE_INFO_SIZE) {
 		BB_DIG_DBG(bb, DIG_DBG_LV0, "[Error][DIG]Need val_len=%d\n",
@@ -1487,23 +1604,42 @@ void halbb_set_dig_pause_val(struct bb_info *bb, u32 *buf, u8 val_len)
 	}
 	BB_DIG_DBG(bb, DIG_DBG_LV0, "[%s] Pd=-%d dB\n", __func__, buf[0]);
 
+#if 0
+	#ifdef HALBB_FW_OFLD_SUPPORT
+	if (!bb_dig->init_dig_cr_success) {
+		halbb_dig_init_io_en(bb);
+		BB_DBG(bb, DBG_DIG, "init_dig_cr_success = %d\n",
+			bb_dig->init_dig_cr_success);
+	}
+	#endif
+	igi_new = halbb_dig_igi_by_ofst(bb, RSSI_MAX - (u8)buf[0], 0); /*init IGI state*/
+	halbb_dig_cfg_bbcr(bb, igi_new);
+#else
+	#ifdef HALBB_FW_OFLD_SUPPORT
+	if (!bb_dig->init_dig_cr_success) {
+		halbb_dig_init_io_en(bb);
+		BB_DBG(bb, DBG_DIG, "init_dig_cr_success = %d\n",
+			bb_dig->init_dig_cr_success);
+	}
+	#endif
 #ifdef BB_8852A_2_SUPPORT
 	/* write igi or keep max gaincode */
 	if (bb->ic_type == BB_RTL8852A) {
 		if ((buf[1] == PAUSE_OFDM_CCK) && (bb->hal_com->cv < CCV)) {
 			BB_DIG_DBG(bb, DIG_DBG_LV0, "[52A] igi_en=1\n");
-			halbb_gaincode_by_rssi_8852a(bb, &gaincode, RSSI_MAX - (u8)buf[0]);
+			halbb_gaincode_by_rssi_8852a(bb, &gaincode, RSSI_MAX - (u8)buf[0] + margin);
 		}
 		halbb_dig_set_igi_cr_8852a(bb, gaincode);
 	}
 #endif
 
 	/* write pd lower bound anyway */
-	target_pwr = MIN_2((u8)buf[0] + margin, RSSI_MAX);
+	target_pwr = MIN_2((u8)buf[0], RSSI_MAX);
 	halbb_set_pd_lower_bound(bb, target_pwr, cbw, bb->bb_phy_idx);
 	if (buf[1] == PAUSE_OFDM)
 		target_pwr = 0;
 	halbb_set_pd_lower_bound_cck(bb, target_pwr, cbw, bb->bb_phy_idx);
+#endif
 }
 
 void* halbb_get_dig_fa_statistic(struct bb_info *bb)
@@ -1518,7 +1654,12 @@ void halbb_dig_dbg(struct bb_info *bb, char input[][16], u32 *_used,
 {
 	struct bb_dig_info *bb_dig = &bb->bb_dig_i;
 	struct bb_dig_op_unit *bb_dig_u = &bb_dig->dig_state_h_i;
+#ifdef BB_8852A_2_SUPPORT
 	struct agc_gaincode_set set_tmp;
+#endif
+#ifdef HALBB_DIG_TDMA_SUPPORT
+	struct bb_bkp_dig_info dig_i;
+#endif
 	u32 var[10] = {0};
 	u8 i = 0;
 
@@ -1579,6 +1720,19 @@ void halbb_dig_dbg(struct bb_info *bb, char input[][16], u32 *_used,
 			    bb_dig_u->force_gaincode.rxb_idx);
 #endif
 		BB_DBG_CNSL(*_out_len, *_used, output + *_used, *_out_len - *_used,
+			    "{16: SR coexist en = %d} {0:disable, 1:enable}\n",
+			    bb_dig->sr_coexist_en);
+		BB_DBG_CNSL(*_out_len, *_used, output + *_used, *_out_len - *_used,
+			    "{17: SR coexist IGI offset = (%d)} {val}\n",
+			    bb_dig->igi_ofst_sr_coexist);
+#ifdef HALBB_DIG_TDMA_SUPPORT
+		halbb_query_dig_info(bb, &dig_i, bb->bb_phy_idx);
+		BB_DBG_CNSL(*_out_len, *_used, output + *_used, *_out_len - *_used,
+			    "{18} (Query Only) [H]PD_low_bd(ofdm, cck) : (-%d, %d) dBm, [L]PD_low_bd(ofdm, cck) = (-%d, %d) dBm\n",
+			    dig_i.h_pd_low_th, dig_i.h_rssi_nocca_low_th,
+			    dig_i.l_pd_low_th, dig_i.l_rssi_nocca_low_th);
+#endif
+		BB_DBG_CNSL(*_out_len, *_used, output + *_used, *_out_len - *_used,
 			    "{20: dbg level = %d} {0/1/2}\n",
 			    bb_dig->dbg_lv);
 #ifdef HALBB_DIG_DAMPING_CHK
@@ -1614,7 +1768,7 @@ void halbb_dig_dbg(struct bb_info *bb, char input[][16], u32 *_used,
 	HALBB_SCAN(input[1], DCMD_DECIMAL, &var[0]);
 	if (var[0] == 0) {
 		HALBB_SCAN(input[2], DCMD_DECIMAL, &var[1]);
-		halbb_dig_mode_update(bb, (enum dig_op_mode)var[1]);
+		halbb_dig_mode_update(bb, (enum dig_op_mode)var[1], bb->bb_phy_idx);
 		BB_DBG_CNSL(*_out_len, *_used, output + *_used, *_out_len - *_used,
 			    "Set DIG op mode = %d\n", bb_dig->dig_mode);
 	} else if (var[0] == 1) {
@@ -1788,6 +1942,18 @@ void halbb_dig_dbg(struct bb_info *bb, char input[][16], u32 *_used,
 			 bb_dig_u->force_gaincode.tia_idx,
 			 bb_dig_u->force_gaincode.rxb_idx);
 #endif
+	} else if (var[0] == 16) {
+		HALBB_SCAN(input[2], DCMD_DECIMAL, &var[1]);
+		bb_dig->sr_coexist_en = (var[1] == 0)? false : true;
+		BB_DBG_CNSL(*_out_len, *_used, output + *_used, *_out_len - *_used,
+		    "SR coexist en set to (%d)\n",
+		    (bb_dig->sr_coexist_en)? 1:0);
+	} else if (var[0] == 17) {
+		HALBB_SCAN(input[2], DCMD_DECIMAL, &var[1]);
+		bb_dig->igi_ofst_sr_coexist = (u8)var[1];
+		BB_DBG_CNSL(*_out_len, *_used, output + *_used, *_out_len - *_used,
+		    "IGI offset for SR coexistence set to (%d)\n",
+		    bb_dig->igi_ofst_sr_coexist);
 	} else if (var[0] == 20) {
 		HALBB_SCAN(input[2], DCMD_DECIMAL, &var[1]);
 		if ((enum dig_dbg_level)var[1] <= DIG_DBG_LV2)
@@ -1804,119 +1970,9 @@ void halbb_dig_dbg(struct bb_info *bb, char input[][16], u32 *_used,
 void halbb_cr_cfg_dig_init(struct bb_info *bb)
 {
 	struct bb_dig_info *bb_dig = &bb->bb_dig_i;
-	struct bb_dig_cr_info *cr = &bb_dig->bb_dig_cr_i;
+	struct bb_dig_cr_info *cr = &bb->bb_cmn_hooker->bb_dig_cr_i;
 
 	switch (bb->cr_type) {
-#ifdef BB_8852A_CAV_SUPPORT
-	case BB_52AA:
-		/*cr->path0_ib_pbk = PATH0_R_IB_PBK_52AA;
-		 *cr->path0_ib_pbk_m = PATH0_R_IB_PBK_52AA_M;
-		 *cr->path0_ib_pkpwr = PATH0_R_IB_PKPW_52AA;
-		 *cr->path0_ib_pkpwr_m = PATH0_R_IB_PKPW_52AA_M;
-		 *cr->path1_ib_pbk = PATH1_R_IB_PBK_52AA;
-		 *cr->path1_ib_pbk_m = PATH1_R_IB_PBK_52AA_M;
-		 *cr->path1_ib_pkpwr = PATH1_R_IB_PKPW_52AA;
-		 *cr->path1_ib_pkpwr_m = PATH1_R_IB_PKPW_52AA_M;
-		 */
-		cr->path0_lna_init_idx = PATH0_R_LNA_INIT_IDX_52AA;
-		cr->path0_lna_init_idx_m = PATH0_R_LNA_INIT_IDX_52AA_M;
-		cr->path1_lna_init_idx = PATH0_R_LNA_INIT_IDX_52AA;
-		cr->path1_lna_init_idx_m = PATH0_R_LNA_INIT_IDX_52AA_M;
-		cr->path0_tia_init_idx = PATH0_R_TIA_INIT_IDX_52AA;
-		cr->path0_tia_init_idx_m = PATH0_R_TIA_INIT_IDX_52AA_M;
-		cr->path1_tia_init_idx = PATH0_R_TIA_INIT_IDX_52AA;
-		cr->path1_tia_init_idx_m = PATH0_R_TIA_INIT_IDX_52AA_M;
-		cr->path0_rxb_init_idx = PATH0_R_RXB_INIT_IDX_52AA;
-		cr->path0_rxb_init_idx_m = PATH0_R_RXB_INIT_IDX_52AA_M;
-		cr->path1_rxb_init_idx = PATH0_R_RXB_INIT_IDX_52AA;
-		cr->path1_rxb_init_idx_m = PATH0_R_RXB_INIT_IDX_52AA_M;
-		/*cr->seg0r_pd_spatial_reuse_en_a = SEG0R_PD_SPATIAL_REUSE_EN_52AA;
-		 *cr->seg0r_pd_spatial_reuse_en_a_m = SEG0R_PD_SPATIAL_REUSE_EN_52AA_M;
-		 *cr->seg0r_pd_lower_bound_a = SEG0R_PD_LOWER_BOUND_52AA;
-		 *cr->seg0r_pd_lower_bound_a_m = SEG0R_PD_LOWER_BOUND_52AA_M;
-		 *cr->path0_p20_follow_by_pagcugc_en_a = PATH0_P20_R_FOLLOW_BY_PAGCUGC_EN_52AA;
-		 *cr->path0_p20_follow_by_pagcugc_en_a_m = PATH0_P20_R_FOLLOW_BY_PAGCUGC_EN_52AA_M;
-		 *cr->path0_s20_follow_by_pagcugc_en_a = PATH0_S20_R_FOLLOW_BY_PAGCUGC_EN_52AA;
-		 *cr->path0_s20_follow_by_pagcugc_en_a_m = PATH0_S20_R_FOLLOW_BY_PAGCUGC_EN_52AA_M;
-		 *cr->path1_p20_follow_by_pagcugc_en_a = PATH1_P20_R_FOLLOW_BY_PAGCUGC_EN_52AA;
-		 *cr->path1_p20_follow_by_pagcugc_en_a_m = PATH1_P20_R_FOLLOW_BY_PAGCUGC_EN_52AA_M;
-		 *cr->path1_s20_follow_by_pagcugc_en_a = PATH1_S20_R_FOLLOW_BY_PAGCUGC_EN_52AA;
-		 *cr->path1_s20_follow_by_pagcugc_en_a_m = PATH1_S20_R_FOLLOW_BY_PAGCUGC_EN_52AA_M;
-		 *cr->path0_lna_err_g0_a = PATH0_R_LNA_ERR_G0_A_52AA;
-		 *cr->path0_lna_err_g0_a_m = PATH0_R_LNA_ERR_G0_A_52AA_M;
-		 *cr->path0_lna_err_g0_g = PATH0_R_LNA_ERR_G0_G_52AA;
-		 *cr->path0_lna_err_g0_g_m = PATH0_R_LNA_ERR_G0_G_52AA_M;
-		 *cr->path0_lna_err_g1_a = PATH0_R_LNA_ERR_G1_A_52AA;
-		 *cr->path0_lna_err_g1_a_m = PATH0_R_LNA_ERR_G1_A_52AA_M;
-		 *cr->path0_lna_err_g1_g = PATH0_R_LNA_ERR_G1_G_52AA;
-		 *cr->path0_lna_err_g1_g_m = PATH0_R_LNA_ERR_G1_G_52AA_M;
-		 *cr->path0_lna_err_g2_a = PATH0_R_LNA_ERR_G2_A_52AA;
-		 *cr->path0_lna_err_g2_a_m = PATH0_R_LNA_ERR_G2_A_52AA_M;
-		 *cr->path0_lna_err_g2_g = PATH0_R_LNA_ERR_G2_G_52AA;
-		 *cr->path0_lna_err_g2_g_m = PATH0_R_LNA_ERR_G2_G_52AA_M;
-		 *cr->path0_lna_err_g3_a = PATH0_R_LNA_ERR_G3_A_52AA;
-		 *cr->path0_lna_err_g3_a_m = PATH0_R_LNA_ERR_G3_A_52AA_M;
-		 *cr->path0_lna_err_g3_g = PATH0_R_LNA_ERR_G3_G_52AA;
-		 *cr->path0_lna_err_g3_g_m = PATH0_R_LNA_ERR_G3_G_52AA_M;
-		 *cr->path0_lna_err_g4_a = PATH0_R_LNA_ERR_G4_A_52AA;
-		 *cr->path0_lna_err_g4_a_m = PATH0_R_LNA_ERR_G4_A_52AA_M;
-		 *cr->path0_lna_err_g4_g = PATH0_R_LNA_ERR_G4_G_52AA;
-		 *cr->path0_lna_err_g4_g_m = PATH0_R_LNA_ERR_G4_G_52AA_M;
-		 *cr->path0_lna_err_g5_a = PATH0_R_LNA_ERR_G5_A_52AA;
-		 *cr->path0_lna_err_g5_a_m = PATH0_R_LNA_ERR_G5_A_52AA_M;
-		 *cr->path0_lna_err_g5_g = PATH0_R_LNA_ERR_G5_G_52AA;
-		 *cr->path0_lna_err_g5_g_m = PATH0_R_LNA_ERR_G5_G_52AA_M;
-		 *cr->path0_lna_err_g6_a = PATH0_R_LNA_ERR_G6_A_52AA;
-		 *cr->path0_lna_err_g6_a_m = PATH0_R_LNA_ERR_G6_A_52AA_M;
-		 *cr->path0_lna_err_g6_g = PATH0_R_LNA_ERR_G6_G_52AA;
-		 *cr->path0_lna_err_g6_g_m = PATH0_R_LNA_ERR_G6_G_52AA_M;
-		 *cr->path0_tia_err_g0_a = PATH0_R_TIA_ERR_G0_A_52AA;
-		 *cr->path0_tia_err_g0_a_m = PATH0_R_TIA_ERR_G0_A_52AA_M;
-		 *cr->path0_tia_err_g0_g = PATH0_R_TIA_ERR_G0_G_52AA;
-		 *cr->path0_tia_err_g0_g_m = PATH0_R_TIA_ERR_G0_G_52AA_M;
-		 *cr->path0_tia_err_g1_a = PATH0_R_TIA_ERR_G1_A_52AA;
-		 *cr->path0_tia_err_g1_a_m = PATH0_R_TIA_ERR_G1_A_52AA_M;
-		 *cr->path0_tia_err_g1_g = PATH0_R_TIA_ERR_G1_G_52AA;
-		 *cr->path0_tia_err_g1_g_m = PATH0_R_TIA_ERR_G1_G_52AA_M;
-		 *cr->path1_lna_err_g0_a = PATH1_R_LNA_ERR_G0_A_52AA;
-		 *cr->path1_lna_err_g0_a_m = PATH1_R_LNA_ERR_G0_A_52AA_M;
-		 *cr->path1_lna_err_g0_g = PATH1_R_LNA_ERR_G0_G_52AA;
-		 *cr->path1_lna_err_g0_g_m = PATH1_R_LNA_ERR_G0_G_52AA_M;
-		 *cr->path1_lna_err_g1_a = PATH1_R_LNA_ERR_G1_A_52AA;
-		 *cr->path1_lna_err_g1_a_m = PATH1_R_LNA_ERR_G1_A_52AA_M;
-		 *cr->path1_lna_err_g1_g = PATH1_R_LNA_ERR_G1_G_52AA;
-		 *cr->path1_lna_err_g1_g_m = PATH1_R_LNA_ERR_G1_G_52AA_M;
-		 *cr->path1_lna_err_g2_a = PATH1_R_LNA_ERR_G2_A_52AA;
-		 *cr->path1_lna_err_g2_a_m = PATH1_R_LNA_ERR_G2_A_52AA_M;
-		 *cr->path1_lna_err_g2_g = PATH1_R_LNA_ERR_G2_G_52AA;
-		 *cr->path1_lna_err_g2_g_m = PATH1_R_LNA_ERR_G2_G_52AA_M;
-		 *cr->path1_lna_err_g3_a = PATH1_R_LNA_ERR_G3_A_52AA;
-		 *cr->path1_lna_err_g3_a_m = PATH1_R_LNA_ERR_G3_A_52AA_M;
-		 *cr->path1_lna_err_g3_g = PATH1_R_LNA_ERR_G3_G_52AA;
-		 *cr->path1_lna_err_g3_g_m = PATH1_R_LNA_ERR_G3_G_52AA_M;
-		 *cr->path1_lna_err_g4_a = PATH1_R_LNA_ERR_G4_A_52AA;
-		 *cr->path1_lna_err_g4_a_m = PATH1_R_LNA_ERR_G4_A_52AA_M;
-		 *cr->path1_lna_err_g4_g = PATH1_R_LNA_ERR_G4_G_52AA;
-		 *cr->path1_lna_err_g4_g_m = PATH1_R_LNA_ERR_G4_G_52AA_M;
-		 *cr->path1_lna_err_g5_a = PATH1_R_LNA_ERR_G5_A_52AA;
-		 *cr->path1_lna_err_g5_a_m = PATH1_R_LNA_ERR_G5_A_52AA_M;
-		 *cr->path1_lna_err_g5_g = PATH1_R_LNA_ERR_G5_G_52AA;
-		 *cr->path1_lna_err_g5_g_m = PATH1_R_LNA_ERR_G5_G_52AA_M;
-		 *cr->path1_lna_err_g6_a = PATH1_R_LNA_ERR_G6_A_52AA;
-		 *cr->path1_lna_err_g6_a_m = PATH1_R_LNA_ERR_G6_A_52AA_M;
-		 *cr->path1_lna_err_g6_g = PATH1_R_LNA_ERR_G6_G_52AA;
-		 *cr->path1_lna_err_g6_g_m = PATH1_R_LNA_ERR_G6_G_52AA_M;
-		 *cr->path1_tia_err_g0_a = PATH1_R_TIA_ERR_G0_A_52AA;
-		 *cr->path1_tia_err_g0_a_m = PATH1_R_TIA_ERR_G0_A_52AA_M;
-		 *cr->path1_tia_err_g0_g = PATH1_R_TIA_ERR_G0_G_52AA;
-		 *cr->path1_tia_err_g0_g_m = PATH1_R_TIA_ERR_G0_G_52AA_M;
-		 *cr->path1_tia_err_g1_a = PATH1_R_TIA_ERR_G1_A_52AA;
-		 *cr->path1_tia_err_g1_a_m = PATH1_R_TIA_ERR_G1_A_52AA_M;
-		 *cr->path1_tia_err_g1_g = PATH1_R_TIA_ERR_G1_G_52AA;
-		 *cr->path1_tia_err_g1_g_m = PATH1_R_TIA_ERR_G1_G_52AA_M;
-		 */
-		break;
-#endif
 #ifdef HALBB_COMPILE_AP_SERIES
 	case BB_AP:
 		cr->path0_ib_pbk = PATH0_R_IB_PBK_A;
@@ -2159,40 +2215,220 @@ void halbb_cr_cfg_dig_init(struct bb_info *bb)
 #endif
 		break;
 #endif
+#ifdef HALBB_COMPILE_AP2_SERIES
+	case BB_AP2:
+		cr->path0_lna_init_idx = PATH0_R_LNA_IDX_INIT_A2;
+		cr->path0_lna_init_idx_m = PATH0_R_LNA_IDX_INIT_A2_M;
+		cr->path1_lna_init_idx = PATH1_R_LNA_IDX_INIT_A2;
+		cr->path1_lna_init_idx_m = PATH1_R_LNA_IDX_INIT_A2_M;
+		cr->path0_tia_init_idx = PATH0_R_TIA_IDX_INIT_A2;
+		cr->path0_tia_init_idx_m = PATH0_R_TIA_IDX_INIT_A2_M;
+		cr->path1_tia_init_idx = PATH1_R_TIA_IDX_INIT_A2;
+		cr->path1_tia_init_idx_m = PATH1_R_TIA_IDX_INIT_A2_M;
+		cr->path0_rxb_init_idx = PATH0_R_RXIDX_INIT_A2;
+		cr->path0_rxb_init_idx_m = PATH0_R_RXIDX_INIT_A2_M;
+		cr->path1_rxb_init_idx = PATH1_R_RXIDX_INIT_A2;
+		cr->path1_rxb_init_idx_m = PATH1_R_RXIDX_INIT_A2_M;
+		cr->seg0r_pd_spatial_reuse_en_a = SEG0R_PD_SPATIAL_REUSE_EN_A2;
+		cr->seg0r_pd_spatial_reuse_en_a_m = SEG0R_PD_SPATIAL_REUSE_EN_A2_M;
+		cr->seg0r_pd_lower_bound_a = SEG0R_PD_LOWER_BOUND_A2;
+		cr->seg0r_pd_lower_bound_a_m = SEG0R_PD_LOWER_BOUND_A2_M;
+		cr->path0_p20_follow_by_pagcugc_en_a = PATH0_P20_R_FOLLOW_BY_PAGCUGC_EN_A2;
+		cr->path0_p20_follow_by_pagcugc_en_a_m = PATH0_P20_R_FOLLOW_BY_PAGCUGC_EN_A2_M;
+		cr->path0_s20_follow_by_pagcugc_en_a = PATH0_S20_R_FOLLOW_BY_PAGCUGC_EN_A2;
+		cr->path0_s20_follow_by_pagcugc_en_a_m = PATH0_S20_R_FOLLOW_BY_PAGCUGC_EN_A2_M;
+		cr->path1_p20_follow_by_pagcugc_en_a = PATH1_P20_R_FOLLOW_BY_PAGCUGC_EN_A2;
+		cr->path1_p20_follow_by_pagcugc_en_a_m = PATH1_P20_R_FOLLOW_BY_PAGCUGC_EN_A2_M;
+		cr->path1_s20_follow_by_pagcugc_en_a = PATH1_S20_R_FOLLOW_BY_PAGCUGC_EN_A2;
+		cr->path1_s20_follow_by_pagcugc_en_a_m = PATH1_S20_R_FOLLOW_BY_PAGCUGC_EN_A2_M;
+		cr->cca_rssi_lmt_en_a = CCA_RSSI_LMT_EN_A2;
+		cr->cca_rssi_lmt_en_a_m = CCA_RSSI_LMT_EN_A2_M;
+		cr->rssi_nocca_low_th_a = RSSI_NOCCA_LOW_TH_A2;
+		cr->rssi_nocca_low_th_a_m = RSSI_NOCCA_LOW_TH_A2_M;
+		cr->path0_dig_mode_en_a = PATH0_R_DIG_MODE_EN_A2;
+		cr->path0_dig_mode_en_a_m = PATH0_R_DIG_MODE_EN_A2_M;
+		cr->path0_igi_for_dig_a = PATH0_R_IGI_FOR_DIG_A2;
+		cr->path0_igi_for_dig_a_m = PATH0_R_IGI_FOR_DIG_A2_M;
+		cr->path0_backoff_wb_gain_a = PATH0_R_BACKOFF_WB_GAIN_A2;
+		cr->path0_backoff_wb_gain_a_m = PATH0_R_BACKOFF_WB_GAIN_A2_M;
+		cr->path1_dig_mode_en_a = PATH1_R_DIG_MODE_EN_A2;
+		cr->path1_dig_mode_en_a_m = PATH1_R_DIG_MODE_EN_A2_M;
+		cr->path1_igi_for_dig_a = PATH1_R_IGI_FOR_DIG_A2;
+		cr->path1_igi_for_dig_a_m = PATH1_R_IGI_FOR_DIG_A2_M;
+		cr->path1_backoff_wb_gain_a = PATH1_R_BACKOFF_WB_GAIN_A2;
+		cr->path1_backoff_wb_gain_a_m = PATH1_R_BACKOFF_WB_GAIN_A2_M;
+		break;
+#endif
+#ifdef HALBB_COMPILE_BE0_SERIES
+	case BB_BE0:
+		cr->path0_lna_init_idx = PATH0_R_LNA_IDX_INIT_BE0;
+		cr->path0_lna_init_idx_m = PATH0_R_LNA_IDX_INIT_BE0_M;
+		cr->path1_lna_init_idx = PATH1_R_LNA_IDX_INIT_BE0;
+		cr->path1_lna_init_idx_m = PATH1_R_LNA_IDX_INIT_BE0_M;
+		cr->path0_tia_init_idx = PATH0_R_TIA_IDX_INIT_BE0;
+		cr->path0_tia_init_idx_m = PATH0_R_TIA_IDX_INIT_BE0_M;
+		cr->path1_tia_init_idx = PATH1_R_TIA_IDX_INIT_BE0;
+		cr->path1_tia_init_idx_m = PATH1_R_TIA_IDX_INIT_BE0_M;
+		cr->path0_rxb_init_idx = PATH0_R_RXIDX_INIT_BE0;
+		cr->path0_rxb_init_idx_m = PATH0_R_RXIDX_INIT_BE0_M;
+		cr->path1_rxb_init_idx = PATH1_R_RXIDX_INIT_BE0;
+		cr->path1_rxb_init_idx_m = PATH1_R_RXIDX_INIT_BE0_M;
+		cr->seg0r_pd_spatial_reuse_en_a = SEG0R_PD_SPATIAL_REUSE_EN_BE0;
+		cr->seg0r_pd_spatial_reuse_en_a_m = SEG0R_PD_SPATIAL_REUSE_EN_BE0_M;
+		cr->seg0r_pd_lower_bound_a = SEG0R_PD_LOWER_BOUND_BE0;
+		cr->seg0r_pd_lower_bound_a_m = SEG0R_PD_LOWER_BOUND_BE0_M;
+		cr->path0_p20_follow_by_pagcugc_en_a = PATH0_P20_R_FOLLOW_BY_PAGCUGC_EN_BE0;
+		cr->path0_p20_follow_by_pagcugc_en_a_m = PATH0_P20_R_FOLLOW_BY_PAGCUGC_EN_BE0_M;
+		cr->path0_s20_follow_by_pagcugc_en_a = PATH0_S20_R_FOLLOW_BY_PAGCUGC_EN_BE0;
+		cr->path0_s20_follow_by_pagcugc_en_a_m = PATH0_S20_R_FOLLOW_BY_PAGCUGC_EN_BE0_M;
+		cr->path1_p20_follow_by_pagcugc_en_a = PATH1_P20_R_FOLLOW_BY_PAGCUGC_EN_BE0;
+		cr->path1_p20_follow_by_pagcugc_en_a_m = PATH1_P20_R_FOLLOW_BY_PAGCUGC_EN_BE0_M;
+		cr->path1_s20_follow_by_pagcugc_en_a = PATH1_S20_R_FOLLOW_BY_PAGCUGC_EN_BE0;
+		cr->path1_s20_follow_by_pagcugc_en_a_m = PATH1_S20_R_FOLLOW_BY_PAGCUGC_EN_BE0_M;
+		cr->cca_rssi_lmt_en_a = CCA_RSSI_LMT_EN_BE0;
+		cr->cca_rssi_lmt_en_a_m = CCA_RSSI_LMT_EN_BE0_M;
+		cr->rssi_nocca_low_th_a = RSSI_NOCCA_LOW_TH_BE0;
+		cr->rssi_nocca_low_th_a_m = RSSI_NOCCA_LOW_TH_BE0_M;
+		cr->path0_dig_mode_en_a = PATH0_R_DIG_MODE_EN_BE0;
+		cr->path0_dig_mode_en_a_m = PATH0_R_DIG_MODE_EN_BE0_M;
+		cr->path0_igi_for_dig_a = PATH0_R_IGI_FOR_DIG_BE0;
+		cr->path0_igi_for_dig_a_m = PATH0_R_IGI_FOR_DIG_BE0_M;
+		cr->path0_backoff_wb_gain_a = PATH0_R_BACKOFF_WB_GAIN_BE0;
+		cr->path0_backoff_wb_gain_a_m = PATH0_R_BACKOFF_WB_GAIN_BE0_M;
+		cr->path1_dig_mode_en_a = PATH1_R_DIG_MODE_EN_BE0;
+		cr->path1_dig_mode_en_a_m = PATH1_R_DIG_MODE_EN_BE0_M;
+		cr->path1_igi_for_dig_a = PATH1_R_IGI_FOR_DIG_BE0;
+		cr->path1_igi_for_dig_a_m = PATH1_R_IGI_FOR_DIG_BE0_M;
+		cr->path1_backoff_wb_gain_a = PATH1_R_BACKOFF_WB_GAIN_BE0;
+		cr->path1_backoff_wb_gain_a_m = PATH1_R_BACKOFF_WB_GAIN_BE0_M;
+		break;
+
+#endif
+#ifdef HALBB_COMPILE_BE1_SERIES
+	case BB_BE1:
+		cr->path0_lna_init_idx = PATH0_R_LNA_IDX_INIT_BE1;
+		cr->path0_lna_init_idx_m = PATH0_R_LNA_IDX_INIT_BE1_M;
+		cr->path1_lna_init_idx = PATH1_R_LNA_IDX_INIT_BE1;
+		cr->path1_lna_init_idx_m = PATH1_R_LNA_IDX_INIT_BE1_M;
+		cr->path0_tia_init_idx = PATH0_R_TIA_IDX_INIT_BE1;
+		cr->path0_tia_init_idx_m = PATH0_R_TIA_IDX_INIT_BE1_M;
+		cr->path1_tia_init_idx = PATH1_R_TIA_IDX_INIT_BE1;
+		cr->path1_tia_init_idx_m = PATH1_R_TIA_IDX_INIT_BE1_M;
+		cr->path0_rxb_init_idx = PATH0_R_RXIDX_INIT_BE1;
+		cr->path0_rxb_init_idx_m = PATH0_R_RXIDX_INIT_BE1_M;
+		cr->path1_rxb_init_idx = PATH1_R_RXIDX_INIT_BE1;
+		cr->path1_rxb_init_idx_m = PATH1_R_RXIDX_INIT_BE1_M;
+		cr->seg0r_pd_spatial_reuse_en_a = SEG0R_PD_SPATIAL_REUSE_EN_BE1;
+		cr->seg0r_pd_spatial_reuse_en_a_m = SEG0R_PD_SPATIAL_REUSE_EN_BE1_M;
+		cr->seg0r_pd_lower_bound_a = SEG0R_PD_LOWER_BOUND_BE1;
+		cr->seg0r_pd_lower_bound_a_m = SEG0R_PD_LOWER_BOUND_BE1_M;
+		cr->path0_p20_follow_by_pagcugc_en_a = PATH0_P20_R_FOLLOW_BY_PAGCUGC_EN_BE1;
+		cr->path0_p20_follow_by_pagcugc_en_a_m = PATH0_P20_R_FOLLOW_BY_PAGCUGC_EN_BE1_M;
+		cr->path0_s20_follow_by_pagcugc_en_a = PATH0_S20_R_FOLLOW_BY_PAGCUGC_EN_BE1;
+		cr->path0_s20_follow_by_pagcugc_en_a_m = PATH0_S20_R_FOLLOW_BY_PAGCUGC_EN_BE1_M;
+		cr->path1_p20_follow_by_pagcugc_en_a = PATH1_P20_R_FOLLOW_BY_PAGCUGC_EN_BE1;
+		cr->path1_p20_follow_by_pagcugc_en_a_m = PATH1_P20_R_FOLLOW_BY_PAGCUGC_EN_BE1_M;
+		cr->path1_s20_follow_by_pagcugc_en_a = PATH1_S20_R_FOLLOW_BY_PAGCUGC_EN_BE1;
+		cr->path1_s20_follow_by_pagcugc_en_a_m = PATH1_S20_R_FOLLOW_BY_PAGCUGC_EN_BE1_M;
+		cr->cca_rssi_lmt_en_a = CCA_RSSI_LMT_EN_BE1;
+		cr->cca_rssi_lmt_en_a_m = CCA_RSSI_LMT_EN_BE1_M;
+		cr->rssi_nocca_low_th_a = RSSI_NOCCA_LOW_TH_BE1;
+		cr->rssi_nocca_low_th_a_m = RSSI_NOCCA_LOW_TH_BE1_M;
+		cr->path0_dig_mode_en_a = PATH0_R_DIG_MODE_EN_BE1;
+		cr->path0_dig_mode_en_a_m = PATH0_R_DIG_MODE_EN_BE1_M;
+		cr->path0_igi_for_dig_a = PATH0_R_IGI_FOR_DIG_BE1;
+		cr->path0_igi_for_dig_a_m = PATH0_R_IGI_FOR_DIG_BE1_M;
+		cr->path0_backoff_wb_gain_a = PATH0_R_BACKOFF_WB_GAIN_BE1;
+		cr->path0_backoff_wb_gain_a_m = PATH0_R_BACKOFF_WB_GAIN_BE1_M;
+		cr->path1_dig_mode_en_a = PATH1_R_DIG_MODE_EN_BE1;
+		cr->path1_dig_mode_en_a_m = PATH1_R_DIG_MODE_EN_BE1_M;
+		cr->path1_igi_for_dig_a = PATH1_R_IGI_FOR_DIG_BE1;
+		cr->path1_igi_for_dig_a_m = PATH1_R_IGI_FOR_DIG_BE1_M;
+		cr->path1_backoff_wb_gain_a = PATH1_R_BACKOFF_WB_GAIN_BE1;
+		cr->path1_backoff_wb_gain_a_m = PATH1_R_BACKOFF_WB_GAIN_BE1_M;
+		break;
+
+#endif
+
+
 	default:
+		BB_WARNING("[%s] BBCR Hook FAIL!\n", __func__);
+		if (bb->bb_dbg_i.cr_fake_init_hook_en) {
+			BB_TRACE("[%s] BBCR fake init\n", __func__);
+			halbb_cr_hook_fake_init(bb, (u32 *)cr, (sizeof(struct bb_dig_cr_info) >> 2));
+		}
 		break;
 	}
+
+	if (bb->bb_dbg_i.cr_init_hook_recorder_en) {
+		BB_TRACE("[%s] BBCR Hook dump\n", __func__);
+		halbb_cr_hook_init_dump(bb, (u32 *)cr, (sizeof(struct bb_dig_cr_info) >> 2));
+	}
 }
-#endif
-#ifdef HALBB_DIG_MCC_SUPPORT
-void Halbb_init_mccdm(struct bb_info *bb)
+
+#ifdef HALBB_MCC_SUPPORT
+void halbb_init_mccdm(struct bb_info *bb)
 {
 	struct halbb_mcc_dm *mcc_dm = &bb->mcc_dm;
 	u8 i = 0;
 
 	BB_DBG(bb, DBG_DIG, "[%s]=========>\n", __func__);
 
-	mcc_dm->softap_macid = INVALID_INIT_VAL;
+	mcc_dm->softap_macid = 0;
 
-	for (i = 0; i < MCC_BAND_NUM; i++) {
+	for (i = 0; i < NUM_MAX_REG_CNT; i++) {
 		mcc_dm->mcc_reg_id[i] = INVALID_INIT_VAL;
 		mcc_dm->mcc_dm_reg[i] = 0;
-		mcc_dm->mcc_dm_val[i][0] = 0;
-		mcc_dm->mcc_dm_val[i][1] = 0;
+		mcc_dm->mcc_dm_val[i][MR_BAND_1] = 0;
+		mcc_dm->mcc_dm_val[i][MR_BAND_2] = 0;
+		mcc_dm->mcc_dm_val[i][MR_BAND_3] = 0;
+	}
+
+	for (i = 0; i < MR_BAND_NUM; i++) {
+		mcc_dm->sta_cnt[i] = 0;
+		mcc_dm->mcc_rf_ch[i].chan = INVALID_INIT_VAL;
+		mcc_dm->mcc_rf_ch[i].center_ch = INVALID_INIT_VAL;
+		mcc_dm->mcc_rf_ch[i].band= BAND_MAX;
 	}
 }
 
 u32 halbb_c2h_mccdm_check(struct bb_info *bb, u16 len, u8 *c2h)
 {
 	bool fw_mccdm_en = false;
+	struct halbb_c2h_mr_dm *mcc_c2h_i;
 
 	if (!c2h) {
 		BB_WARNING("Error fw mcc dig c2h failed!!\n");
 		return _FAIL;
 	}
 
-	fw_mccdm_en = (bool)c2h[0];
-	BB_DBG(bb, DBG_DIG, "FW MCC DIG : %s\n", fw_mccdm_en ? "true" : "false");
+	mcc_c2h_i = (struct halbb_c2h_mr_dm *)c2h;
+
+	switch (mcc_c2h_i->mrdm_err_hdl) {
+		case BB_MRDM_DISABLE:
+			BB_DBG(bb, DBG_DIG, "FW MCC Stop!mrdm_en = %d\n", mcc_c2h_i->cur_mr_dm_en);
+			break;
+		case BB_MRDM_REG_OVERFLOW:
+			BB_DBG(bb, DBG_DIG, "FW MCC Reg_cnt >= Max num\n");
+			break;
+		case BB_MRDM_CLR_CH:
+			BB_DBG(bb, DBG_DIG, "FW MCC Set CH[%d] = 0\n", mcc_c2h_i->central_ch);
+			break;
+		case BB_MRDM_SEARCH_CH_FAIL:
+			BB_DBG(bb, DBG_DIG, "FW MCC Channel[%d] Fail!\n", mcc_c2h_i->central_ch);
+			break;
+		case BB_MRDM_ONE_CH_ONLY:
+			BB_DBG(bb, DBG_DIG, "FW MCC only config 1 channel!\n");
+			break;
+		case BB_MRDM_SWITCH_CR:
+			BB_DBG(bb, DBG_DIG, "FW MCC BB_MRDM_SWITCH_CR not use!\n");
+			break;
+		case BB_MRDM_START:
+			BB_DBG(bb, DBG_DIG, "FW MCC Start!mrdm_en = %d\n", mcc_c2h_i->cur_mr_dm_en);
+			break;
+		default:
+			break;
+	}
 
 	return _SUCCESS;
 }
@@ -2200,6 +2436,7 @@ u32 halbb_c2h_mccdm_check(struct bb_info *bb, u16 len, u8 *c2h)
 void halbb_mccdm_h2ccmd_rst(struct bb_info *bb)
 {
 	struct mcc_h2c *mcc_cfg;
+	struct halbb_mcc_dm *mcc_dm = &bb->mcc_dm;
 	bool ret_val = false;
 	u8 cmdlen = sizeof(struct mcc_h2c);
 	u32 *bb_h2c;
@@ -2212,31 +2449,28 @@ void halbb_mccdm_h2ccmd_rst(struct bb_info *bb)
 	}
 	halbb_mem_set(bb, mcc_cfg, 0, cmdlen);
 	bb_h2c = (u32*) mcc_cfg;
-	//u8 h2c_mcc[H2C_MAX_LENGTH];
 
 	/* RST MCC */
-	mcc_cfg->mcc_dm_en = 0;
-	mcc_cfg->reg_cnt = 0;
-	mcc_cfg->mcc_set = 0;
-	ret_val = halbb_fill_h2c_cmd(bb, cmdlen, DM_H2C_FW_MCC,
-					   HALBB_H2C_DM, bb_h2c);
-	BB_DBG(bb, DBG_DIG, "MCC H2C RST\n");
+	if (mcc_dm->mcc_pre_status_en == BB_MCC_ENABLE) {
+		ret_val = halbb_fill_h2c_cmd(bb, cmdlen, DM_H2C_FW_MCC,
+					    HALBB_H2C_DM, bb_h2c);
+	}
+
+	if (ret_val == false)
+		BB_WARNING(" H2C cmd: MCC rst failed!!\n");
 
 	if (mcc_cfg)
 		hal_mem_free(bb->hal_com, mcc_cfg, cmdlen);
 }
 
-void Halbb_mccdm_h2c_handler(struct bb_info *bb)
+void halbb_mccdm_h2c_handler(struct bb_info *bb)
 {
 	struct halbb_mcc_dm *mcc_dm = &bb->mcc_dm;
 	struct mcc_h2c_reg_content *reg_cont;
 	struct mcc_h2c *mcc_cfg;
 	bool ret_val = false;
 	u8 cmdlen = sizeof(struct mcc_h2c);
-	u8 i;
-	u8 regid;
-	u8 ch_idx;
-	u8 reg_cnt;
+	u8 i = 0, regid = INVALID_INIT_VAL, j = 0, reg_cnt = 0;
 	u32 *bb_h2c;
 
 	mcc_cfg = hal_mem_alloc(bb->hal_com, cmdlen);
@@ -2247,8 +2481,8 @@ void Halbb_mccdm_h2c_handler(struct bb_info *bb)
 	}
 	bb_h2c = (u32*) mcc_cfg;
 
-	if (mcc_dm->mcc_rf_ch[0].center_ch == INVALID_INIT_VAL &&
-	    mcc_dm->mcc_rf_ch[1].center_ch == INVALID_INIT_VAL) {
+	if (mcc_dm->mcc_rf_ch[MR_BAND_1].center_ch == INVALID_INIT_VAL &&
+	    mcc_dm->mcc_rf_ch[MR_BAND_2].center_ch == INVALID_INIT_VAL) {
 		BB_DBG(bb, DBG_DIG, "MCC channel Error\n");
 		mcc_cfg->mcc_dm_en = 0;
 		mcc_cfg->reg_cnt = 0;
@@ -2261,27 +2495,27 @@ void Halbb_mccdm_h2c_handler(struct bb_info *bb)
 	}
 
 	/* Set Channel number, reg, and val*/
-	for (ch_idx = 0; ch_idx < MCC_BAND_NUM; ch_idx++) {
+	for (i = 0; i < mcc_dm->mr_num; i++) {
 		halbb_mem_set(bb, mcc_cfg, 0, cmdlen);
 		reg_cnt = 0;
 		mcc_cfg->mcc_dm_en = 1;
-		mcc_cfg->mcc_ch_idx = ch_idx;
+		mcc_cfg->mcc_idx = i;
 		mcc_cfg->mcc_set = 1;
 		mcc_cfg->phy0_en = 1;
 		mcc_cfg->phy1_en = 0;
-		mcc_cfg->ch_lsb = (u8)mcc_dm->mcc_rf_ch[ch_idx].center_ch;
-		mcc_cfg->ch_msb = (u8)mcc_dm->mcc_rf_ch[ch_idx].band;
-		for (i = 0; i < NUM_MAX_IGI_CNT; i++) {
-			regid = mcc_dm->mcc_reg_id[i];
+		mcc_cfg->center_ch= (u8)mcc_dm->mcc_rf_ch[i].center_ch;
+		mcc_cfg->band_type = (u8)mcc_dm->mcc_rf_ch[i].band;
+		for (j = 0; j < NUM_MAX_REG_CNT; j++) {
+			regid = mcc_dm->mcc_reg_id[j];
 			if (regid == INVALID_INIT_VAL)
 				break;
-			reg_cont = &mcc_cfg->mcc_reg_content[i];
-			reg_cont->addr_lsb = (u8)mcc_dm->mcc_dm_reg[i];
-			reg_cont->addr_msb = (u8)(mcc_dm->mcc_dm_reg[i] >> 8);
-			reg_cont->bmask_lsb = (u8)(mcc_dm->mcc_dm_mask[i]);
-			reg_cont->bmask_msb = (u8)(mcc_dm->mcc_dm_mask[i] >> 8);
-			reg_cont->val_lsb = (u8)(mcc_dm->mcc_dm_val[i][ch_idx]);
-			reg_cont->val_msb = (u8)(mcc_dm->mcc_dm_val[i][ch_idx] >> 8);
+			reg_cont = &mcc_cfg->mcc_reg_content[j];
+			reg_cont->addr_lsb = (u8)mcc_dm->mcc_dm_reg[j];
+			reg_cont->addr_msb = (u8)(mcc_dm->mcc_dm_reg[j] >> 8);
+			reg_cont->bmask_lsb = (u8)(mcc_dm->mcc_dm_mask[j]);
+			reg_cont->bmask_msb = (u8)(mcc_dm->mcc_dm_mask[j] >> 8);
+			reg_cont->val_lsb = (u8)(mcc_dm->mcc_dm_val[j][i]);
+			reg_cont->val_msb = (u8)(mcc_dm->mcc_dm_val[j][i] >> 8);
 			reg_cnt++;
 		}
 		mcc_cfg->reg_cnt = reg_cnt;
@@ -2289,6 +2523,8 @@ void Halbb_mccdm_h2c_handler(struct bb_info *bb)
 		       bb_h2c[0], bb_h2c[1], bb_h2c[2]);
 		ret_val = halbb_fill_h2c_cmd(bb, cmdlen, DM_H2C_FW_MCC,
 					     HALBB_H2C_DM, bb_h2c);
+		if (ret_val == false)
+			BB_WARNING(" H2C cmd: MCC failed!!\n");
 	}
 
 	if (mcc_cfg)
@@ -2298,6 +2534,9 @@ void Halbb_mccdm_h2c_handler(struct bb_info *bb)
 void halbb_mccdm_ctrl(struct bb_info *bb)
 {
 	struct halbb_mcc_dm *mcc_dm = &bb->mcc_dm;
+#ifdef HALBB_STATISTICS_SUPPORT
+	struct bb_stat_info *stat_t = &bb->bb_stat_i;
+#endif
 	u32 val[2] = {0};
 
 	BB_DBG(bb, DBG_DIG, "MCC status: %x\n", mcc_dm->mcc_status_en);
@@ -2305,24 +2544,39 @@ void halbb_mccdm_ctrl(struct bb_info *bb)
 	if (mcc_dm->mcc_status_en == mcc_dm->mcc_pre_status_en)
 		return;
 
-	/*Not in MCC stage*/
-	if (mcc_dm->mcc_status_en != 0) {
+	/*In MCC stage*/
+	if (mcc_dm->mcc_status_en != BB_MCC_DISABLE) {
+#ifdef HALBB_STATISTICS_SUPPORT
+		stat_t->stat_show_en = true;
+#endif
 		/* Disable normal DIG */
 		halbb_pause_func(bb, F_DIG, HALBB_PAUSE_NO_SET, HALBB_PAUSE_LV_2,
-				 2, val);
+				 2, val, bb->bb_phy_idx);
+		if (bb->ic_sub_type == BB_IC_SUB_TYPE_8852C_8852C) {
+			/* Disable normal statistics */
+			halbb_pause_func(bb, F_FA_CNT, HALBB_PAUSE_NO_SET, HALBB_PAUSE_LV_2,
+					 1, val, bb->bb_phy_idx);
+		}
 	}
-	if (mcc_dm->mcc_status_en == 0 && mcc_dm->mcc_pre_status_en != 0) {
-		Halbb_init_mccdm(bb);
+
+	/*Not In MCC stage*/
+	if (mcc_dm->mcc_status_en != BB_MCC_ENABLE && mcc_dm->mcc_pre_status_en == BB_MCC_ENABLE) {
+		halbb_init_mccdm(bb);
 		halbb_mccdm_h2ccmd_rst(bb);
 		/* Enable normal DIG */
 		halbb_pause_func(bb, F_DIG, HALBB_RESUME, HALBB_PAUSE_LV_2, 2,
-				 val);
+				 val, bb->bb_phy_idx);
+		if (bb->ic_sub_type == BB_IC_SUB_TYPE_8852C_8852C) {
+			/* Enable normal statistics */
+			halbb_pause_func(bb, F_FA_CNT, HALBB_RESUME_NO_RECOVERY, HALBB_PAUSE_LV_2, 1,
+					 val, bb->bb_phy_idx);
+		}
 	}
 
 	mcc_dm->mcc_pre_status_en = mcc_dm->mcc_status_en;
 }
 
-void halbb_fill_mcccmd(struct bb_info *bb, u8 regid, u16 reg_add, u16 mask,
+void halbb_fill_mcc_cmd(struct bb_info *bb, u8 regid, u16 reg_add, u16 mask,
 		       u8 band, u16 val)
 {
 	struct halbb_mcc_dm *mcc_dm = &bb->mcc_dm;
@@ -2333,34 +2587,15 @@ void halbb_fill_mcccmd(struct bb_info *bb, u8 regid, u16 reg_add, u16 mask,
 	mcc_dm->mcc_dm_val[regid][band] = val;
 }
 
-void halbb_mccdm_igi_rst(struct bb_info *bb, u8 clr_port)
+void halbb_mccdm_reg_rst(struct bb_info *bb, u8 clr_port)
 {
 	struct halbb_mcc_dm *mcc_dm = &bb->mcc_dm;
 
-	mcc_dm->mcc_dm_val[0][clr_port] = PD_IDX_MIN; //-102dBm
+	mcc_dm->mcc_dm_val[SEG0R_PD_LOWER_BOUND][clr_port] = PD_IDX_MIN; //-102dBm
 	//mcc_dm->mcc_dm_val[1][clr_port] = 0xff;
 }
 
-#if 0
-void halbb_mcc_igi_chk(struct bb_info *bb)
-{
-	struct halbb_mcc_dm *mcc_dm = &bb->mcc_dm;
-
-	if (mcc_dm->mcc_dm_val[0][0] == 0xffff &&
-	    mcc_dm->mcc_dm_val[0][1] == 0xffff) {
-		mcc_dm->mcc_dm_reg[0] = 0xffff;
-		mcc_dm->mcc_reg_id[0] = 0xff;
-	}
-
-	if (mcc_dm->mcc_dm_val[1][0] == 0xffff &&
-	    mcc_dm->mcc_dm_val[1][1] == 0xffff) {
-		mcc_dm->mcc_dm_reg[1] = 0xffff;
-		mcc_dm->mcc_reg_id[1] = 0xff;
-	}
-}
-#endif
-
-u8 halbb_mccdm_pd_lower_bound_cal(struct bb_info *bb, u8 bound,
+u8 halbb_mccdm_pd_cal(struct bb_info *bb, u8 bound,
 				      enum channel_width bw)
 {
 	/*
@@ -2385,10 +2620,12 @@ u8 halbb_mccdm_pd_lower_bound_cal(struct bb_info *bb, u8 bound,
 		bw_attenuation = 3;
 	} else if (bw == CHANNEL_WIDTH_80) {
 		bw_attenuation = 6;
+	} else if (bw == CHANNEL_WIDTH_160) {
+		bw_attenuation = 9;
 	} else {
-		BB_DBG(bb, DBG_DIG,
-		       "[PD Bound] Only support BW20/40/80 !\n");
-		return 0;
+		BB_DBG(bb, DBG_PHY_CONFIG,
+		       "[PD Bound] Only support BW20/40/80/160 !\n");
+		return false;
 	}
 
 	bound += (bw_attenuation + subband_filter_atteniation);
@@ -2412,21 +2649,17 @@ u8 halbb_mccdm_pd_lower_bound_cal(struct bb_info *bb, u8 bound,
 	return bound_idx;
 }
 
-void halbb_mccdm_pd_cal(struct bb_info *bb)
+void halbb_mccdm_igi_cal(struct bb_info *bb)
 {
 	struct halbb_mcc_dm *mcc_dm = &bb->mcc_dm;
 	struct bb_dig_info *bb_dig = &bb->bb_dig_i;
 	struct bb_dig_op_unit *bb_dig_u = bb_dig->p_cur_dig_unit;
-	struct bb_dig_cr_info *cr = &bb_dig->bb_dig_cr_i;
-	u8 shift = 10;
-	u8 igi_val;
-	u8 pd_val;
-	u8 i;
-	u16 mask0;
-	u16 reg0;
+	struct bb_dig_cr_info *cr = &bb->bb_cmn_hooker->bb_dig_cr_i;
+	u8 shift = 10, igi_val = 0, pd_val = 0, i = 0;
+	u16 mask0 = 0, reg0 = 0;
 	enum channel_width cbw = CHANNEL_WIDTH_20;
 
-	for (i = 0; i < MCC_BAND_NUM; i++) {
+	for (i = 0; i < mcc_dm->mr_num; i++) {
 		igi_val = mcc_dm->rssi_min[i] >> 1;
 		igi_val = SUBTRACT_TO_0(igi_val, shift);
 		igi_val = MIN_2(igi_val, IGI_MAX_PERFORMANCE_MODE);
@@ -2435,44 +2668,46 @@ void halbb_mccdm_pd_cal(struct bb_info *bb)
 
 		cbw = mcc_dm->mcc_rf_ch[i].bw;
 
-		pd_val = halbb_mccdm_pd_lower_bound_cal(bb, RSSI_MAX - igi_val,
-							cbw);
+		pd_val = halbb_mccdm_pd_cal(bb, RSSI_MAX - igi_val, cbw);
 
-		reg0 = (u16)cr->seg0r_pd_lower_bound_a;
+		reg0 = (u16)halbb_get_phy0_phy1_reg(bb, cr->seg0r_pd_lower_bound_a, bb->bb_phy_idx);
 		mask0 = (u16)cr->seg0r_pd_lower_bound_a_m;
 
-		halbb_fill_mcccmd(bb, 0, reg0, mask0, i, (u16)pd_val);
+		halbb_fill_mcc_cmd(bb, SEG0R_PD_LOWER_BOUND, reg0, mask0, i, (u16)pd_val);
 
 		if (mcc_dm->sta_cnt[i] == 0)
-			halbb_mccdm_igi_rst(bb, i);
-	}
+			halbb_mccdm_reg_rst(bb, i);
 
-	BB_DBG(bb, DBG_DIG, "STA cnt %d %d, RSSI_min: %d %d, BW: %d %d, MCC_pd_idx: %d %d\n",
-	       mcc_dm->sta_cnt[0], mcc_dm->sta_cnt[1],
-	       mcc_dm->rssi_min[0] >> 1, mcc_dm->rssi_min[1] >> 1,
-	       mcc_dm->mcc_rf_ch[0].bw, mcc_dm->mcc_rf_ch[1].bw,
-	       mcc_dm->mcc_dm_val[0][0], mcc_dm->mcc_dm_val[0][1]);
+		BB_DBG(bb, DBG_DIG, "Band type[%d], CH %d, STA cnt %d, RSSI_min: %d, BW: %d, MCC_pd_idx: %d\n",
+		       mcc_dm->mcc_rf_ch[i].band, mcc_dm->mcc_rf_ch[i].center_ch,
+		       mcc_dm->sta_cnt[i], mcc_dm->rssi_min[i] >> 1,
+		       mcc_dm->mcc_rf_ch[i].bw, mcc_dm->mcc_dm_val[0][i]);
+	}
 }
 
 void halbb_mccdm_switch(struct bb_info *bb)
 {
 	struct halbb_mcc_dm *mcc_dm = &bb->mcc_dm;
 
-	if (!(bb->ic_type & HALBB_DIG_MCC_SUPPORT_IC)) {
+	BB_DBG(bb, DBG_DIG, "<====== %s ======>\n", __func__);
+	halbb_show_cr_cnt(bb, BB_WD_MCCDM);
+	if (bb->bb_cmn_hooker->bb_drv_type != BB_NIC_DRV) {
 		BB_DBG(bb, DBG_DIG, "IC type is not supported\n");
 		return;
 	}
 
 	halbb_mccdm_ctrl(bb);
 
-	if (mcc_dm->mcc_status_en == 0)
+	if (mcc_dm->mcc_status_en == BB_MCC_DISABLE)
 		return;
-	BB_DBG(bb, DBG_DIG, "<====== %s ======>\n", __func__);
 
-	/* Set IGI*/
-	halbb_mccdm_pd_cal(bb);
+	/* Calculate IGI*/
+	halbb_mccdm_igi_cal(bb);
 
-	/* Set H2C Cmd*/
-	Halbb_mccdm_h2c_handler(bb);
+	if (mcc_dm->mcc_status_en == BB_MCC_ENABLE) {
+		/* Set MCC H2C Cmd*/
+		halbb_mccdm_h2c_handler(bb);
+	}
 }
+#endif
 #endif

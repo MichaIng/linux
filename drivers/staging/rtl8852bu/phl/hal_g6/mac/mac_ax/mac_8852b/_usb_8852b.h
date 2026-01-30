@@ -19,6 +19,24 @@
 
 #include "../../type.h"
 #include "../_usb.h"
+#if MAC_AX_8852B_SUPPORT
+
+// SIE
+#define MAC_AX_POLL_SIE_CNT 1000
+#define MAC_AX_POLL_SIE_WAIT_US 50
+
+/* RX AGG related */
+/* size unit was 4k in 8852A|B|51B */
+#define COMPAT_RX_AGG_UNIT 4
+
+/* usb_stuck_detect related */
+#define B_AX_STC_INT_USB_DBG_PORT_MSK 0xFF0000FF
+#define B_TXDMA_STATE_SH 16
+#define B_TXDMA_STATE_MSK 0xF
+#define TXDMA_STATE_DATA 4
+#define TXDMA_STATE_IDLE 0
+#define B_USB_BUF_FULL BIT(26)
+#define B_TX_USB_DISP_FIFO_NO_EMPTY BIT(25)
 
 /**
  * @struct wd_body_usb
@@ -371,48 +389,6 @@ u32 u2u3_switch_8852b(struct mac_ax_adapter *adapter);
  * @}
  */
 
- /**
-  * @addtogroup HCI
-  * @{
-  * @addtogroup USB
-  * @{
-  */
-
-/**
- * @brief get_usb_support_ability_8852b
- *
- * @param *adapter
- * @return Please Place Description here.
- * @retval u32
- */
-u32 get_usb_support_ability_8852b(struct mac_ax_adapter *adapter);
-/**
- * @}
- * @}
- */
-
-/**
- * @addtogroup HCI
- * @{
- * @addtogroup USB
- * @{
- */
-
-/**
- * @brief usb_tx_agg_cfg_8852b
- *
- * @param *adapter
- * @param *agg
- * @return Please Place Description here.
- * @retval u32
- */
-u32 usb_tx_agg_cfg_8852b(struct mac_ax_adapter *adapter,
-			 struct mac_ax_usb_tx_agg_cfg *agg);
-/**
- * @}
- * @}
- */
-
 /**
  * @addtogroup HCI
  * @{
@@ -481,6 +457,13 @@ u32 set_usb_wowlan_8852b(struct mac_ax_adapter *adapter,
  */
 
 /**
+ * @addtogroup HCI
+ * @{
+ * @addtogroup USB
+ * @{
+ */
+
+/**
  * @brief usb_get_txagg_num_88852b
  *
  * @param *adapter
@@ -492,6 +475,13 @@ u32 usb_get_txagg_num_8852b(struct mac_ax_adapter *adapter, u8 band);
 /**
  * @}
  * @}
+ */
+
+/**
+ * @addtogroup HCI
+ * @{
+ * @addtogroup USB
+ * @{
  */
 
 /**
@@ -519,4 +509,49 @@ u32 usb_ep_cfg_8852b(struct mac_ax_adapter *adapter, struct mac_ax_usb_ep *cfg);
  * @}
  * @}
  */
+
+/**
+ * @addtogroup HCI
+ * @{
+ * @addtogroup USB
+ * @{
+ */
+
+/**
+ * @brief get_usb_support_ability_8852b
+ *
+ * @param *adapter
+ * @return Please Place Description here.
+ * @retval u32
+ */
+enum usb_support_ability get_usb_support_ability_8852b(struct mac_ax_adapter *adapter);
+/**
+ * @}
+ * @}
+ */
+
+/**
+ * @addtogroup HCI
+ * @{
+ * @addtogroup USB
+ * @{
+ */
+
+/**
+ * @brief get_u3_perf_mode_8852b
+ *
+ * @param *adapter
+ * @return Please Place Description here.
+ * @retval u32
+ */
+u32 get_u3_perf_mode_8852b(struct mac_ax_adapter *adapter, enum mac_u3_perf_mode *perf_mode);
+/**
+ * @}
+ * @}
+ */
+
+#if MAC_USB2_PARSER_ERR_CHECK
+u32 usb_stuck_detect_8852b(struct mac_ax_adapter *adapter);
+#endif /* #if MAC_USB2_PARSER_ERR_CHECK */
+#endif /* #if MAC_AX_8852B_SUPPORT */
 #endif

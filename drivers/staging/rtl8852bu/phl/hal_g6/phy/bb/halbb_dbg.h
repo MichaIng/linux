@@ -36,6 +36,9 @@
 #define LA_CLK_EN 	0x014 /*Just for dbg, will be removed*/
 #define LA_CLK_EN_M 	0x1 /*Just for dbg, will be removed*/
 
+#define FRC_PRINT_LINE 0xffffffff
+#define REG_DUMP_HISTORY_NUM 20
+
 #ifdef HALBB_DBG_TRACE_SUPPORT
 	#ifdef HALBB_DBCC_SUPPORT
 		#define BB_DBG(bb, comp, fmt, ...)     \
@@ -44,12 +47,22 @@
 					_os_dbgdump("[BB][%d]" fmt, bb->bb_phy_idx, ##__VA_ARGS__);\
 				} \
 			} while (0)
+
+		#define BB_TRACE1(bb, fmt, ...)     \
+			do {\
+				_os_dbgdump("[BB][%d]" fmt, bb->bb_phy_idx, ##__VA_ARGS__);\
+			} while (0)
 	#else
 		#define BB_DBG(bb, comp, fmt, ...)     \
 			do {\
 				if(bb->dbg_component & comp) {\
 					_os_dbgdump("[BB]" fmt, ##__VA_ARGS__);\
 				} \
+			} while (0)
+
+		#define BB_TRACE1(bb, fmt, ...)     \
+			do {\
+				_os_dbgdump("[BB]" fmt, ##__VA_ARGS__);\
 			} while (0)
 	#endif
 
@@ -79,6 +92,7 @@
 #else
 	#define BB_DBG
 	#define BB_TRACE
+	#define BB_TRACE1
 	#define BB_WARNING
 	#define	BB_DBG_CNSL2(in_cnsl, max_buff_len, used_len, buff_addr, remain_len, fmt, ...)\
 		do {								\
@@ -128,6 +142,135 @@ enum bb_dbg_port_ip_t
 	DBGPORT_IP_RFC3		= 0X1E,
 	DBGPORT_IP_TST		= 0X1F,
 };
+
+enum bb_frc_phy_dump_reg
+{
+	FRC_DUMP_PHY0		= 0,
+	FRC_DUMP_PHY1		= 1,
+	FRC_DUMP_ALL
+};
+
+enum bb_basic_dbg_info
+{
+	BB_BASIC_DBG_01_SYSTEM		= BIT1,
+	BB_BASIC_DBG_02_ENVMNTR		= BIT2,
+	BB_BASIC_DBG_03_PMAC		= BIT3,
+	BB_BASIC_DBG_04_TX		= BIT4,
+	BB_BASIC_DBG_05_RX		= BIT5,
+	BB_BASIC_DBG_06_RSSI_RATE	= BIT6,
+	BB_BASIC_DBG_07_HIST		= BIT7,
+	BB_BASIC_DBG_08_RSSI_RATE_MU	= BIT8,
+	BB_BASIC_DBG_09_DM_SUMMARY	= BIT9
+};
+
+enum FWBB_DBG_COMP {
+/*=============RA=============*/
+	FWBBDBG_BF 			= BIT0,
+	FWBBDBG_RA_STASTISTIC		= BIT1, /*RA main debug log: rty ratio*/
+	FWBBDBG_RA_SEARCH_RATE		= BIT2, /*BW switch/search rate/choose rate*/
+	FWBBDBG_RA_RATE_STATE_DECISION	= BIT3, /*RU/RD/RS decision*/
+	FWBBDBG_RA_TRY_RESULT		= BIT4, /*Try state & write cmac table*/
+	FWBBDBG_RA_TX_RPT_TRY		= BIT5, // tx_rpt in try state
+	FWBBDBG_RA_TX_RPT_NONTRY	= BIT6, // tx_rpt in non-try state and tx_cnt=1
+	FWBBDBG_RA_TX_RPT_NONTRY_ARFR	= BIT7,  // tx_rpt in non-try state and tx_cnt>1(re-transmit)
+	FWBBDBG_RA_RECEIVED_H2C		= BIT8  // RA received H2C
+/*============================*/
+};
+
+
+enum FWBB_DBG_NUM_BF {
+	BBDBG_NUM_BF_CHECK_BF_EXIST_0_0 = 0,
+	BBDBG_NUM_BF_CHECK_BF_EXIST_0_1 = 1,
+	BBDBG_NUM_BF_CHECK_BF_EXIST_0_2 = 2,
+	BBDBG_NUM_BF_CHECK_BF_EXIST_0_3 = 3,
+	BBDBG_NUM_BF_CHECK_BF_EXIST_0_4 = 4,
+	BBDBG_NUM_BF_CHECK_BF_EXIST_0_5 = 5,
+	BBDBG_NUM_BF_CHECK_BF_EXIST_0_6 = 6,
+	BBDBG_NUM_BF_CHECK_BF_EXIST_0_7 = 7,
+	BBDBG_NUM_BF_CHECK_BF_EXIST_0_8 = 8,
+	BBDBG_NUM_BF_CHECK_BF_EXIST_0_9 = 9,
+};
+
+enum FWBB_DBG_NUM_STASTISTIC {
+	BBDBG_NUM_RA_RATE_CHANGED_1_0	= 0,
+	BBDBG_NUM_RA_CAL_PARA_1_1	= 1,
+	BBDBG_NUM_RA_CAL_PARA_1_2	= 2
+};
+
+enum FWBB_DBG_NUM_SEARCH_RATE {
+	BBDBG_NUM_RA_SEARCH_RATE_RU_2_0	= 0,
+	BBDBG_NUM_RA_SEARCH_RATE_RU_2_1	= 1,
+	BBDBG_NUM_RA_SEARCH_RATE_RD_2_2	= 2,
+	BBDBG_NUM_RA_SEARCH_RATE_RD_2_3	= 3,
+	BBDBG_NUM_RA_RATE_LOCK_2_4	= 4,
+	BBDBG_NUM_RA_RATE_LOCK_2_5	= 5,
+	BBDBG_NUM_RA_RATE_LOCK_2_6	= 6
+};
+
+enum FWBB_DBG_NUM_RATE_STATE {
+	BBDBG_NUM_RA_D_O_PARA_3_0		= 0,
+	BBDBG_NUM_RA_UP_DOWN_TH_3_1		= 1,
+	BBDBG_NUM_RA_RATE_DOWN_3_2		= 2,
+	BBDBG_NUM_RA_RATE_FORCE_DOWN_3_3	= 3,
+	BBDBG_NUM_RA_RATE_UP_3_4		= 4,
+	BBDBG_NUM_RA_RATE_STAY_3_5		= 5
+};
+
+enum FWBB_DBG_NUM_TRY_RESULT {
+	BBDBG_NUM_RA_WRITE_CMAC_4_0	= 0,
+	BBDBG_NUM_RA_TRY_RESULT_4_1	= 1,
+	BBDBG_NUM_RA_TRY_RESULT_4_2	= 2,
+	BBDBG_NUM_RA_TRY_RESULT_4_3	= 3,
+	BBDBG_NUM_RA_TRY_RESULT_4_4	= 4,
+	BBDBG_NUM_RA_TRY_FAIL_4_5	= 5,
+	BBDBG_NUM_RA_TRY_SUCCESS_4_6	= 6
+};
+
+enum FWBB_DBG_NUM_TX_RPT_TRY {
+	BBDBG_NUM_RA_TX_RPT_TRY_5_0 = 0,
+	BBDBG_NUM_RA_TX_RPT_TRY_5_1 = 1,
+	BBDBG_NUM_RA_TX_RPT_TRY_5_2 = 2
+};
+
+enum FWBB_DBG_NUM_TX_RPT_NONTRY {
+	BBDBG_NUM_RA_TX_RPT_NONTRY_6_0 = 0,  // unused
+	BBDBG_NUM_RA_TX_RPT_NONTRY_6_1 = 1,
+	BBDBG_NUM_RA_TX_RPT_NONTRY_6_2 = 2
+};
+
+enum FWBB_DBG_NUM_TX_RPT_NONTRY_ARFR {
+	BBDBG_NUM_RA_TX_RPT_NONTRY_ARFR_7_0 = 0,  // unused
+	BBDBG_NUM_RA_TX_RPT_NONTRY_ARFR_7_1 = 1,
+	BBDBG_NUM_RA_TX_RPT_NONTRY_ARFR_7_2 = 2
+};
+
+enum FWBB_DBG_NUM_RA_RECEIVED_H2C {
+	BBDBG_NUM_RA_RECEIVED_H2C_8_0	= 0,
+	BBDBG_NUM_RA_RECEIVED_H2C_8_1	= 1,
+	BBDBG_NUM_RA_RECEIVED_H2C_8_2	= 2,
+	BBDBG_NUM_RA_RECEIVED_H2C_8_3	= 3,
+	BBDBG_NUM_RA_RECEIVED_H2C_8_4	= 4,
+	BBDBG_NUM_RA_RECEIVED_H2C_8_5	= 5,
+	BBDBG_NUM_RA_RECEIVED_H2C_8_6	= 6,
+	BBDBG_NUM_RA_RECEIVED_H2C_8_7	= 7,
+	BBDBG_NUM_RA_RECEIVED_H2C_8_8	= 8,
+	BBDBG_NUM_RA_RECEIVED_H2C_8_9	= 9,
+	BBDBG_NUM_RA_RECEIVED_H2C_8_10	= 10, //0xa
+	BBDBG_NUM_RA_RECEIVED_H2C_8_11	= 11, //0xb
+	BBDBG_NUM_RA_RECEIVED_H2C_8_13	= 13, //0xd
+	BBDBG_NUM_RA_RECEIVED_H2C_8_14	= 14, //0xe
+	BBDBG_NUM_RA_RECEIVED_H2C_8_15	= 15, //0xf
+	BBDBG_NUM_RA_RECEIVED_H2C_8_16	= 16, //0x10
+	BBDBG_NUM_RA_RECEIVED_H2C_8_32	= 32, //0x20
+	BBDBG_NUM_RA_RECEIVED_H2C_8_33	= 33  //0x21
+};
+
+enum bb_dbg_bbcr_cnt_t {
+	BB_CR_CNT_DISABLE = 0,
+	BB_CR_CNT_ENABLE_ACCUMULATE = 1,
+	BB_CR_CNT_ENABLE_RESET = 2,
+};
+
 /*@--------------------------[Structure]-------------------------------------*/
 struct bb_dbg_cr_info {
 	u32 dbgport_ip;
@@ -140,42 +283,111 @@ struct bb_dbg_cr_info {
 	u32 clk_en_m;
 	u32 dbgport_en;
 	u32 dbgport_en_m;
+	u32 bb_monitor_sel0;
+	u32 bb_monitor_sel0_m;
+	u32 bb_monitor0;
+	u32 bb_monitor0_m;
 	u32 bb_monitor_sel1;
 	u32 bb_monitor_sel1_m;
 	u32 bb_monitor1;
 	u32 bb_monitor1_m;
-	/*mac_phy_intf*/
-	u32 mac_phy_ppdu_type;
-	u32 mac_phy_txsc;
-	u32 mac_phy_n_usr;
-	u32 mac_phy_stbc;
-	u32 mac_phy_ndp_en;
-	u32 mac_phy_n_sts;
-	u32 mac_phy_mcs_5_4;
-	u32 mac_phy_n_sym;
+	u32 mac_phy_intf_sel_phy1;
+	u32 mac_phy_intf_sel_phy1_m;
+	u32 mac_phy_txinfo[6];
+	u32 mac_phy_txt2rct[2];
+	u32 mac_phy_txcomct[2];
+	u32 mac_phy_txusrct[4][2];
+	u32 mac_phy_txtimct;
 	u32 mac_phy_lsig;
 	u32 mac_phy_siga_0;
 	u32 mac_phy_siga_1;
 	u32 mac_phy_vht_sigb_0;
+	u32 mac_phy_usig_1;
+	u32 mac_phy_usig_2;
+	u32 path_0_txpw;
+	u32 path_0_txpw_m;
+	u32 path_1_txpw;
+	u32 path_1_txpw_m;
+	u32 bmode_tx;
+
+	/*AGC cr*/
+	u32 agc_en_path[HALBB_MAX_PATH];
+	u32 agc_en_path_m[HALBB_MAX_PATH];
+	u32 lna_idx_init_path[HALBB_MAX_PATH];
+	u32 lna_idx_init_path_m[HALBB_MAX_PATH];
+	u32 tia_idx_init_path[HALBB_MAX_PATH];
+	u32 tia_idx_init_path_m[HALBB_MAX_PATH];
+	u32 rxbb_idx_init_path[HALBB_MAX_PATH];
+	u32 rxbb_idx_init_path_m[HALBB_MAX_PATH];
+	u32 tia_shrink_en_path[HALBB_MAX_PATH];
+	u32 tia_shrink_en_path_m[HALBB_MAX_PATH];
+	u32 tia_shrink_init_path[HALBB_MAX_PATH];
+	u32 tia_shrink_init_path_m[HALBB_MAX_PATH];
+	u32 elna_idx_pre_agc_rdy_path[HALBB_MAX_PATH];
+	u32 elna_idx_pre_agc_rdy_path_m[HALBB_MAX_PATH];
+	u32 lna_idx_pre_agc_rdy_path[HALBB_MAX_PATH];
+	u32 lna_idx_pre_agc_rdy_path_m[HALBB_MAX_PATH];
+	u32 tia_idx_pre_agc_rdy_path[HALBB_MAX_PATH];
+	u32 tia_idx_pre_agc_rdy_path_m[HALBB_MAX_PATH];
+	u32 tia_shrink_pre_agc_rdy_path[HALBB_MAX_PATH];
+	u32 tia_shrink_pre_agc_rdy_path_m[HALBB_MAX_PATH];
+	u32 rxbb_idx_pre_agc_rdy_path[HALBB_MAX_PATH];
+	u32 rxbb_idx_pre_agc_rdy_path_m[HALBB_MAX_PATH];
+	u32 elna_idx_post_agc_rdy_path[HALBB_MAX_PATH];
+	u32 elna_idx_post_agc_rdy_path_m[HALBB_MAX_PATH];
+	u32 lna_idx_post_agc_rdy_path[HALBB_MAX_PATH];
+	u32 lna_idx_post_agc_rdy_path_m[HALBB_MAX_PATH];
+	u32 tia_idx_post_agc_rdy_path[HALBB_MAX_PATH];
+	u32 tia_idx_post_agc_rdy_path_m[HALBB_MAX_PATH];
+	u32 tia_shrink_post_agc_rdy_path[HALBB_MAX_PATH];
+	u32 tia_shrink_post_agc_rdy_path_m[HALBB_MAX_PATH];
+	u32 rxbb_idx_post_agc_rdy_path[HALBB_MAX_PATH];
+	u32 rxbb_idx_post_agc_rdy_path_m[HALBB_MAX_PATH];
+	u32 elna_idx_nlgc_agc_rdy_path[HALBB_MAX_PATH];
+	u32 elna_idx_nlgc_agc_rdy_path_m[HALBB_MAX_PATH];
+	u32 lna_idx_nlgc_agc_rdy_path[HALBB_MAX_PATH];
+	u32 lna_idx_nlgc_agc_rdy_path_m[HALBB_MAX_PATH];
+	u32 tia_idx_nlgc_agc_rdy_path[HALBB_MAX_PATH];
+	u32 tia_idx_nlgc_agc_rdy_path_m[HALBB_MAX_PATH];
+	u32 tia_shrink_nlgc_agc_rdy_path[HALBB_MAX_PATH];
+	u32 tia_shrink_nlgc_agc_rdy_path_m[HALBB_MAX_PATH];
+	u32 rxbb_idx_nlgc_agc_rdy_path[HALBB_MAX_PATH];
+	u32 rxbb_idx_nlgc_agc_rdy_path_m[HALBB_MAX_PATH];
+	u32 p_diff_pre_agc_rdy_path[HALBB_MAX_PATH];
+	u32 p_diff_pre_agc_rdy_path_m[HALBB_MAX_PATH];
+	u32 p_diff_pd_hit_path[HALBB_MAX_PATH];
+	u32 p_diff_pd_hit_path_m[HALBB_MAX_PATH];
+	u32 p_diff_post_agc_rdy_path[HALBB_MAX_PATH];
+	u32 p_diff_post_agc_rdy_path_m[HALBB_MAX_PATH];
+	u32 p_diff_nlgc_agc_rdy_path[HALBB_MAX_PATH];
+	u32 p_diff_nlgc_agc_rdy_path_m[HALBB_MAX_PATH];
+	u32 rssi_agc_rdy_path[HALBB_MAX_PATH];
+	u32 rssi_agc_rdy_path_m[HALBB_MAX_PATH];
+	u32 rssi_always_run_path[HALBB_MAX_PATH];
+	u32 rssi_always_run_path_m[HALBB_MAX_PATH];
 };
 
-struct bb_mac_phy_intf {
+struct bb_tx_info {
 	/*From reg*/
 	u8 type;
+	u8 ppdu_var;
 	u8 tx_path_en;
+	u8 path_map;
 	u8 txcmd_num;
 	u8 txsc;
 	u8 bw;
-	u16 tx_pw;
+	u16 tx_pw; /*tmac*/
 	u8 n_usr;
+	u8 max_mcs;
 	bool stbc;
 	u8 gi;
 	u8 ltf;
-	bool ndp_en;
-	u8 n_sts;
-	bool fec;
-	u8 mcs;
-	bool dcm;
+	u8 u_id[4];
+	u8 n_sts[4];
+	bool fec[4];
+	u8 mcs[4];
+	bool dcm[4];
+	u8 precoding[4];
 	u16 n_sym;
 	u8 pkt_ext;
 	u8 pre_fec;
@@ -183,13 +395,76 @@ struct bb_mac_phy_intf {
 	u32 sig_a1;
 	u32 sig_a2;
 	u32 sig_b;
+	u32 usig_1;
+	u32 usig_2;
+	u32 txinfo[6];
+	u32 txt2rct[2];
+	u32 txcomct[2];
+	u32 txusrct[4][2];
+	u32 txtimct;
+	u16 txpw_path0; /*bb_path0*/
+	u16 txpw_path1; /*bb_path1*/
+	u32 bmode;
+	u8 bmode_rate;
+	u16 bmode_length; /*1 = 1M, 2 = 2M, 4 = 5.5M, 8 = 11M*/
+	u8 bmode_service;
+	bool bmode_type; /*0 = TX long preamble, 1 = TX short preamble*/
 	/*sw variable*/
 	u16 t_data;
 	u32 psdu_length;
 };
 
+struct bb_ra_dbgreg {
+	u32 macid;
+	u32 cmac_tbl_id0;
+	u32 cmac_tbl_id1;
+	u32 per;
+	u32 rdr;
+	u32 r4;
+	u32 cls;
+	u32 rate_up_lmt_cnt;
+	u32 per_ma;
+	u32 var;
+	u32 d_o_n;
+	u32 d_o_p;
+	u32 rd_th;
+	u32 ru_th;
+	u32 try_per;
+	u32 try_rdr;
+	u32 try_r4;
+	u32 txrpt_tot;
+	u32 ra_timer;
+	u32 tot_disra_trying_return;
+	u32 r4_return;
+	u32 ra_mask_h;
+	u32 ra_mask_l;
+	u32 highest_rate;
+	u32 lowest_rate;
+	u32 upd_all_h2c_0;
+	u32 upd_all_h2c_1;
+	u32 upd_all_h2c_2;
+	u32 upd_all_h2c_3;
+	u32 dyn_stbc;
+	u32 mu_mcs;
+	u32 mu_id_lowest_rate;
+	u32 mu_rd_ru_th;
+	u32 mu_per;
+	bool is_rate_up;
+};
+
 struct bb_dbg_info {
+	enum bb_dbg_bbcr_cnt_t	cr_cnt_ctrl;
+	u32	cr_recorde_w_cnt;
+	u32	cr_recorde_r_cnt;
+	u32	wrapcr_recorde_w_cnt;
+	enum bb_dbg_bbcr_cnt_t	rfcr_cnt_ctrl;
+	u32	rfcr_recorde_w_cnt;
+	u32	rfcr_recorde_r_cnt;
 	bool	cr_recorder_en;
+	bool	cr_mp_recorder_en;
+	bool	cr_init_hook_recorder_en;
+	bool	cr_fake_init_hook_en;
+	u32	cr_fake_init_hook_val;
 	bool	cr_recorder_rf_en; /*HALRF write BB CR*/
 	/*CR init debug control*/
 	bool	cr_dbg_mode_en;
@@ -206,20 +481,20 @@ struct bb_dbg_info {
 	u32		tdma_cr_period_0;
 	u32		tdma_cr_period_1;
 #endif
-	struct bb_mac_phy_intf mac_phy_intf_i;
-	struct bb_dbg_cr_info bb_dbg_cr_i;
+	struct bb_tx_info tx_info_i;
+	struct bb_ra_dbgreg ra_dbgreg_i;
 };
 
 /*@--------------------------[Prptotype]-------------------------------------*/
 struct bb_info;
-void halbb_print_devider(struct bb_info *bb, u8 len, bool with_space);
+void halbb_print_devider(struct bb_info *bb, u8 len, bool with_space, u64 comp);
 #ifdef HALBB_TDMA_CR_SUPPORT
 void halbb_tdma_cr_sel_io_en(struct bb_info *bb);
 void halbb_tdma_cr_timer_init(struct bb_info *bb);
 void halbb_tdma_cr_sel_main(struct bb_info *bb);
-void halbb_tdma_cr_sel_deinit(struct bb_info *bb);
 void halbb_tdma_cr_sel_init(struct bb_info *bb);
 #endif
+
 void halbb_dbg_comp_init(struct bb_info *bb);
 void halbb_bb_dbg_port_clock_en(struct bb_info *bb, u8 enable);
 u32 halbb_get_bb_dbg_port_idx(struct bb_info *bb);
@@ -228,22 +503,35 @@ void halbb_set_bb_dbg_port_ip(struct bb_info *bb, enum bb_dbg_port_ip_t ip);
 void halbb_release_bb_dbg_port(struct bb_info *bb);
 bool halbb_bb_dbg_port_racing(struct bb_info *bb, u8 curr_dbg_priority);
 u32 halbb_get_bb_dbg_port_val(struct bb_info *bb);
-u16 halbb_rx_utility(struct bb_info *bb, u16 avg_phy_rate, u8 rx_max_ss,
-		     enum channel_width bw);
+u16 halbb_trx_utility(struct bb_info *bb, enum bb_mode_type mode,
+		      u16 avg_phy_rate, u8 rx_max_ss, enum channel_width bw);
 u16 halbb_rx_avg_phy_rate(struct bb_info *bb);
+u16 halbb_tx_avg_phy_rate(struct bb_info *bb);
 void halbb_get_tx_dbg_reg(struct bb_info *bb);
 void halbb_basic_dbg_message(struct bb_info *bb);
 void halbb_basic_profile_dbg(struct bb_info *bb, u32 *_used, char *output, u32 *_out_len);
+void halbb_get_bb_para_pkg_ver(struct bb_info *bb, u32 *date, u32 *release_ver);
 void halbb_dump_reg_dbg(struct bb_info *bb, char input[][16], u32 *_used, char *output, u32 *_out_len);
 void halbb_dd_dump_dbg(struct bb_info *bb, char input[][16], u32 *_used, char *output, u32 *_out_len);
 void halbb_cr_table_dump(struct bb_info *bb, u32 *cr_table, u32 cr_len);
+void halbb_cr_hook_fake_init(struct bb_info *bb, u32 *str_table, u32 len);
+void halbb_cr_struc_dump(struct bb_info *bb, u32 *str_table, u32 len);
+void halbb_cr_hook_init_dump(struct bb_info *bb, u32 *str_table, u32 len);
 void halbb_dump_bb_reg(struct bb_info *bb, u32 *_used, char *output,
-			       u32 *_out_len, bool dump_2_buff);
-void halbb_show_rx_rate(struct bb_info *bb, char input[][16], u32 *_used,
-			      char *output, u32 *_out_len);
-void halbb_mac_phy_intf_dbg(struct bb_info *bb, char input[][16], u32 *_used,
-			  char *output, u32 *_out_len);
+		       u32 *_out_len, bool dump_2_buff,
+		       enum bb_frc_phy_dump_reg frc_phy_dump);
+void halbb_dump_hioe_reg(struct bb_info *bb, u32 *_used, char *output,
+		       u32 *_out_len, bool dump_2_buff,
+		       enum phl_phy_idx phy_idx);
+void halbb_tx_info_dbg(struct bb_info *bb, char input[][16], u32 *_used,
+		       char *output, u32 *_out_len);
 void halbb_cmn_dbg(struct bb_info *bb, char input[][16], u32 *_used, char *output, u32 *_out_len);
 void halbb_dbg_setting_init(struct bb_info *bb);
+void halbb_agc_dbg(struct bb_info *bb, char input[][16], u32 *_used, char *output, u32 *_out_len);
 void halbb_cr_cfg_dbg_init(struct bb_info *bb);
+void halbb_mac_phy_intf_txcmd_txtp(struct bb_info *bb, u8 txcmd_num, char **txcmd);
+void halbb_mac_phy_intf_txcmd_txtp_7(struct bb_info *bb, u8 txcmd_num, char **txcmd);
+void halbb_mac_phy_intf_ppdu_type(struct bb_info *bb, u8 type, char **ppdu);
+void halbb_mac_phy_intf_ppdu_var_type_7(struct bb_info *bb, u8 ppdu_type, u8 ppdu_var, char **ppdu);
+u32 halbb_c2h_fw_dbg(struct bb_info *bb, u16 len, u8 *c2h);
 #endif

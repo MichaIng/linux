@@ -56,7 +56,13 @@
 #include <linux/list.h>
 #include <linux/vmalloc.h>
 
-#ifdef CONFIG_RECV_THREAD_MODE
+#ifdef CONFIG_RTKM
+#include <rtw_mem.h>
+#endif /* CONFIG_RTKM */
+
+#if defined(RTW_XMIT_THREAD_HIGH_PRIORITY) || \
+    defined(RTW_XMIT_THREAD_CB_HIGH_PRIORITY) || \
+    defined(RTW_RECV_THREAD_HIGH_PRIORITY)
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
 #include <uapi/linux/sched/types.h>	/* struct sched_param */
 #endif
@@ -113,6 +119,10 @@
 #include <linux/fs.h>
 #endif
 
+#ifdef CONFIG_PCI_HCI
+#include <linux/pci_regs.h>
+#endif
+
 #ifdef CONFIG_USB_HCI
 #include <linux/usb.h>
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 21))
@@ -142,6 +152,16 @@
 	#undef CONFIG_RTW_GRO
 	/*#warning "Linux Kernel version too old to support GRO(should newer than 2.6.33)\n"*/
 
+#endif
+
+/*
+ * MLD related linux kernel patch in
+ * Android Common Kernel android13-5.15
+ * refs/heads/common-android13-5.15-2023-04 (5.15.94)
+ * refs/heads/android13-5.15-lts (5.15.106)
+ */
+#if (defined(__ANDROID_COMMON_KERNEL__) && (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 94)))
+        #define CONFIG_ACK_5_15_LTS_KERNEL
 #endif
 
 #define ATOMIC_T atomic_t
@@ -197,7 +217,13 @@ static inline void *_rtw_malloc(u32 sz)
 		pbuf = dvr_malloc(sz);
 	else
 	#endif
+	{
+#ifdef CONFIG_RTKM
+		pbuf = rtkm_kmalloc(sz, in_interrupt() ? GFP_ATOMIC : GFP_KERNEL);
+#else /* !CONFIG_RTKM */
 		pbuf = kmalloc(sz, in_interrupt() ? GFP_ATOMIC : GFP_KERNEL);
+#endif /* CONFIG_RTKM */
+	}
 
 #ifdef DBG_MEMORY_LEAK
 	if (pbuf != NULL) {
@@ -218,8 +244,12 @@ static inline void *_rtw_zmalloc(u32 sz)
 	if (pbuf != NULL)
 		memset(pbuf, 0, sz);
 #else
+#ifdef CONFIG_RTKM
+	void *pbuf = rtkm_kzalloc(sz, in_interrupt() ? GFP_ATOMIC : GFP_KERNEL);
+#else /* !CONFIG_RTKM */
 	/*kzalloc in KERNEL_VERSION(2, 6, 14)*/
 	void *pbuf = kzalloc( sz, in_interrupt() ? GFP_ATOMIC : GFP_KERNEL);
+#endif /* CONFIG_RTKM */
 
 #endif
 	return pbuf;
@@ -232,7 +262,13 @@ static inline void _rtw_mfree(void *pbuf, u32 sz)
 		dvr_free(pbuf);
 	else
 	#endif
+	{
+#ifdef CONFIG_RTKM
+		rtkm_kfree(pbuf, sz);
+#else /* !CONFIG_RTKM */
 		kfree(pbuf);
+#endif /* CONFIG_RTKM */
+	}
 
 #ifdef DBG_MEMORY_LEAK
 	atomic_dec(&_malloc_cnt);
@@ -310,6 +346,10 @@ __inline static void _rtw_spinunlock_bh(_lock *plock)
 	spin_unlock_bh(plock);
 }
 
+__inline static int _rtw_spin_is_locked(_lock *plock)
+{
+	return spin_is_locked(plock);
+}
 
 /*lock - semaphore*/
 typedef struct	semaphore _sema;
@@ -428,6 +468,12 @@ __inline static _list *get_next(_list	*list)
 {
 	return list->next;
 }
+
+__inline static _list *get_prev(_list	*list)
+{
+	return list->prev;
+}
+
 __inline static _list	*get_list_head(_queue *queue)
 {
 	return &(queue->queue);
@@ -470,6 +516,8 @@ typedef void *thread_context;
 struct thread_hdl{
 	_thread_hdl_ thread_handler;
 	u8 thread_status;
+	u8 cpu_id;
+	u8 en_assign_cpuid;
 };
 #define THREAD_STATUS_STARTED BIT(0)
 #define THREAD_STATUS_STOPPED BIT(1)
@@ -494,6 +542,27 @@ static inline void rtw_thread_exit(_completion *comp)
 	kthread_complete_and_exit(comp, 0);
 #endif
 }
+
+#ifdef CONFIG_PHL_CPU_BALANCE_THREAD
+static inline _thread_hdl_ rtw_thread_cpu_start(int (*threadfn)(void *data),
+			void *data, const char namefmt[], u8 cpu_id, u8 en_cpuid)
+{
+	_thread_hdl_ _rtw_thread = NULL;
+
+	_rtw_thread = kthread_create(threadfn, data, namefmt);
+	if (IS_ERR(_rtw_thread)) {
+		WARN_ON(!_rtw_thread);
+		_rtw_thread = NULL;
+	}
+	else {
+		/* Specific CPU */
+		if(en_cpuid == _TRUE)
+			kthread_bind(_rtw_thread, cpu_id);
+		wake_up_process(_rtw_thread);
+	}
+	return _rtw_thread;
+}
+#endif /*CONFIG_PHL_CPU_BALANCE_THREAD*/
 
 static inline _thread_hdl_ rtw_thread_start(int (*threadfn)(void *data),
 			void *data, const char namefmt[])
@@ -541,6 +610,105 @@ static inline void flush_signals_thread(void)
 #endif
 
 typedef unsigned long systime;
+typedef ktime_t sysptime;
+
+#define CONFIG_OSDEP_SPTIME_API
+
+static inline sysptime rtw_sptime_get(void)
+{
+	return ktime_get(); /* CLOCK_MONOTONIC */
+}
+
+static inline sysptime rtw_sptime_get_raw(void)
+{
+	return ktime_get_raw(); /* CLOCK_MONOTONIC_RAW */
+}
+
+static inline sysptime rtw_sptime_set(s64 secs, const u32 nsecs)
+{
+	return ktime_set(secs, nsecs);
+}
+
+static inline sysptime rtw_sptime_zero(void)
+{
+	return ktime_set(0, 0);
+}
+
+/*
+ *   cmp1  < cmp2: return <0
+ *   cmp1 == cmp2: return 0
+ *   cmp1  > cmp2: return >0
+ */
+static inline int rtw_sptime_cmp(const sysptime cmp1, const sysptime cmp2)
+{
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 8, 0))
+	return ktime_compare(cmp1, cmp2);
+#else
+	if (cmp1.tv64 < cmp2.tv64)
+		return -1;
+	if (cmp1.tv64 > cmp2.tv64)
+		return 1;
+	return 0;
+#endif
+}
+
+/*
+ * sub = lhs - rhs, in normalized form
+ */
+static inline sysptime rtw_sptime_sub(const sysptime lhs, const sysptime rhs)
+{
+	return ktime_sub(lhs, rhs);
+}
+
+/*
+ * add = lhs + rhs, in normalized form
+ */
+static inline sysptime rtw_sptime_add(const sysptime lhs, const sysptime rhs)
+{
+	return ktime_add(lhs, rhs);
+}
+
+static inline s64 rtw_sptime_to_ms(const sysptime sptime)
+{
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 35))
+	return ktime_to_ms(sptime);
+#else
+	struct timeval tv = ktime_to_timeval(sptime);
+
+	return (s64) tv.tv_sec * MSEC_PER_SEC + tv.tv_usec / USEC_PER_MSEC;
+#endif
+}
+
+static inline sysptime rtw_ms_to_sptime(u64 ms)
+{
+	return ns_to_ktime(ms * NSEC_PER_MSEC);
+}
+
+static inline s64 rtw_sptime_to_us(const sysptime sptime)
+{
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 22))
+	return ktime_to_us(sptime);
+#else
+	struct timeval tv = ktime_to_timeval(sptime);
+
+	return (s64) tv.tv_sec * USEC_PER_SEC + tv.tv_usec;
+#endif
+}
+
+static inline sysptime rtw_us_to_sptime(u64 us)
+{
+	return ns_to_ktime(us * NSEC_PER_USEC);
+}
+
+static inline s64 rtw_sptime_to_ns(const sysptime sptime)
+{
+	return ktime_to_ns(sptime);
+}
+
+static inline sysptime rtw_ns_to_sptime(u64 ns)
+{
+	return ns_to_ktime(ns);
+}
 
 /*tasklet*/
 typedef struct tasklet_struct _tasklet;
@@ -663,7 +831,11 @@ struct rtw_timer_list {
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
 static inline void timer_hdl(struct timer_list *in_timer)
 {
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 16, 0))
+	_timer *ptimer = timer_container_of(ptimer, in_timer, timer);
+#else
 	_timer *ptimer = from_timer(ptimer, in_timer, timer);
+#endif
 
 	ptimer->function(ptimer->arg);
 }
@@ -691,6 +863,11 @@ __inline static void _init_timer(_timer *ptimer, void *pfunc, void *cntx)
 #endif
 }
 
+__inline static int _check_timer_is_active(_timer *ptimer)
+{
+	return timer_pending(&ptimer->timer);
+}
+
 __inline static void _set_timer(_timer *ptimer, u32 delay_time)
 {
 	mod_timer(&ptimer->timer , (jiffies + (delay_time * HZ / 1000)));
@@ -698,12 +875,20 @@ __inline static void _set_timer(_timer *ptimer, u32 delay_time)
 
 __inline static void _cancel_timer(_timer *ptimer, u8 *bcancelled)
 {
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 15, 0))
+	*bcancelled = timer_delete_sync(&ptimer->timer) == 1 ? 1 : 0;
+#else
 	*bcancelled = del_timer_sync(&ptimer->timer) == 1 ? 1 : 0;
+#endif
 }
 
 __inline static void _cancel_timer_async(_timer *ptimer)
 {
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 15, 0))
+	timer_delete(&ptimer->timer);
+#else
 	del_timer(&ptimer->timer);
+#endif
 }
 
 /*work*/
@@ -997,7 +1182,6 @@ static inline void rtw_dump_stack(void)
 	dump_stack();
 }
 #define rtw_bug_on(condition) BUG_ON(condition)
-#define rtw_warn_on(condition) WARN_ON(condition)
 #define RTW_DIV_ROUND_UP(n, d)	DIV_ROUND_UP(n, d)
 #define rtw_sprintf(buf, size, format, arg...) snprintf(buf, size, format, ##arg)
 
@@ -1017,8 +1201,45 @@ static inline void rtw_dump_stack(void)
 #endif
 #endif
 
+#ifndef static_assert
+#define static_assert(expr, ...) __static_assert(expr, ##__VA_ARGS__, #expr)
+#define __static_assert(expr, msg, ...) _Static_assert(expr, msg)
+#endif
+
+#ifdef CONFIG_PCI_HCI
+/* Extended Capabilities (PCI-X 2.0 and Express) */
+#ifndef PCI_EXT_CAP_ID_L1SS
+#define PCI_EXT_CAP_ID_L1SS  0x1E	/* L1 PM Substates */
+#endif
+/* L1 PM Substates */
+#ifndef PCI_L1SS_CAP
+#define PCI_L1SS_CAP		    4	/* capability register */
+#define  PCI_L1SS_CAP_PCIPM_L1_2	 1	/* PCI PM L1.2 Support */
+#define  PCI_L1SS_CAP_PCIPM_L1_1	 2	/* PCI PM L1.1 Support */
+#define  PCI_L1SS_CAP_ASPM_L1_2		 4	/* ASPM L1.2 Support */
+#define  PCI_L1SS_CAP_ASPM_L1_1		 8	/* ASPM L1.1 Support */
+#define  PCI_L1SS_CAP_L1_PM_SS		16	/* L1 PM Substates Support */
+#endif
+#ifndef PCI_L1SS_CTL1
+#define PCI_L1SS_CTL1		    8	/* Control Register 1 */
+#define  PCI_L1SS_CTL1_PCIPM_L1_2	1	/* PCI PM L1.2 Enable */
+#define  PCI_L1SS_CTL1_PCIPM_L1_1	2	/* PCI PM L1.1 Support */
+#define  PCI_L1SS_CTL1_ASPM_L1_2	4	/* ASPM L1.2 Support */
+#define  PCI_L1SS_CTL1_ASPM_L1_1	8	/* ASPM L1.1 Support */
+#define  PCI_L1SS_CTL1_L1SS_MASK	0x0000000F
+#endif
+#endif /* CONFIG_PCI_HCI */
+
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 17, 0))
 #define dev_addr_mod(dev, offset, addr, len) _rtw_memcpy(&dev->dev_addr[offset], addr, len)
 #endif
+
+#define rtw_warn_on(condition) \
+	do { \
+		if (condition) { \
+			WARN_ON(1); \
+			ATOMIC_INC(&rtw_warn_on_cnt); \
+		} \
+	} while (0)
 
 #endif /* __OSDEP_LINUX_SERVICE_H_ */

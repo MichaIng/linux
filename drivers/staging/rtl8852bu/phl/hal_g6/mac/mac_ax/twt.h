@@ -20,6 +20,53 @@
 #include "../type.h"
 #include "fwcmd.h"
 
+#define TWT_INFO_SIZE (sizeof(struct mac_ax_twt_info))
+#define TWT_DBG_INFO_SIZE 16 /* 1st dword of each TWT common info */
+
+/**
+ * @addtogroup PowerSaving
+ * @{
+ * @addtogroup TWT
+ * @{
+ */
+
+/**
+ * @brief twt_info_init
+ *
+ * @param *adapter
+ * @return Please Place Description here.
+ * @retval u32
+ */
+#if MAC_FEAT_TWT_STA || MAC_FEAT_TWTAP
+u32 twt_info_init(struct mac_ax_adapter *adapter);
+#endif
+/**
+ * @}
+ * @}
+ */
+
+/**
+ * @addtogroup PowerSaving
+ * @{
+ * @addtogroup TWT
+ * @{
+ */
+
+/**
+ * @brief twt_info_exit
+ *
+ * @param *adapter
+ * @return Please Place Description here.
+ * @retval u32
+ */
+#if MAC_FEAT_TWT_STA || MAC_FEAT_TWTAP
+u32 twt_info_exit(struct mac_ax_adapter *adapter);
+#endif
+/**
+ * @}
+ * @}
+ */
+
 /**
  * @addtogroup PowerSaving
  * @{
@@ -35,8 +82,10 @@
  * @return Please Place Description here.
  * @retval u32
  */
+#if MAC_FEAT_TWT_STA || MAC_FEAT_TWTAP
 u32 mac_twt_info_upd_h2c(struct mac_ax_adapter *adapter,
 			 struct mac_ax_twt_para *info);
+#endif
 /**
  * @}
  * @}
@@ -57,8 +106,10 @@ u32 mac_twt_info_upd_h2c(struct mac_ax_adapter *adapter,
  * @return Please Place Description here.
  * @retval u32
  */
+#if MAC_FEAT_TWT_STA || MAC_FEAT_TWTAP
 u32 mac_twt_act_h2c(struct mac_ax_adapter *adapter,
 		    struct mac_ax_twtact_para *info);
+#endif
 /**
  * @}
  * @}
@@ -79,8 +130,10 @@ u32 mac_twt_act_h2c(struct mac_ax_adapter *adapter,
  * @return Please Place Description here.
  * @retval u32
  */
+#if MAC_FEAT_TWTAP
 u32 mac_twt_staanno_h2c(struct mac_ax_adapter *adapter,
 			struct mac_ax_twtanno_para *info);
+#endif
 /**
  * @}
  * @}
@@ -102,8 +155,10 @@ u32 mac_twt_staanno_h2c(struct mac_ax_adapter *adapter,
  * @return Please Place Description here.
  * @retval void
  */
+#if MAC_FEAT_TWTAP
 void mac_twt_wait_anno(struct mac_ax_adapter *adapter,
 		       u8 *c2h_content, u8 *upd_addr);
+#endif
 /**
  * @}
  * @}
@@ -122,13 +177,17 @@ void mac_twt_wait_anno(struct mac_ax_adapter *adapter,
  * @param *adapter
  * @param *tsf
  * @return Please Place Description here.
- * @retval void
+ * @retval u32
  */
-void mac_get_tsf(struct mac_ax_adapter *adapter,
-		 struct mac_ax_port_tsf *tsf);
+u32 mac_get_tsf(struct mac_ax_adapter *adapter, struct mac_ax_port_tsf *tsf);
 /**
  * @}
  * @}
  */
+
+#if MAC_FEAT_TWT_OFDMA_EN
+u32 mac_twt_ofdma_info_upd_h2c(struct mac_ax_adapter *adapter,
+			       struct mac_ax_twt_ofdma_info_upd_para *info);
+#endif
 
 #endif

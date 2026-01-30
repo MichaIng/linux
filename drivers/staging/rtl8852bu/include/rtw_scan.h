@@ -1,6 +1,6 @@
 /******************************************************************************
  *
- * Copyright(c) 2007 - 2019 Realtek Corporation.
+ * Copyright(c) 2007 - 2023 Realtek Corporation.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of version 2 of the GNU General Public License as
@@ -16,12 +16,16 @@
 #define __RTW_SCAN_H_
 
 /*rtw_mlme.h*/
-void rtw_drv_scan_by_self(_adapter *padapter, u8 reason);
+void rtw_drv_scan_by_self(_adapter *padapter, u8 reason, bool urgent);
 void rtw_scan_abort_no_wait(_adapter *adapter);
 u32 rtw_scan_abort(_adapter *adapter, u32 timeout_ms);
-void rtw_scan_timeout_handler(void *ctx);
+
 void rtw_survey_event_callback(_adapter *adapter, u8 *pbuf);
 void rtw_surveydone_event_callback(_adapter *adapter, u8 *pbuf);
+int rtw_scan_ch_decision(_adapter *padapter, struct rtw_ieee80211_channel *out,
+	u32 out_num, struct rtw_ieee80211_channel *in, u32 in_num, bool no_sparse);
+int rtw_scan_ch_dec(_adapter *padapter, struct rtw_ieee80211_channel *out,
+	u32 out_num, struct rtw_ieee80211_channel *in, u32 in_num, bool include_dis, bool no_sparse);
 
 enum {
 	SS_DENY_MP_MODE,
@@ -184,22 +188,21 @@ enum ss_backop_flag {
 };
 
 #define RTW_SSID_SCAN_AMOUNT 9 /* for WEXT_CSCAN_AMOUNT 9 */
-#define RTW_CHANNEL_SCAN_AMOUNT (14+37)
+#define RTW_CHANNEL_SCAN_AMOUNT MAX_CHANNEL_NUM
 
 struct ss_res {
 	u8 state;
 	u8 next_state; /* will set to state on next cmd hdl */
 	int bss_cnt;
 	u8 activate_ch_cnt;
-	#ifdef CONFIG_CMD_SCAN
+	_lock scan_param_lock;
 	struct rtw_phl_scan_param *scan_param;
-	#endif
 	struct submit_ctx sctx;
 
 	u16 scan_ch_ms;
-	u32 scan_timeout_ms;
+
 	u8 rx_ampdu_accept;
-	u8 rx_ampdu_size;
+	u16 rx_ampdu_size;
 #if 0
 	int channel_idx;
 	u8 force_ssid_scan;
@@ -243,8 +246,17 @@ struct ss_res {
 enum rtw_scan_type {
 	RTW_SCAN_NORMAL,
 	RTW_SCAN_P2P,
-	RTW_SCAN_RRM
+	RTW_SCAN_RRM,
+	RTW_SCAN_ROAM
 };
+
+#define RTW_MAX_NB_RPT_NUM 8
+#if defined(CONFIG_RTW_FSM_RRM) || defined(CONFIG_RTW_FSM_BTM)
+struct nb_bssid{
+	u8 ch;
+	u8 bssid[ETH_ALEN];
+};
+#endif
 
 struct sitesurvey_parm {
 	enum rtw_phl_scan_type scan_mode;	/* active: 1, passive: 0 */
@@ -256,33 +268,40 @@ struct sitesurvey_parm {
 
 	u32 rrm_token;	/* 80211k use it to identify caller */
 	u16 duration;	/* 0: use default, otherwise: channel scan time */
-	u8 igi;		/* 0: use defalut */
 	u8 bw;		/* 0: use default */
 
 	bool acs; /* aim to trigger channel selection when scan done */
+	u8 reason;
 
 	enum rtw_scan_type scan_type;
+#ifdef CONFIG_RTW_FSM
+	struct sta_info *psta;
+#endif
+
+#if CONFIG_IEEE80211_BAND_6GHZ
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 10, 0))
+	bool pending_6ghz_scan; /* indicate separate scan for 6GHz channels later */
+	bool split_scan_6ghz; /* indicate if current scan is the second scan for 6GHz */
+#endif
+	bool scan_6ghz_only; /* indicate only 6GHz channels in scan request */
+#endif
+#if defined(CONFIG_RTW_FSM_RRM) || defined(CONFIG_RTW_FSM_BTM)
+	u8 nb_num;
+	struct nb_bssid nb[RTW_MAX_NB_RPT_NUM];
+#endif
 };
 
-void rtw_init_sitesurvey_parm(_adapter *padapter, struct sitesurvey_parm *pparm);
+void rtw_init_sitesurvey_parm(struct sitesurvey_parm *pparm);
+void rtw_auto_scan_ch_list_init(struct sitesurvey_parm *parm, u8 band_bmp, u8 flags);
 u8 rtw_sitesurvey_cmd(_adapter *padapter, struct sitesurvey_parm *pparm);
-#ifndef CONFIG_CMD_SCAN
-u32 rtw_site_survey_fsm(_adapter *padapter, struct cmd_obj *pcmd);
-#endif
-
-#if 1 /*#ifndef CONFIG_PHL_ARCH*/
-u8 sitesurvey_cmd_hdl(_adapter *padapter, u8 *pbuf);
-void rtw_survey_cmd_callback(_adapter  *padapter, struct cmd_obj *pcmd);
-#endif
 
 #ifdef CONFIG_IOCTL_CFG80211
 u8 rtw_phl_remain_on_ch_cmd(_adapter *padapter, u64 cookie, struct wireless_dev *wdev,
 	struct ieee80211_channel *ch, u8 ch_type, unsigned int duration,
-	struct back_op_param *bkop_parm, u8 is_p2p);
+	struct back_op_param *bkop_parm);
 #endif
 
-#ifdef CONFIG_STA_CMD_DISPR
-u8 scan_issu_null_data_cb(void *priv, u8 ridx, bool ps);
-#endif
+u32 rtw_parse_reduced_nb_rpt(_adapter *adapter, u8 *ies, u32 ies_len,
+	struct rtw_phl_rnb_rpt_element *rnb_ele);
 
 #endif /* __RTW_SCAN_H_ */

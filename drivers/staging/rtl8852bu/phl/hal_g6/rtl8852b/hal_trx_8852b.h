@@ -18,10 +18,13 @@
 /* wifi packet(RXD.RPKT_TYPE = 0x0) = 32 bytes, otherwise 16 bytes */
 #define RX_DESC_L_SIZE_8852B 32
 #define RX_DESC_S_SIZE_8852B 16
+#define RX_INT_SIZE_8852B 4
 
 #define RX_BD_INFO_SIZE 4
 
 #define RX_PPDU_MAC_INFO_SIZE_8852B 4
+
+#define RX_DESC_DRV_INFO_UNIT_8852B 8 /* unit : byte */
 
 #define ACH0_QUEUE_IDX_8852B 0x0
 #define ACH1_QUEUE_IDX_8852B 0x1

@@ -73,7 +73,7 @@
 #define MACPARSEERR	53 /* parse report err */
 #define MACROLEINITFL	54 /* Role API init fail or C2H notify role init fail */
 #define MACPORTCFGTYPE	55 /* Port cfg type error */
-#define MACPORTCFGPORT	56 /* Port cfg port error */
+#define MACPORTERR	56 /* Invalid Port number */
 #define MACWNGKEYTYPE	57 /* Sec cam wrong key type*/
 #define MACKEYNOTEXT	58 /* Delete key , key not exist*/
 #define MACSECCAMFL	59 /* SEC CAM full*/
@@ -87,7 +87,7 @@
 #define MACCPWMSEQERR	67 /* CPWM sequence mismatch */
 #define MACCPWMSTATERR	68 /* CPWM state mismatch */
 #define MACCPUSTATE	69 /* Incorrect CPU state */
-#define MACPSSTATFAIL	70 /* protocol power state check fail */
+#define MACPSSTATFAIL	70 /* protocol power state check tx pause fail */
 #define MACLV1STEPERR	71 /* lv1 rcvy step sel error */
 #define MACFWCHKSUM	72 /* FW checksum is incorrect */
 #define MACFWSECBOOT	73 /* FW security boot is failed */
@@ -134,11 +134,12 @@
 #define MACIOERRISH		114 /* IO not allow when io state hang */
 #define MACHWDMACERR	115 /* DMAC_ERR_ISR */
 #define MACHWCMAC0ERR	116 /* CMAC0_ERR_ISR */
-#define MACHWCMAC1ERR	116 /* CMAC1_ERR_ISR */
 #define MACDRVRM	117 /* driver is removed unexpectedly */
 #define MACMCCGPFL	118 /* Get MCC Group index fail*/
 #define MACFWSTATEERR	119 /* fw state error */
 #define MACFWLOGINTERR 120 /*fw log parsing error*/
+#define MACSYSSTEERR	121 /* Whole System Power State error */
+#define MACHWCMAC1ERR	122 /* CMAC1_ERR_ISR */
 #define MACFWASSERT	123 /* FW Assertion error */
 #define MACFWEXCEP	124 /* FW Exception error */
 #define MACFWRXI300	125 /* FW RXI300 error */
@@ -148,6 +149,19 @@
 #define MACCPWMINTFERR	129 /* CPWM interface error */
 #define MACUSBPAUSEERR	130 /* USB EP PAUSE error */
 #define MACARDYDONE	131 /* The flow is already done */
+#define MACPSSTATPWRBITFAIL	132 /* protocol power state check pwr bit fail */
+#define MACIOERRINSEC	133 /* Security ic not allow indirect access */
+#define MACIOTESTERR	140 /* general io test error */
+#define MACFWNOSUPPORT	145 /* FW no support */
+#define MACMEMLEAK	146 /* Memory Leak */
+#define MACENTERLPSFAIL	147 /* Enter LPS Fail*/
+#define MACENTERIPSFAIL	148 /* Enter IPS Fail*/
+#define MACFWCAPDRVERR	149 /* FW cap error: driver compile flag error*/
+#define MACWRONGPARA	150 /* Wrong parameter for the API*/
+#define MACPWRSTATEERR	151 /* MAC Power State Error*/
+#define MACHIDDENERR	152 /* Hidden valid error */
+#define MACXTALSTSERR	153 /* XTAL state error */
+#define MACDBGFAIL      154 /* Debug Dump fail */
 
 /*MAC DBG Status Indication*/
 #define MACSCH_NONEMPTY	1 /* MAC Scheduler non empty */
@@ -190,51 +204,17 @@
 #define SS_STAT_ULRU		BIT(12)
 #define SS_STAT_DLTX		BIT(13)
 
-#ifdef CONFIG_NEW_HALMAC_INTERFACE
-#define PLTFM_MSG_ALWAYS(...)                                                  \
-	_os_dbgdump("[MAC][ERR] " fmt, ##__VA_ARGS__)
-#else
 #define PLTFM_MSG_ALWAYS(...)                                                  \
 	adapter->pltfm_cb->msg_print(adapter->drv_adapter, _PHL_ALWAYS_,  __VA_ARGS__)
-#endif
 
 #if MAC_AX_DBG_MSG_EN
 
-#ifdef CONFIG_NEW_HALMAC_INTERFACE
+#undef PLTFM_MSG_ALWAYS
+
+void mac_console_log(void *vadapter, s8 *prefix, s8 *fmt, ...);
 
 	#if (MAC_AX_MSG_LEVEL >= MAC_AX_MSG_LEVEL_ALWAYS)
-	#define PLTFM_MSG_ALWAYS(...)                                         \
-		_os_dbgdump("[MAC][LOG] " fmt, ##__VA_ARGS__)
-	#else
-	#define PLTFM_MSG_ALWAYS(...)	do {} while (0)
-	#endif
-
-	/* Enable debug msg depends on  HALMAC_MSG_LEVEL */
-	#if (MAC_AX_MSG_LEVEL >= MAC_AX_MSG_LEVEL_ERR)
-	#define PLTFM_MSG_ERR(...)                                           \
-		_os_dbgdump("[MAC][ERR] " fmt, ##__VA_ARGS__)
-	#else
-	#define PLTFM_MSG_ERR(...)	do {} while (0)
-	#endif
-
-	#if (MAC_AX_MSG_LEVEL >= MAC_AX_MSG_LEVEL_WARNING)
-	#define PLTFM_MSG_WARN(...)                                          \
-		_os_dbgdump("[MAC][WARN] " fmt, ##__VA_ARGS__)
-	#else
-	#define PLTFM_MSG_WARN(...)	do {} while (0)
-	#endif
-
-	#if (MAC_AX_MSG_LEVEL >= MAC_AX_MSG_LEVEL_TRACE)
-	#define PLTFM_MSG_TRACE(...)                                         \
-		_os_dbgdump("[MAC][TRACE] " fmt, ##__VA_ARGS__)
-	#else
-	#define PLTFM_MSG_TRACE(...)	do {} while (0)
-	#endif
-
-#else
-
-	#if (MAC_AX_MSG_LEVEL >= MAC_AX_MSG_LEVEL_ALWAYS)
-	#define PLTFM_MSG_ALWAYS(...)                                         \
+	#define PLTFM_MSG_ALWAYS(...)  \
 		adapter->pltfm_cb->msg_print(adapter->drv_adapter, _PHL_ALWAYS_, __VA_ARGS__)
 	#else
 	#define PLTFM_MSG_ALWAYS(...)	do {} while (0)
@@ -242,26 +222,37 @@
 
 	/* Enable debug msg depends on  HALMAC_MSG_LEVEL */
 	#if (MAC_AX_MSG_LEVEL >= MAC_AX_MSG_LEVEL_ERR)
-	#define PLTFM_MSG_ERR(...)                                           \
+	#define PLTFM_MSG_ERR(...)  \
 		adapter->pltfm_cb->msg_print(adapter->drv_adapter, _PHL_ERR_, __VA_ARGS__)
 	#else
 	#define PLTFM_MSG_ERR(...)	do {} while (0)
 	#endif
 
 	#if (MAC_AX_MSG_LEVEL >= MAC_AX_MSG_LEVEL_WARNING)
-	#define PLTFM_MSG_WARN(...)                                          \
+	#define PLTFM_MSG_WARN(...)  \
 		adapter->pltfm_cb->msg_print(adapter->drv_adapter, _PHL_WARNING_, __VA_ARGS__)
 	#else
 	#define PLTFM_MSG_WARN(...)	do {} while (0)
 	#endif
 
 	#if (MAC_AX_MSG_LEVEL >= MAC_AX_MSG_LEVEL_TRACE)
-	#define PLTFM_MSG_TRACE(...)                                         \
+	#define PLTFM_MSG_TRACE(...)  \
 		adapter->pltfm_cb->msg_print(adapter->drv_adapter, _PHL_DEBUG_, __VA_ARGS__)
 	#else
 	#define PLTFM_MSG_TRACE(...)	do {} while (0)
 	#endif
-#endif /*CONFIG_NEW_HALMAC_INTERFACE*/
+	#if (MAC_AX_MSG_LEVEL >= MAC_AX_MSG_LEVEL_ERR)
+	#define PLTFM_MSG_BUFFER(...)   do {\
+		if (adapter->fw_dbgcmd.dbg_bg_log_on)			\
+			adapter->pltfm_cb->msg_print(adapter->drv_adapter, _PHL_ERR_,\
+						     __VA_ARGS__);\
+		mac_console_log(adapter, "", __VA_ARGS__);\
+	} while (0)
+	#else
+	#define PLTFM_MSG_BUFFER(...)   do {\
+		mac_console_log(adapter, "", __VA_ARGS__);\
+	} while (0)
+	#endif
 
 #else
 
@@ -270,6 +261,7 @@
 #define PLTFM_MSG_ERR(...)	do {} while (0)
 #define PLTFM_MSG_WARN(...)	do {} while (0)
 #define PLTFM_MSG_TRACE(...)	do {} while (0)
+#define PLTFM_MSG_BUFFER(...)	do {} while (0)
 
 #endif
 

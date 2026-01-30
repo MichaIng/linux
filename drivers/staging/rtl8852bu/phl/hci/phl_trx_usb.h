@@ -20,8 +20,8 @@
 //
 // USB specific.
 //
-#define WLAN_IN_MPDU_PIPE_IDX			0	//EP1, RxIn Pipe
-#define WLAN_IN_INTERRUPT_PIPE_IDX		1	//EP7, HISR or C2H Cmd In Pipe
+#define WLAN_IN_MPDU_PIPE_IDX			0	/*EP4, RxIn Pipe*/
+#define WLAN_IN_INTERRUPT_PIPE_IDX		1	/*EP8, HISR In Pipe*/
 
 struct rtw_rx_buf_ring {
 	//
@@ -32,6 +32,7 @@ struct rtw_rx_buf_ring {
 	u32 	total_blocks_size;	// block_cnt_alloc	*  sizeof( rtw_rx_buf )
 
 	struct phl_queue idle_rxbuf_list;
+	struct phl_queue idle_int_rxbuf_list;
 	struct phl_queue busy_rxbuf_list;
 	struct phl_queue pend_rxbuf_list;
 	_os_timer deferred_timer;
@@ -44,11 +45,23 @@ struct phl_usb_tx_buf_resource  {
 	struct phl_queue h2c_txbuf_list;
 };
 
+#ifdef CONFIG_PHL_USB_RX_AGGREGATION
+enum rtw_phl_status
+phl_cmd_usb_rx_agg_cfg_hdl(struct phl_info_t *phl_info, u8 *cmd);
+#endif
 
 enum rtw_phl_status
 phl_hook_trx_ops_usb(struct phl_info_t *phl_info);
 enum rtw_phl_status
 phl_force_usb_switch(struct phl_info_t *phl_info, u32 speed);
+enum rtw_phl_status
+rtw_phl_cmd_force_usb_switch(void *phl, u32 speed,
+				enum phl_band_idx band_idx,
+				enum phl_cmd_type cmd_type, u32 cmd_timeout);
+enum rtw_phl_status
+rtw_phl_cmd_get_usb_speed(void *phl, u32* speed,
+				enum phl_band_idx band_idx,
+				enum phl_cmd_type cmd_type, u32 cmd_timeout);
 /* refer enum rtw_usb_speed for definition of speed */
 enum rtw_phl_status
 phl_get_cur_usb_speed(struct phl_info_t *phl_info, u32 *speed);
@@ -56,4 +69,19 @@ phl_get_cur_usb_speed(struct phl_info_t *phl_info, u32 *speed);
 enum rtw_phl_status
 phl_get_usb_support_ability(struct phl_info_t *phl_info, u32 *ability);
 
+#ifdef CONFIG_PHL_CUSTOM_FEATURE_USB
+enum rtw_phl_status phl_cmd_set_usb_support_ability(struct phl_info_t *phl_info,
+						u32 ability);
+#endif
+
+enum rtw_phl_status phl_cmd_get_usb_mode_status(struct phl_info_t *phl_info,
+					    u32 *status);
+enum rtw_phl_status phl_cmd_get_u3_perf_mode(struct phl_info_t *phl_info,
+					 u32 *perf_mode);
+#ifdef CONFIG_PHL_WKARD_REDUCE_SER
+enum rtw_phl_status
+phl_usb_toggle_flush_for_ser_hdl(struct phl_info_t *phl_info, u8 *param);
+enum rtw_phl_status
+phl_usb_toggle_flush_for_ser(struct phl_info_t *phl_info, bool transfer_start, u32 *flush_mode);
+#endif /* CONFIG_PHL_WKARD_REDUCE_SER */
 #endif	/* _PHL_TRX_USB_H_ */

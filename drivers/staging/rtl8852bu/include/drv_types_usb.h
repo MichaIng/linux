@@ -20,6 +20,24 @@
 #define MAX_BULKOUT_NUM 7
 #define MAX_BULKIN_NUM 2 /*EP4 for Bulk-IN, EP8 for Bulk-IN interrupt or Bulk-INT*/
 
+#ifdef CONFIG_SELF_DIAG_INFO
+#define RX_STATS_MAX_NUM MAX_BULKIN_NUM
+#define TX_STATS_MAX_NUM MAX_BULKOUT_NUM
+
+struct trx_stats {
+	u32 rx_submit_cnt[RX_STATS_MAX_NUM];
+	u32 rx_submit_fail[RX_STATS_MAX_NUM];
+	u32 rx_complete_cnt[RX_STATS_MAX_NUM];
+	u32 rx_complete_fail[RX_STATS_MAX_NUM];
+	u32 tx_submit_cnt[TX_STATS_MAX_NUM];
+	u32 tx_submit_fail[TX_STATS_MAX_NUM];
+	u32 tx_complete_cnt[TX_STATS_MAX_NUM];
+	u32 tx_complete_fail[TX_STATS_MAX_NUM];
+	u32 last_rx_submit_cnt[RX_STATS_MAX_NUM];
+	u32 last_tx_submit_cnt[TX_STATS_MAX_NUM];
+};
+#endif
+
 typedef struct usb_data {
 	u8 usb_intf_start;
 
@@ -33,6 +51,9 @@ typedef struct usb_data {
 	u8 RtNumInPipes;
 	int RtOutPipe[MAX_BULKOUT_NUM];
 	u8 RtNumOutPipes;
+#ifdef CONFIG_SELF_DIAG_INFO
+	struct trx_stats trx_stats;
+#endif
 
 #ifdef CONFIG_USB_VENDOR_REQ_MUTEX
 	_mutex usb_vendor_req_mutex;
@@ -47,5 +68,6 @@ typedef struct usb_data {
 	struct usb_interface *pusbintf;
 	struct usb_device *pusbdev;
 #endif/* PLATFORM_LINUX */
+	u8 usb_support_interrupt;
 } USB_DATA, *PUSB_DATA;
 #endif /*__DRV_TYPES_USB_H__*/

@@ -85,7 +85,6 @@ const char *android_wifi_cmd_str[ANDROID_WIFI_CMD_MAX] = {
 	"WFD-SET-TCPPORT",
 	"WFD-SET-MAXTPUT",
 	"WFD-SET-DEVTYPE",
-	"SET_DTIM",
 	"HOSTAPD_SET_MACADDR_ACL",
 	"HOSTAPD_ACL_ADD_STA",
 	"HOSTAPD_ACL_REMOVE_STA",
@@ -97,7 +96,7 @@ const char *android_wifi_cmd_str[ANDROID_WIFI_CMD_MAX] = {
 	"SET_AEK",
 	"EXT_AUTH_STATUS",
 	"DRIVER_VERSION"
-#ifdef ROKU_PRIVATE
+#ifdef PRIVATE_R
 	,"ROKU_FIND_REMOTE"
 #endif
 };
@@ -143,7 +142,7 @@ int rtw_android_get_rssi(struct net_device *net, char *command, int total_len)
 {
 	_adapter *padapter = (_adapter *)rtw_netdev_priv(net);
 	struct	mlme_priv	*pmlmepriv = &(padapter->mlmepriv);
-	struct	wlan_network	*pcur_network = &pmlmepriv->cur_network;
+	struct	wlan_network	*pcur_network = &pmlmepriv->dev_cur_network;
 	int bytes_written = 0;
 
 	if (check_fwstate(pmlmepriv, WIFI_ASOC_STATE) == _TRUE) {
@@ -180,7 +179,7 @@ int rtw_android_set_country(struct net_device *net, char *command, int total_len
 	char *country_code = command + strlen(android_wifi_cmd_str[ANDROID_WIFI_CMD_COUNTRY]) + 1;
 	int ret = _FAIL;
 
-	ret = rtw_set_country(adapter, country_code, RTW_REGD_SET_BY_USER);
+	ret = rtw_set_country(adapter, country_code, RTW_ENV_NUM, RTW_REGD_SET_BY_USER);
 
 	return (ret == _SUCCESS) ? 0 : -1;
 }
@@ -485,13 +484,6 @@ int rtw_android_priv_cmd(struct net_device *net, struct ifreq *ifr, int cmd)
 		/* bytes_written = wl_android_wifi_off(net); */
 		break;
 
-	case ANDROID_WIFI_CMD_SCAN_ACTIVE:
-		/* rtw_set_scan_mode((_adapter *)rtw_netdev_priv(net), SCAN_ACTIVE); */
-		break;
-	case ANDROID_WIFI_CMD_SCAN_PASSIVE:
-		/* rtw_set_scan_mode((_adapter *)rtw_netdev_priv(net), SCAN_PASSIVE); */
-		break;
-
 	case ANDROID_WIFI_CMD_RSSI:
 		bytes_written = rtw_android_get_rssi(net, command, priv_cmd.total_len);
 		break;
@@ -591,9 +583,14 @@ int rtw_android_priv_cmd(struct net_device *net, struct ifreq *ifr, int cmd)
 #ifdef CONFIG_IOCTL_CFG80211
 	case ANDROID_WIFI_CMD_SET_AP_WPS_P2P_IE: {
 		int skip = strlen(android_wifi_cmd_str[ANDROID_WIFI_CMD_SET_AP_WPS_P2P_IE]) + 3;
-		bytes_written = rtw_cfg80211_set_mgnt_wpsp2pie(net, command + skip, priv_cmd.total_len - skip, *(command + skip - 2) - '0');
 
-		adapter_to_dvobj(padapter)->wpas_type = RTW_WPAS_ANDROID;
+		if (priv_cmd.total_len < skip) {
+			RTW_WARN("command %s is too short - ignored\n", command);
+		}
+		else {
+			bytes_written = rtw_cfg80211_set_mgnt_wpsp2pie(net, command + skip, priv_cmd.total_len - skip, *(command + skip - 2) - '0');
+			adapter_to_dvobj(padapter)->wpas_type = RTW_WPAS_ANDROID;
+		}
 		break;
 	}
 #endif /* CONFIG_IOCTL_CFG80211 */
@@ -643,22 +640,6 @@ int rtw_android_priv_cmd(struct net_device *net, struct ifreq *ifr, int cmd)
 		break;
 	}
 #endif
-	case ANDROID_WIFI_CMD_CHANGE_DTIM: {
-#ifdef CONFIG_LPS
-		u8 dtim;
-		u8 *ptr = (u8 *) command;
-
-		ptr += 9;/* string command length of  "SET_DTIM"; */
-
-		dtim = rtw_atoi(ptr);
-
-		RTW_INFO("DTIM=%d\n", dtim);
-
-		rtw_lps_change_dtim_cmd(padapter, dtim);
-#endif
-	}
-	break;
-
 #if CONFIG_RTW_MACADDR_ACL
 	case ANDROID_WIFI_CMD_HOSTAPD_SET_MACADDR_ACL: {
 		rtw_set_macaddr_acl(padapter, RTW_ACL_PERIOD_BSS, get_int_from_command(command));
@@ -707,7 +688,7 @@ int rtw_android_priv_cmd(struct net_device *net, struct ifreq *ifr, int cmd)
 		snprintf(command, bytes_written + 1, DRIVERVERSION);
 		break;
 	}
-#ifdef ROKU_PRIVATE
+#ifdef PRIVATE_R
 	case ANDROID_WIFI_CMD_ROKU_FIND_REMOTE: {
 		struct mlme_ext_priv *pmlmeext = &(padapter->mlmeextpriv);
 		struct wifidirect_info	*pwdinfo = &(padapter->wdinfo);
@@ -918,6 +899,8 @@ static int wifi_probe(struct platform_device *pdev)
 		oob_irq = wifi_irqres->start;
 		RTW_INFO("%s oob_irq:%d\n", __func__, oob_irq);
 	}
+
+	platform_wifi_get_oob_irq(&oob_irq);
 #endif
 	wifi_control_data = wifi_ctrl;
 
@@ -940,10 +923,6 @@ static void shutdown_card(void)
 		RTW_INFO("%s: padapter==NULL\n", __FUNCTION__);
 		return;
 	}
-
-#ifdef CONFIG_FWLPS_IN_IPS
-	LeaveAllPowerSaveMode(g_test_adapter);
-#endif /* CONFIG_FWLPS_IN_IPS */
 
 #ifdef CONFIG_WOWLAN
 #ifdef CONFIG_GPIO_WAKEUP

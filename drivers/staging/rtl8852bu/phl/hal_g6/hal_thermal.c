@@ -25,12 +25,15 @@ rtw_hal_thermal_protect_cfg_tx_ampdu(
 {
 	struct hal_info_t *hal_info = (struct hal_info_t *)hal;
 	enum rtw_hal_status hsts = RTW_HAL_STATUS_FAILURE;
-	u8 num_ampdu = 0, tx_time = 0;
+	u8 tx_time = 0;
+	u16 num_ampdu = 0;
 
 	if (64 == sta->asoc_cap.num_ampdu)
 		tx_time = 0xA5;
 	else if (128 == sta->asoc_cap.num_ampdu)
-		tx_time = 0xAB;
+		tx_time = 0xA5;
+	else if (256 == sta->asoc_cap.num_ampdu)
+		tx_time = 0xA5;
 
 	if(sta->asoc_cap.num_ampdu_bk == 0)
 		sta->asoc_cap.num_ampdu_bk = sta->asoc_cap.num_ampdu;
@@ -125,3 +128,25 @@ rtw_hal_thermal_protect_stop_tx_duty(
 
 	return hsts;
 }
+
+#define case_hal_ther_sts(src) \
+	case HALRF_THERMAL_STATUS_##src: return RTW_PHL_THERMAL_STATUS_##src
+
+enum rtw_phl_thermal_status
+rtw_hal_get_ther_protected_threshold(void *hal)
+{
+	struct hal_info_t *hal_info = (struct hal_info_t *)hal;
+	enum halrf_thermal_status status = HALRF_THERMAL_STATUS_UNKNOWN;
+
+	status = rtw_hal_rf_get_ther_protected_threshold(hal_info);
+
+	switch (status) {
+	case_hal_ther_sts(BELOW_THRESHOLD);
+	case_hal_ther_sts(STAY_THRESHOLD);
+	case_hal_ther_sts(ABOVE_THRESHOLD);
+	case_hal_ther_sts(UNKNOWN);
+	default:
+		return RTW_PHL_THERMAL_STATUS_UNKNOWN;
+	};
+}
+

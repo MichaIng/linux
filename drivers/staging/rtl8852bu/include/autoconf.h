@@ -1,6 +1,6 @@
 /******************************************************************************
  *
- * Copyright(c) 2015 - 2019 Realtek Corporation.
+ * Copyright(c) 2015 - 2021 Realtek Corporation.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of version 2 of the GNU General Public License as
@@ -98,7 +98,7 @@
 
 /* #define CONFIG_TX_AMSDU */
 #ifdef CONFIG_TX_AMSDU
-	#define CONFIG_TX_AMSDU_SW_MODE	1
+	#define CONFIG_TX_AMSDU_SW_MODE
 #endif
 
 #define CONFIG_HW_RTS
@@ -114,9 +114,13 @@
 
 #define CONFIG_XMIT_ACK
 #ifdef CONFIG_XMIT_ACK
-	#define RTW_WKARD_CCX_RPT_LIMIT_CTRL
-	#define CONFIG_PHL_DEFAULT_MGNT_Q_RPT_EN
+	#define CONFIG_XMIT_ACK_BY_CCX_RPT
+	#ifdef CONFIG_XMIT_ACK_BY_CCX_RPT
+		#define RTW_WKARD_CCX_RPT_LIMIT_CTRL
+		#define CONFIG_PHL_DEFAULT_MGNT_Q_RPT_EN
+	#endif
 	#define CONFIG_ACTIVE_KEEP_ALIVE_CHECK
+	#define RTW_WKARD_TX_NULL_WD_RP
 #endif
 
 /*#define CONFIG_RECV_REORDERING_CTRL*/
@@ -125,35 +129,6 @@
 
 /* #define CONFIG_SIGNAL_STAT_PROCESS */
 
-#ifdef CONFIG_POWER_SAVING
-	#define CONFIG_IPS
-	#ifdef CONFIG_IPS
-	#define CONFIG_IPS_CHECK_IN_WD /* Do IPS Check in WatchDog.	*/
-	/* #define CONFIG_FWLPS_IN_IPS */
-	#endif
-
-	#define CONFIG_LPS
-	#if defined(CONFIG_LPS)
-		#define CONFIG_LPS_LCLK
-	#endif
-
-	#ifdef CONFIG_LPS_LCLK
-		#ifdef CONFIG_POWER_SAVING
-			/* #define CONFIG_XMIT_THREAD_MODE */
-		#endif /* CONFIG_POWER_SAVING */
-		#ifndef CONFIG_SUPPORT_USB_INT
-			#define LPS_RPWM_WAIT_MS 300
-			#define CONFIG_DETECT_CPWM_BY_POLLING
-		#endif /* !CONFIG_SUPPORT_USB_INT */
-		/* #define DBG_CHECK_FW_PS_STATE */
-	#endif /* CONFIG_LPS_LCLK */
-
-	#ifdef CONFIG_LPS
-		/*#define CONFIG_WMMPS_STA*/
-	#endif /* CONFIG_LPS */
-
-#endif /*CONFIG_POWER_SAVING*/
-
 #ifdef CONFIG_POWER_SAVE
 	#define CONFIG_RTW_IPS
 	#define CONFIG_RTW_LPS
@@ -161,9 +136,17 @@
 		#define CONFIG_FWIPS
 	#endif
 	#if defined(CONFIG_RTW_IPS) || defined(CONFIG_RTW_LPS)
-//		#define CONFIG_PS_FW_DBG
+		/* #define CONFIG_RTW_WKARD_PS_DEFAULT_OFF */
+		/* #define CONFIG_PS_FW_DBG */
 	#endif
-#endif
+	#ifdef CONFIG_WOWLAN
+		#define CONFIG_RTW_IPS_WOW
+		#ifdef CONFIG_RTW_IPS_WOW
+			#define CONFIG_FWIPS_WOW
+		#endif /* CONFIG_RTW_IPS_WOW */
+		#define CONFIG_RTW_LPS_WOW
+	#endif /* CONFIG_WOWLAN */
+#endif /* CONFIG_POWER_SAVE */
 
 #ifdef CONFIG_WOWLAN
 	#define CONFIG_GTK_OL
@@ -204,6 +187,7 @@
 	#ifndef CONFIG_NATIVEAP_MLME
 		#define CONFIG_HOSTAPD_MLME
 	#endif
+	/*#define CONFIG_RTW_HOSTAPD_ACS*/
 	/*#define CONFIG_FIND_BEST_CHANNEL*/
 #endif
 
@@ -233,23 +217,20 @@
 */
 	/* #define CONFIG_TDLS_AUTOSETUP */
 	#define CONFIG_TDLS_AUTOCHECKALIVE
-	#define CONFIG_TDLS_CH_SW		/* Enable "CONFIG_TDLS_CH_SW" by default, however limit it to only work in wifi logo test mode but not in normal mode currently */
+	/*
+	 * Enable "CONFIG_TDLS_CH_SW" by default,
+	 * however limit it to only work in wifi logo test mode
+	 * but not in normal mode currently
+	 */
+	#define CONFIG_TDLS_CH_SW
 #endif
 
 
 #define CONFIG_SKB_COPY /* amsdu */
 
-/*#define CONFIG_RTW_LED*/
-#ifdef CONFIG_RTW_LED
-	#define CONFIG_RTW_SW_LED
-	#ifdef CONFIG_RTW_SW_LED
-		/* #define CONFIG_RTW_LED_HANDLED_BY_CMD_THREAD */
-	#endif
-#endif /* CONFIG_RTW_LED */
+#define CONFIG_RTW_LED
 
 #define CONFIG_GLOBAL_UI_PID
-
-/*#define CONFIG_RTW_80211K*/
 
 /*#define CONFIG_ADAPTOR_INFO_CACHING_FILE */ /* now just applied on 8192cu only, should make it general... */
 /*#define CONFIG_RESUME_IN_WORKQUEUE */
@@ -261,6 +242,7 @@
 #endif
 
 #define CONFIG_SCAN_BACKOP_STA
+
 
 /*
  * Interface  Related Config
@@ -308,6 +290,8 @@
  */
 #define CONFIG_QUOTA_TURBO_ENABLE
 
+#define CONFIG_LOGO_MODE_ADJUST_AMSDU_RXFIFO
+
 /*
  * HAL  Related Config
  */
@@ -340,15 +324,13 @@
 	#endif
 #endif
 
-#ifdef CONFIG_USB_TX_AGGREGATION
-/* #define CONFIG_TX_EARLY_MODE */
-#endif
 
 #define MAX_XMITBUF_SZ	20480
 #define NR_XMITBUFF	4
 #define MAX_MGNT_XMITBUF_SZ	1536
 #define NR_MGNT_XMITBUFF	32
-#define MAX_RECVBUF_SZ 32768
+#define MAX_RECVBUF_SZ 20480
+#define RECVBUF_SZ_ALIGN_SZ 4096
 #define NR_RECVBUFF 128
 #define NR_RECV_URB 8
 
@@ -359,7 +341,35 @@
 	#define MAX_TX_RING_NUM MAX_PHL_TX_RING_ENTRY_NUM
 	#define NR_XMITFRAME MAX_PHL_TX_RING_ENTRY_NUM
 	#define RTW_MAX_FRAG_NUM 1
+	/*
+	 * Reduce FW code size
+	*/
+	#define RTW_MAX_FW_SIZE 0x80000
+
+	#define CONFIG_FW_SPECIFY_FROM_CORE
+	#ifdef CONFIG_FW_SPECIFY_FROM_CORE
+		#define MAC_FW_8852B_U2
+		#define MAC_FW_8852B_U3
+		/* #define MAC_FW_CATEGORY_NIC */	/* with pwr gating */
+		#define MAC_FW_CATEGORY_NICCE		/* with clock gating */
+		/* #define MAC_FW_CATEGORY_NIC_PLE */
+		#ifdef CONFIG_WOWLAN
+			#define MAC_FW_CATEGORY_WOWLAN
+		#endif /* CONFIG_WOWLAN */
+	#endif
 #endif
+
+/* #define RTW_WKARD_REDUCE_SER */
+
+#ifdef RTW_WKARD_REDUCE_SER
+#define USB_XMIT_THREAD_MODE
+#endif
+
+/*
+ * FW offload feature
+ */
+#define CONFIG_FW_IO_OFLD_SUPPORT
+#define CONFIG_FW_DUMP_EFUSE
 
 /*
  * Debug Related Config
@@ -367,12 +377,9 @@
 #define RTW_DETECT_HANG
 #define DBG	1
 
-/*#define DBG_CONFIG_ERROR_DETECT*/
 
 /* #define CONFIG_DIS_UPHY */
 /*
-#define DBG_CONFIG_ERROR_DETECT_INT
-#define DBG_CONFIG_ERROR_RESET
 
 #define DBG_IO
 #define DBG_DELAY_OS

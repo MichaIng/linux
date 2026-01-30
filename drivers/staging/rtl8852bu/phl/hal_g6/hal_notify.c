@@ -15,6 +15,46 @@
 #define _HAL_NOTIFY_C_
 #include "hal_headers.h"
 
+
+void rtw_hal_notification_ex(void *hal, enum phl_msg_evt_id event,
+			     bool to_bb, bool to_mac, bool to_rf, u8 hw_idx)
+{
+	struct hal_info_t *hal_info = (struct hal_info_t *)hal;
+	u8 idx = 0;
+
+	PHL_TRACE(COMP_PHL_DBG, _PHL_INFO_, "%s: event(%d), hw_idx(%d), mac(%d), bb(%d), rf(%d)\n",
+	          __func__, event, hw_idx,
+	          to_mac ? 1 : 0, to_bb ? 1 : 0, to_rf ? 1 : 0);
+
+	if (!hal_info->hal_com->is_hal_init) {
+		PHL_TRACE(COMP_PHL_DBG, _PHL_INFO_, "%s:hal is not started!\n",
+				__func__);
+		return;
+	}
+
+	if (hw_idx == HW_BAND_MAX) {
+		for (idx = 0; idx < hw_idx; idx++) {
+			if (true == to_bb)
+				rtw_hal_bb_notification(hal_info, event, idx);
+
+			if (true == to_mac)
+				rtw_hal_mac_notification(hal_info, event, idx);
+
+			if (true == to_rf)
+				rtw_hal_rf_notification(hal_info, event, idx);
+		}
+	} else {
+		if (true == to_bb)
+			rtw_hal_bb_notification(hal_info, event, hw_idx);
+
+		if (true == to_mac)
+			rtw_hal_mac_notification(hal_info, event, hw_idx);
+
+		if (true == to_rf)
+			rtw_hal_rf_notification(hal_info, event, hw_idx);
+	}
+}
+
 void rtw_hal_notification(void *hal, enum phl_msg_evt_id event, u8 hw_idx)
 {
 	struct hal_info_t *hal_info = (struct hal_info_t *)hal;
@@ -28,17 +68,6 @@ void rtw_hal_notification(void *hal, enum phl_msg_evt_id event, u8 hw_idx)
 		return;
 	}
 
-	if ((TEST_STATUS_FLAG(hal_info->phl_com->dev_state,
-			      RTW_DEV_SURPRISE_REMOVAL))) {
-		if (event == MSG_EVT_DBG_FULL_REG_DUMP ||
-		    event == MSG_EVT_DBG_TX_DUMP ||
-		    event == MSG_EVT_DBG_RX_DUMP) {
-			PHL_TRACE(COMP_PHL_DBG, _PHL_INFO_, "%s: Surprise Removal!\n",
-				  __func__);
-			return;
-		}
-	}
-
 	if (hw_idx == HW_BAND_MAX) {
 		for (idx = 0; idx < hw_idx; idx++) {
 			rtw_hal_bb_notification(hal_info, event, idx);
@@ -48,7 +77,7 @@ void rtw_hal_notification(void *hal, enum phl_msg_evt_id event, u8 hw_idx)
 	} else {
 		rtw_hal_bb_notification(hal_info, event, hw_idx);
 		rtw_hal_mac_notification(hal_info, event, hw_idx);
-		rtw_hal_rf_notification(hal_info, event, idx);
+		rtw_hal_rf_notification(hal_info, event, hw_idx);
 	}
 }
 

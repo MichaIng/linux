@@ -15,10 +15,12 @@
 #ifndef _HALRF_PSD_H_
 #define _HALRF_PSD_H_
 
+#ifdef HALRF_PSD_SUPPORT
+
 /*@--------------------------Define Parameters-------------------------------*/
 #define PSD_RF_PATH_MAX 4
 #define PSD_RF_REG_NUM 10
-#define PSD_RF_DATA_NUM 450
+#define PSD_RF_DATA_NUM 400
 
 /*@-----------------------End Define Parameters-----------------------*/
 struct halrf_psd_data {
@@ -32,10 +34,10 @@ struct halrf_psd_data {
 	u32 average;
 	u32 buf_size;
 	u32 psd_data[PSD_RF_DATA_NUM];
-	u32 psd_progress;
 	u8 psd_result_running;
 	u32 psd_reg_backup[100];
 	u32 rf_bkup[PSD_RF_PATH_MAX][PSD_RF_REG_NUM];
 };
 
+#endif	/*HALRF_PSD_SUPPORT*/
 #endif	/*_HALRF_PSD_H_*/

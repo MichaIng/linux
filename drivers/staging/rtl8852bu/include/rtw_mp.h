@@ -26,6 +26,14 @@
 #define TX_POWER_BASE 4  /* dbm * 4 */
 #define TX_POWER_CODE_WORD_BASE 8 /* dbm * 8 */
 
+#define RTW_IWD_MAX_LEN	128
+
+struct rtw_mp_ax_tx_cnt {
+	u8 band;
+	u8 sel;
+	u16 txcnt[11];
+};
+
 struct mp_xmit_frame {
 	_list	list;
 
@@ -311,6 +319,10 @@ enum {
 	MP_GET_HE,
 	MP_UUID,
 	MP_GPIO,
+	MP_BAND,
+	MP_MACLOOPBK,
+	MP_MAC_IOTEST,
+	MP_6G_CATE,
 	MP_NULL,
 #ifdef CONFIG_APPEND_VENDOR_IE_ENABLE
 	VENDOR_IE_SET ,
@@ -329,6 +341,9 @@ enum {
 #endif
 	MP_SD_IREAD,
 	MP_SD_IWRITE,
+#ifdef CONFIG_FPGA_INCLUDED
+	FPGA_SET,
+#endif
 };
 
 struct rtw_plcp_user {
@@ -374,7 +389,8 @@ struct mp_priv {
 	BOOLEAN brx_filter_beacon;
 
 	/* RF/BB relative */
-	u8 channel;
+	u8 band;
+	u32 channel;
 	u8 bandwidth;
 	u8 prime_channel_offset;
 	u8 txpoweridx;
@@ -393,7 +409,8 @@ struct mp_priv {
 	u8 antenna_tx;
 	u8 antenna_rx;
 	u8 antenna_trx;
-	/*	u8 curr_rfpath; */
+	u8 curr_rfpath;
+	u8 ant_sw;
 
 	u8 check_mp_pkt;
 
@@ -432,6 +449,9 @@ struct mp_priv {
 	BOOLEAN mplink_btx;
 
 	bool tssitrk_on;
+	bool bspecif_tssi_de;
+	u32 specif_tsside_val;
+
 	u8 tssi_mode;
 	u8 rtw_mp_cur_phy;
 	u8 rtw_mp_dbcc;
@@ -457,6 +477,7 @@ struct mp_priv {
 	u32 rtw_mp_ru_tone;
 	u8 ru_tone_sel_list[6];
 	u8 ru_alloc_list[68];
+	u8 rtw_coding;
 
 	struct rtw_mp_giltf_data st_giltf[5];
 	struct rtw_plcp_user mp_plcp_user[4];
@@ -467,6 +488,15 @@ struct mp_priv {
 	u8 tx_shape_idx;
 	u8 gpio_id;
 	u8 gpio_enable;
+	u8 is_tmac_mode;
+
+	_thread_hdl_ rx_cal_thread;
+	u8 rx_cal_stop;
+	u8 rx_cal_process;
+
+	u8 loopbk_speed;
+	u8 mac_iotest_res;
+	u16 rx_rate;
 };
 
 #define PPDU_TYPE_STR(idx)\
@@ -742,6 +772,20 @@ typedef enum _mp_tx_pkt_payload{
 extern struct mp_xmit_frame *alloc_mp_xmitframe(struct mp_priv *pmp_priv);
 extern int free_mp_xmitframe(struct xmit_priv *pxmitpriv, struct mp_xmit_frame *pmp_xmitframe);
 #endif
+/* SYNC to PHL MP define*/
+/* mp command class */
+enum rtw_mp_class {
+	RTW_MP_CLASS_CONFIG = 0,
+	RTW_MP_CLASS_TX = 1,
+	RTW_MP_CLASS_RX = 2,
+	RTW_MP_CLASS_EFUSE = 3,
+	RTW_MP_CLASS_REG = 4,
+	RTW_MP_CLASS_TXPWR = 5,
+	RTW_MP_CLASS_CAL = 6,
+	RTW_MP_CLASS_FLASH = 7,
+	RTW_MP_CLASS_MAX,
+};
+
 enum rtw_mp_tx_method {
 	RTW_MP_SW_TX = 0,
 	RTW_MP_PMACT_TX,
@@ -759,63 +803,11 @@ enum rtw_mp_tx_cmd {
 	RTW_MP_TX_CMD_PHY_OK,
 	RTW_MP_TX_CONFIG_PLCP_PATTERN,
 	RTW_MP_TX_CONFIG_PLCP_USER_INFO,
-	RTW_MP_TX_MODE_SWITCH,
 	RTW_MP_TX_TB_TEST,
 	RTW_MP_TX_DPD_BYPASS,
 	RTW_MP_TX_CHECK_TX_IDLE,
+	RTW_MP_TX_CMD_BB_LOOPBCK,
 	RTW_MP_TX_CMD_MAX,
-};
-
-enum rtw_mp_pmac_mode {
-	RTW_MP_PMAC_NONE_TEST,
-	RTW_MP_PMAC_PKTS_TX,
-	RTW_MP_PMAC_PKTS_RX,
-	RTW_MP_PMAC_CONT_TX,
-	RTW_MP_PMAC_FW_TRIG_TX,
-	RTW_MP_PMAC_OFDM_SINGLE_TONE_TX,
-	RTW_MP_PMAC_CCK_CARRIER_SIPPRESSION_TX
-};
-
-enum rtw_mp_ppdu_type {
-	RTW_MP_TYPE_CCK			= 0,
-	RTW_MP_TYPE_LEGACY,
-	RTW_MP_TYPE_HT_MF,
-	RTW_MP_TYPE_HT_GF,
-	RTW_MP_TYPE_VHT,
-	RTW_MP_TYPE_HE_SU,
-	RTW_MP_TYPE_HE_ER_SU,
-	RTW_MP_TYPE_HE_MU_OFDMA,
-	RTW_MP_TYPE_HE_TB
-};
-
-/* mp command class */
-enum rtw_mp_class {
-	RTW_MP_CLASS_CONFIG = 0,
-	RTW_MP_CLASS_TX = 1,
-	RTW_MP_CLASS_RX = 2,
-	RTW_MP_CLASS_EFUSE = 3,
-	RTW_MP_CLASS_REG = 4,
-	RTW_MP_CLASS_TXPWR = 5,
-	RTW_MP_CLASS_CAL = 6,
-	RTW_MP_CLASS_FLASH = 7,
-	RTW_MP_CLASS_MAX,
-};
-
-/* mp rx command */
-enum rtw_mp_rx_cmd {
-	RTW_MP_RX_CMD_PHY_CRC_OK = 0,
-	RTW_MP_RX_CMD_PHY_CRC_ERR = 1,
-	RTW_MP_RX_CMD_MAC_CRC_OK = 2,
-	RTW_MP_RX_CMD_MAC_CRC_ERR = 3,
-	RTW_MP_RX_CMD_DRV_CRC_OK = 4,
-	RTW_MP_RX_CMD_DRV_CRC_ERR = 5,
-	RTW_MP_RX_CMD_GET_RSSI = 6,
-	RTW_MP_RX_CMD_GET_RXEVM = 7,
-	RTW_MP_RX_CMD_GET_PHYSTS = 8,
-	RTW_MP_RX_CMD_TRIGGER_RXEVM = 9,
-	RTW_MP_RX_CMD_SET_GAIN_OFFSET = 10,
-	RTW_MP_RX_CMD_MAX,
-
 };
 
 /* mp config command */
@@ -827,6 +819,7 @@ enum rtw_mp_config_cmdid {
 	RTW_MP_CONFIG_CMD_SET_RESET_PHY_COUNT,
 	RTW_MP_CONFIG_CMD_SET_RESET_MAC_COUNT,
 	RTW_MP_CONFIG_CMD_SET_RESET_DRV_COUNT,
+	RTW_MP_CONFIG_CMD_SET_TXRX_MODE,
 	RTW_MP_CONFIG_CMD_PBC,
 	RTW_MP_CONFIG_CMD_START_DUT,
 	RTW_MP_CONFIG_CMD_STOP_DUT,
@@ -848,8 +841,138 @@ enum rtw_mp_config_cmdid {
 	RTW_MP_CONFIG_CMD_GET_DEV_IDX,
 	RTW_MP_CONFIG_CMD_TRIGGER_FW_CONFLICT,
 	RTW_MP_CONFIG_CMD_GET_UUID,
+	RTW_MP_CONFIG_CMD_SET_REGULATION,
+	RTW_MP_CONFIG_CMD_GET_DRV_VER,
+	RTW_MP_CONFIG_CMD_SET_BT_UART,
+	RTW_MP_CONFIG_CMD_SWITCH_ANTENNA,
+	RTW_MP_CONFIG_CMD_SET_MAC_LOOPBK_ENTER,
+	RTW_MP_CONFIG_CMD_SET_HCI_SPEED,
+	RTW_MP_CONFIG_CMD_GET_HCI_SPEED,
+	RTW_MP_CONFIG_CMD_SET_MAC_GENERNAL_IO_TEST,
+	RTW_MP_CONFIG_CMD_SET_MAC_L1SS_ENABLE,
+	RTW_MP_CONFIG_CMD_SET_MAC_ASPM_STATE,
 	RTW_MP_CONFIG_CMD_SET_GPIO,
+	RTW_MP_CONFIG_CMD_SET_MAC_LOOPBK_SPEED,
 	RTW_MP_CONFIG_CMD_MAX,
+};
+
+/* mp rx command */
+enum rtw_mp_rx_cmd {
+	RTW_MP_RX_CMD_PHY_CRC_OK = 0,
+	RTW_MP_RX_CMD_PHY_CRC_ERR = 1,
+	RTW_MP_RX_CMD_MAC_CRC_OK = 2,
+	RTW_MP_RX_CMD_MAC_CRC_ERR = 3,
+	RTW_MP_RX_CMD_DRV_CRC_OK = 4,
+	RTW_MP_RX_CMD_DRV_CRC_ERR = 5,
+	RTW_MP_RX_CMD_GET_RSSI = 6,
+	RTW_MP_RX_CMD_GET_RXEVM = 7,
+	RTW_MP_RX_CMD_GET_PHYSTS = 8,
+	RTW_MP_RX_CMD_TRIGGER_RXEVM = 9,
+	RTW_MP_RX_CMD_SET_GAIN_OFFSET = 10,
+	RTW_MP_RX_CMD_GET_RSSI_EX = 11,
+	RTW_MP_RX_CMD_SET_RX_FLTR = 12,
+	RTW_MP_RX_CMD_MAX,
+
+};
+
+/* mp reg command */
+enum rtw_mp_reg_cmd {
+	RTW_MP_REG_CMD_READ_MAC = 0,
+	RTW_MP_REG_CMD_WRITE_MAC = 1,
+	RTW_MP_REG_CMD_READ_RF = 2,
+	RTW_MP_REG_CMD_WRITE_RF = 3,
+	RTW_MP_REG_CMD_READ_SYN = 4,
+	RTW_MP_REG_CMD_WRITE_SYN = 5,
+	RTW_MP_REG_CMD_READ_BB = 6,
+	RTW_MP_REG_CMD_WRITE_BB = 7,
+	RTW_MP_REG_CMD_SET_XCAP = 8,
+	RTW_MP_REG_CMD_GET_XCAP = 9,
+	RTW_MP_REG_CMD_MAX,
+};
+
+/* mp tx power command */
+enum rtw_mp_txpwr_cmd {
+	RTW_MP_TXPWR_CMD_READ_PWR_TABLE = 0,
+	RTW_MP_TXPWR_CMD_GET_PWR_TRACK_STATUS = 1,
+	RTW_MP_TXPWR_CMD_SET_PWR_TRACK_STATUS = 2,
+	RTW_MP_TXPWR_CMD_SET_TXPWR = 3,
+	RTW_MP_TXPWR_CMD_GET_TXPWR = 4,
+	RTW_MP_TXPWR_CMD_GET_TXPWR_INDEX = 5,
+	RTW_MP_TXPWR_CMD_GET_THERMAL = 6,
+	RTW_MP_TXPWR_CMD_GET_TSSI = 7,
+	RTW_MP_TXPWR_CMD_SET_TSSI = 8,
+	RTW_MP_TXPWR_CMD_GET_TXPWR_REF = 9,
+	RTW_MP_TXPWR_CMD_GET_TXPWR_REF_CW = 10,
+	RTW_MP_TXPWR_CMD_SET_TXPWR_INDEX = 11,
+	RTW_MP_TXPWR_CMD_GET_TXINFOPWR = 12,
+	RTW_MP_TXPWR_CMD_SET_RFMODE = 13,
+	RTW_MP_TXPWR_CMD_SET_TSSI_OFFSET = 14,
+	RTW_MP_TXPWR_CMD_GET_ONLINE_TSSI_DE = 15,
+	RTW_MP_TXPWR_CMD_SET_PWR_LMT_EN = 16,
+	RTW_MP_TXPWR_CMD_GET_PWR_LMT_EN = 17,
+	RTW_MP_TXPWR_CMD_SET_TX_POW_PATTERN_SHARP = 18,
+	RTW_MP_TXPWR_CMD_SET_TX_POW_TABLE_SWITCH = 19,
+	RTW_MP_TXPWR_CMD_MAX,
+};
+
+/*
+enum rtw_mp_flash_cmd {
+	RTW_MP_FLASH_CMD_WIFI_READ,
+	RTW_MP_FLASH_CMD_WIFI_WRITE,
+	RTW_MP_FLASH_CMD_MAX,
+};
+*/
+
+enum rtw_mp_cal_cmd {
+	RTW_MP_CAL_CMD_TRIGGER_CAL = 0,
+	RTW_MP_CAL_CMD_SET_CAPABILITY_CAL = 1,
+	RTW_MP_CAL_CMD_GET_CAPABILITY_CAL = 2,
+	RTW_MP_CAL_CMD_GET_TSSI_DE_VALUE = 3,
+	RTW_MP_CAL_CMD_SET_TSSI_DE_TX_VERIFY = 4,
+	RTW_MP_CAL_CMD_GET_TXPWR_FINAL_ABS = 5,
+	RTW_MP_CAL_CMD_TRIGGER_DPK_TRACKING = 6,
+	RTW_MP_CAL_CMD_SET_TSSI_AVG = 7,
+	RTW_MP_CAL_CMD_PSD_INIT = 8,
+	RTW_MP_CAL_CMD_PSD_RESTORE = 9,
+	RTW_MP_CAL_CMD_PSD_GET_POINT_DATA = 10,
+	RTW_MP_CAL_CMD_PSD_QUERY = 11,
+	RTW_MP_CAL_CMD_EVENT_TRIGGER = 12,
+	RTW_MP_CAL_CMD_TRIGGER_WATCHDOG_CAL = 13,
+	RTW_MP_CAL_CMD_MAX,
+};
+
+enum rtw_mp_pmac_mode {
+	RTW_MP_PMAC_NONE_TEST,
+	RTW_MP_PMAC_PKTS_TX,
+	RTW_MP_PMAC_PKTS_RX,
+	RTW_MP_PMAC_CONT_TX,
+	RTW_MP_PMAC_FW_TRIG_TX,
+	RTW_MP_PMAC_OFDM_SINGLE_TONE_TX,
+	RTW_MP_PMAC_CCK_CARRIER_SIPPRESSION_TX
+};
+
+enum rtw_mp_calibration_type {
+	RTW_MP_CAL_CHL_RFK = 0,
+	RTW_MP_CAL_DACK = 1,
+	RTW_MP_CAL_IQK = 2,
+	RTW_MP_CAL_LCK = 3,
+	RTW_MP_CAL_DPK = 4,
+	RTW_MP_CAL_DPK_TRACK = 5,
+	RTW_MP_CAL_TSSI = 6,
+	RTW_MP_CAL_GAPK = 7,
+	RTW_MP_CAL_MAX,
+};
+
+enum rtw_mp_ppdu_type {
+	RTW_MP_TYPE_CCK			= 0,
+	RTW_MP_TYPE_LEGACY,
+	RTW_MP_TYPE_HT_MF,
+	RTW_MP_TYPE_HT_GF,
+	RTW_MP_TYPE_VHT,
+	RTW_MP_TYPE_HE_SU,
+	RTW_MP_TYPE_HE_ER_SU,
+	RTW_MP_TYPE_HE_MU_OFDMA,
+	RTW_MP_TYPE_HE_TB
 };
 
 typedef enum _mp_ant_path {
@@ -871,6 +994,29 @@ typedef enum _mp_ant_path {
 	MP_ANTENNA_ABCD	= 15
 } mp_ant_path;
 
+struct rtw_mp_mac_lbk_tx_rpt {
+	u32 total_cnt;
+	u32 idle_cnt;
+	u32 busy_cnt;
+};
+
+struct rtw_gpio_config_arg {
+	u8 gpio_mode;
+	u8 gpio_id;
+	u8 gpio_enable;
+};
+
+struct rtw_pwr_config_arg {
+	u8 pwr_state;
+	u8 pwr_lvl;
+};
+struct rtw_mp_cmd_arg {
+	u8 mp_class;
+	u8 cmd;
+	u8 cmd_ok;
+	u8 status;
+};
+
 #define RTW_MP_TEST_NAME_LEN		32
 #define RTW_MP_TEST_RPT_RSN_LEN	32
 
@@ -881,11 +1027,7 @@ struct rtw_mp_test_rpt {
 	u32 total_time; // in ms
 };
 
-struct rtw_mp_cmd_arg {
-	u8 mp_class;
-	u8 cmd;
-	u8 cmd_ok;
-};
+
 
 struct rtw_mp_config_arg {
 	u8 mp_class;
@@ -896,7 +1038,9 @@ struct rtw_mp_config_arg {
 	u8 bandwidth;
 	u8 rate_idx;
 	u8 ant_tx;
+	u8 tx_rfpath;
 	u8 ant_rx;
+	u8 rx_rfpath;
 	u8 rf_path;
 	u8 get_rfstats;
 	u8 modulation;
@@ -911,9 +1055,21 @@ struct rtw_mp_config_arg {
 	u8 dev_id;
 	u32 offset;
 	u8 voltag;
+	u8 band;
 	u32 uuid;
-	u8 gpio_id;
-	u8 gpio_enable;
+	u8 regulation;
+	u8 frc_switch;
+	u8 is_tmac_mode;
+	u32 drv_ver;
+	u8 phy_idx;
+	u8 is_bt_uart;
+	u8 ant_sw;
+	u8 hci_speed;
+	struct rtw_gpio_config_arg gpio_cfg;
+#ifdef CONFIG_POWER_SAVE
+	struct rtw_pwr_config_arg pwr_cfg;
+#endif
+	u8 en_phy;
 };
 
 struct rtw_mp_tx_arg {
@@ -934,6 +1090,7 @@ struct rtw_mp_tx_arg {
 	u8 tx_path;
 	u8 tx_mode;		/* mode: 0 = tmac, 1 = pmac */
 	u8 tx_concurrent_en;	/* concurrent tx */
+	u8 phy_idx;
 	u8 dpd_bypass;
 	/* plcp info */
 	u32 dbw; /*0:BW20, 1:BW40, 2:BW80, 3:BW160/BW80+80*/
@@ -1009,8 +1166,34 @@ struct rtw_mp_tx_arg {
 
 	/* tx state*/
 	u8 tx_state;
-};
 
+	/* bb loop back*/
+	u8 enable;
+	u8 is_dgt;
+	u8 cck_lbk_en;
+	u8 is_bt_link;
+
+	u32 puncture;
+	/* txsb */
+	u32 txsb;
+	u32 eht_mcs_sig;
+
+	/* sw tx*/
+	u8 mac_addr_0;
+	u8 mac_addr_1;
+	u8 mac_addr_2;
+	u8 mac_addr_3;
+	u8 mac_addr_4;
+	u8 mac_addr_5;
+	u32 sw_tx_payload_size;
+
+	/* ampdu control */
+	u8 ampdu_num;
+	u8 sw_tx_en;
+
+	/* mac loop back */
+	struct rtw_mp_mac_lbk_tx_rpt tx_rpt;
+};
 
 struct rtw_mp_rx_arg {
 	u8 mp_class;
@@ -1026,49 +1209,39 @@ struct rtw_mp_rx_arg {
 	u8 strm;
 	u8 rxevm_table;
 	u8 enable;
-	u32 phy0_user0_rxevm;
-	u32 phy0_user1_rxevm;
-	u32 phy0_user2_rxevm;
-	u32 phy0_user3_rxevm;
-	u32 phy1_user0_rxevm;
-	u32 phy1_user1_rxevm;
-	u32 phy1_user2_rxevm;
-	u32 phy1_user3_rxevm;
+	u32 phy_user0_rxevm;
+	u32 phy_user1_rxevm;
+	u32 phy_user2_rxevm;
+	u32 phy_user3_rxevm;
 	s8 offset;
 	u8 rf_path;
 	u8 iscck;
-	s16 rssi_ex;
-};
-
-/* mp tx power command */
-enum rtw_mp_txpwr_cmd {
-	RTW_MP_TXPWR_CMD_READ_PWR_TABLE = 0,
-	RTW_MP_TXPWR_CMD_GET_PWR_TRACK_STATUS = 1,
-	RTW_MP_TXPWR_CMD_SET_PWR_TRACK_STATUS = 2,
-	RTW_MP_TXPWR_CMD_SET_TXPWR = 3,
-	RTW_MP_TXPWR_CMD_GET_TXPWR = 4,
-	RTW_MP_TXPWR_CMD_GET_TXPWR_INDEX = 5,
-	RTW_MP_TXPWR_CMD_GET_THERMAL = 6,
-	RTW_MP_TXPWR_CMD_GET_TSSI = 7,
-	RTW_MP_TXPWR_CMD_SET_TSSI = 8,
-	RTW_MP_TXPWR_CMD_GET_TXPWR_REF = 9,
-	RTW_MP_TXPWR_CMD_GET_TXPWR_REF_CW = 10,
-	RTW_MP_TXPWR_CMD_SET_TXPWR_INDEX = 11,
-	RTW_MP_TXPWR_CMD_GET_TXINFOPWR = 12,
-	RTW_MP_TXPWR_CMD_SET_RFMODE = 13,
-	RTW_MP_TXPWR_CMD_SET_TSSI_OFFSET = 14,
-	RTW_MP_TXPWR_CMD_GET_ONLINE_TSSI_DE = 15,
-	RTW_MP_TXPWR_CMD_SET_PWR_LMT_EN = 16,
-	RTW_MP_TXPWR_CMD_GET_PWR_LMT_EN = 17,
-	RTW_MP_TXPWR_CMD_SET_TX_POW_PATTERN_SHARP = 18,
-	RTW_MP_TXPWR_CMD_SET_TX_POW_TABLE_SWITCH = 19,
-	RTW_MP_TXPWR_CMD_MAX,
+	s32 rssi_ex[4];
+	u8 rx_phy_idx;
+	u8 rx_fltr_addr[6];
+	u8 rx_fltr_enable;
 };
 
 enum rtw_mp_tssi_pwrtrk_type{
 	RTW_MP_TSSI_OFF = 0,
 	RTW_MP_TSSI_ON,
 	RTW_MP_TSSI_CAL
+};
+
+
+struct rtw_mp_reg_arg {
+	u8 mp_class;
+	u8 cmd;
+	u8 cmd_ok;
+	u8 status;
+	u32 io_offset;
+	u32 io_value;
+	u8 io_type;
+	u8 ofdm;
+	u8 rfpath;
+	u8 sc_xo;
+	u8 xsi_offset;
+	u8 xsi_value;
 };
 
 struct rtw_mp_txpwr_arg {
@@ -1101,36 +1274,7 @@ struct rtw_mp_txpwr_arg {
 	s32 online_tssi_de;
 	bool pwr_lmt_en;
 	u8 sharp_id;
-};
-
-/* mp reg command */
-enum rtw_mp_reg_cmd {
-	RTW_MP_REG_CMD_READ_MAC = 0,
-	RTW_MP_REG_CMD_WRITE_MAC = 1,
-	RTW_MP_REG_CMD_READ_RF = 2,
-	RTW_MP_REG_CMD_WRITE_RF = 3,
-	RTW_MP_REG_CMD_READ_SYN = 4,
-	RTW_MP_REG_CMD_WRITE_SYN = 5,
-	RTW_MP_REG_CMD_READ_BB = 6,
-	RTW_MP_REG_CMD_WRITE_BB = 7,
-	RTW_MP_REG_CMD_SET_XCAP = 8,
-	RTW_MP_REG_CMD_GET_XCAP = 9,
-	RTW_MP_REG_CMD_MAX,
-};
-
-struct rtw_mp_reg_arg {
-	u8 mp_class;
-	u8 cmd;
-	u8 cmd_ok;
-	u8 status;
-	u32 io_offset;
-	u32 io_value;
-	u8 io_type;
-	u8 ofdm;
-	u8 rfpath;
-	u8 sc_xo;
-	u8 xsi_offset;
-	u8 xsi_value;
+	u8 cur_phy;
 };
 
 struct rtw_mp_cal_arg {
@@ -1154,35 +1298,9 @@ struct rtw_mp_cal_arg {
 	u32 start_point;
 	u32 stop_point;
 	u32 buf;
-	u32 outbuf[450];
-};
-
-enum rtw_mp_cal_cmd {
-	RTW_MP_CAL_CMD_TRIGGER_CAL = 0,
-	RTW_MP_CAL_CMD_SET_CAPABILITY_CAL = 1,
-	RTW_MP_CAL_CMD_GET_CAPABILITY_CAL = 2,
-	RTW_MP_CAL_CMD_GET_TSSI_DE_VALUE = 3,
-	RTW_MP_CAL_CMD_SET_TSSI_DE_TX_VERIFY = 4,
-	RTW_MP_CAL_CMD_GET_TXPWR_FINAL_ABS = 5,
-	RTW_MP_CAL_CMD_TRIGGER_DPK_TRACKING = 6,
-	RTW_MP_CAL_CMD_SET_TSSI_AVG = 7,
-	RTW_MP_CAL_CMD_PSD_INIT = 8,
-	RTW_MP_CAL_CMD_PSD_RESTORE = 9,
-	RTW_MP_CAL_CMD_PSD_GET_POINT_DATA = 10,
-	RTW_MP_CAL_CMD_PSD_QUERY = 11,
-	RTW_MP_CAL_CMD_MAX,
-};
-
-enum rtw_mp_calibration_type {
-	RTW_MP_CAL_CHL_RFK = 0,
-	RTW_MP_CAL_DACK = 1,
-	RTW_MP_CAL_IQK = 2,
-	RTW_MP_CAL_LCK = 3,
-	RTW_MP_CAL_DPK = 4,
-	RTW_MP_CAL_DPK_TRACK = 5,
-	RTW_MP_CAL_TSSI = 6,
-	RTW_MP_CAL_GAPK = 7,
-	RTW_MP_CAL_MAX,
+	u32 outbuf[400];
+	u8 event;
+	u8 func;
 };
 
 enum RTW_TEST_SUB_MODULE {
@@ -1202,8 +1320,8 @@ struct rtw_test_module_info {
 #define RTW_MAX_TEST_CMD_BUF 2000
 struct rtw_mp_test_cmdbuf {
 	u8 type;
-	u8 buf[RTW_MAX_TEST_CMD_BUF];
 	u16 len;
+	u8 buf[RTW_MAX_TEST_CMD_BUF];
 };
 
 enum rtw_mp_nss
@@ -1220,18 +1338,31 @@ enum rtw_mp_nss
 	(idx == MP_RU_TONE_106) ? "106-Tone" :\
 	(idx == MP_RU_TONE_242) ? "242-Tone" :\
 	(idx == MP_RU_TONE_484) ? "484-Tone" :\
-	(idx == MP_RU_TONE_966) ? "966-Tone" :\
+	(idx == MP_RU_TONE_996) ? "996-Tone" :\
 	"UNknow"
 
 enum rtw_mp_resourceUnit
 {
-	MP_RU_TONE_26 = 0,
+	MP_RU_TONE_26,
 	MP_RU_TONE_52,
 	MP_RU_TONE_106,
 	MP_RU_TONE_242,
 	MP_RU_TONE_484,
-	MP_RU_TONE_966
+	MP_RU_TONE_996,
+	MP_RU_TONE_996X2,
+	MP_RU_TONE_HESIGB,
+	MP_RU_TONE_996X4,
+	MP_RU_TONE_52_26,
+	MP_RU_TONE_106_26,
+	MP_RU_TONE_484_242,
+	MP_RU_TONE_996_484,
+	MP_RU_TONE_996_484_242,
+	MP_RU_TONE_996X2_484,
+	MP_RU_TONE_996X3,
+	MP_RU_TONE_996X3_484
 };
+/* SYNC to PHL MP define END */
+
 
 #define MP_IS_HT_HRATE(_rate)	((_rate) >= HRATE_MCS0 && (_rate) <= HRATE_MCS31)
 #define MP_IS_VHT_HRATE(_rate)	((_rate) >= HRATE_VHT_NSS1_MCS0 && (_rate) <= HRATE_VHT_NSS4_MCS9)
@@ -1283,6 +1414,7 @@ u8 rtw_mp_phl_txpower(_adapter *padapter, struct rtw_mp_txpwr_arg	*ptxpwr_arg, u
 void rtw_mp_set_crystal_cap(_adapter *padapter, u32 xcapvalue);
 u8 rtw_mp_phl_calibration(_adapter *padapter, struct rtw_mp_cal_arg	*pcal_arg, u8 cmdid);
 u8 rtw_mp_phl_reg(_adapter *padapter, struct rtw_mp_reg_arg	*reg_arg, u8 cmdid);
+u8 rtw_mp_phl_rx_cal_cmd(_adapter *padapter);
 
 
 u8 rtw_update_giltf(_adapter *padapter);
@@ -1293,7 +1425,6 @@ u8 rtw_mp_update_ru_alloc(_adapter *padapter);
 bool rtw_mp_is_cck_rate(u16 rate);
 
 extern s32 init_mp_priv(_adapter *padapter);
-extern void free_mp_priv(struct mp_priv *pmp_priv);
 extern s32 MPT_InitializeAdapter(_adapter *padapter, u8 Channel);
 extern void MPT_DeInitAdapter(_adapter *padapter);
 extern s32 mp_start_test(_adapter *padapter);
@@ -1308,13 +1439,13 @@ u8 rtw_mp_set_antdiv(_adapter *padapter, BOOLEAN bMain);
 #endif
 void	SetChannel(_adapter *adapter);
 void	SetBandwidth(_adapter *adapter);
-int	rtw_mp_txpoweridx(_adapter *adapter);
-u16 rtw_mp_txpower_dbm(_adapter *adapter, u8 rf_path);
-u16 rtw_mp_get_pwrtab_dbm(_adapter *adapter, u8 rfpath);
 
+u16 rtw_mp_txpower_dbm(_adapter *adapter, u8 rf_path);
+
+u8 rtw_mp_rfpath2txnss(_adapter *padapter, enum rf_path path);
 void	SetAntenna(_adapter *adapter);
 void	SetDataRate(_adapter *adapter);
-s32	SetThermalMeter(_adapter *adapter, u8 target_ther);
+
 void	GetThermalMeter(_adapter *adapter, u8 rfpath ,u8 *value);
 void	GetUuid(_adapter *adapter, u32 *uuid);
 void SetGpio(_adapter *padapter);
@@ -1323,32 +1454,31 @@ void	rtw_mp_singlecarrier_tx(_adapter *adapter, u8 bstart);
 void	rtw_mp_singletone_tx(_adapter *adapter, u8 bstart);
 void	rtw_mp_carriersuppr_tx(_adapter *adapter, u8 bstart);
 void	rtw_mp_txpwr_level(_adapter *adapter);
-void	fill_txdesc_for_mp(_adapter *padapter, u8 *ptxdesc);
+
 void	rtw_set_phl_packet_tx(_adapter *padapter, u8 bStart);
+void rtw_pre_phl_packet_tx(_adapter *padapter, u8 bStart);
+
 u8	rtw_phl_mp_tx_cmd(_adapter *padapter, enum rtw_mp_tx_cmd cmdid,
 						enum rtw_mp_tx_method tx_method, boolean bstart);
 
 void	rtw_mp_set_packet_tx(_adapter *padapter);
 void	rtw_mp_reset_phy_count(_adapter *adapter);
 
-s32	SetPowerTracking(_adapter *padapter, u8 enable);
-void	GetPowerTracking(_adapter *padapter, u8 *enable);
 u32	mp_query_psd(_adapter *adapter, u8 *data);
 void	rtw_mp_trigger_iqk(_adapter *padapter);
 void	rtw_mp_trigger_lck(_adapter *padapter);
 void	rtw_mp_trigger_dpk(_adapter *padapter);
 u8 rtw_mp_mode_check(_adapter *padapter);
-bool rtw_is_mp_tssitrk_on(_adapter *adapter);
+
 
 void mpt_ProSetPMacTx(_adapter *adapter);
-void MP_PHY_SetRFPathSwitch(_adapter *adapter , BOOLEAN bMain);
-void mp_phy_switch_rf_path_set(_adapter *adapter , u8 *pstate);
-u8 MP_PHY_QueryRFPathSwitch(_adapter *adapter);
-u32 mpt_ProQueryCalTxPower(_adapter *adapter, u8 RfPath);
+void rtw_mp_set_rfpath_switch(_adapter *adapter);
+
 u8 mpt_to_mgnt_rate(u32	MptRateIdx);
 u16 rtw_mp_rate_parse(_adapter *adapter, u8 *target_str);
 u32 mp_join(_adapter *padapter, u8 mode);
 u32 hal_mpt_query_phytxok(_adapter *adapter);
+u32 rtw_mpt_raw2dec_dbm(u32 val);
 u32 mpt_get_tx_power_finalabs_val(_adapter *padapter, u8 rf_path);
 void mpt_trigger_tssi_tracking(_adapter *adapter, u8 rf_path);
 u8 rtw_mpt_set_power_limit_en(_adapter *padapter, bool en_val);
@@ -1357,13 +1487,21 @@ bool rtw_mpt_get_power_limit_en(_adapter *padapter);
 u32 rtw_mp_get_tssi_de(_adapter *padapter, u8 rf_path);
 s32 rtw_mp_get_online_tssi_de(_adapter *padapter, s32 out_pwr, s32 tgdbm, u8 rf_path);
 u8 rtw_mp_set_tsside2verify(_adapter *padapter, u32 tssi_de, u8 rf_path);
-u8 rtw_mp_set_tssi_offset(_adapter *padapter, u32 tssi_offset, u8 rf_path);
+
 u8 rtw_mp_set_tssi_pwrtrk(_adapter *padapter, u8 tssi_state);
 u8 rtw_mp_get_tssi_pwrtrk(_adapter *padapter);
 u8 rtw_mp_set_tx_shape_idx(_adapter *padapter);
 
 void rtw_mp_cal_trigger(_adapter *padapter, u8 cal_tye);
 void rtw_mp_cal_capab(_adapter *padapter, u8 cal_tye, u8 benable);
+
+void rtw_mp_rx_phl_cal_timer(_adapter *padapter);
+
+void rtw_mp_phl_set_mac_loopbk(_adapter *padapter);
+void rtw_mp_phl_set_mac_loopbk_speed(_adapter *padapter);
+void rtw_mp_phl_set_mac_io_test(_adapter *padapter);
+
+thread_return mp_xmit_phl_packet_thread(thread_context context);
 
 void
 PMAC_Get_Pkt_Param(
@@ -1401,6 +1539,7 @@ void VHT_SIG_B_generator(
 void VHT_Delimiter_generator(
 	PRT_PMAC_TX_INFO	pPMacTxInfo);
 
+u8 rtw_do_mp_iwdata_len_chk(const char *caller, u32 len);
 
 int rtw_mp_write_reg(struct net_device *dev,
 		struct iw_request_info *info,
@@ -1450,9 +1589,6 @@ int rtw_set_ctx_destAddr(struct net_device *dev,
 int rtw_mp_ctx(struct net_device *dev,
 		struct iw_request_info *info,
 		struct iw_point *wrqu, char *extra);
-int rtw_mp_disable_bt_coexist(struct net_device *dev,
-		struct iw_request_info *info,
-		union iwreq_data *wrqu, char *extra);
 int rtw_mp_disable_bt_coexist(struct net_device *dev,
 		struct iw_request_info *info,
 		union iwreq_data *wrqu, char *extra);
@@ -1513,24 +1649,15 @@ int rtw_mp_dpk_track(struct net_device *dev,
 int rtw_mp_dpk(struct net_device *dev,
 			struct iw_request_info *info,
 			union iwreq_data *wrqu, char *extra);
-#if 0
-int rtw_efuse_mask_file(struct net_device *dev,
-		struct iw_request_info *info,
-		union iwreq_data *wrqu, char *extra);
-int rtw_bt_efuse_mask_file(struct net_device *dev,
-		struct iw_request_info *info,
-		union iwreq_data *wrqu, char *extra);
-
-int rtw_efuse_file_map(struct net_device *dev,
-		struct iw_request_info *info,
-		union iwreq_data *wrqu, char *extra);
-int rtw_efuse_file_map_store(struct net_device *dev,
-		struct iw_request_info *info,
-		union iwreq_data *wrqu, char *extra);
-int rtw_bt_efuse_file_map(struct net_device *dev,
-		struct iw_request_info *info,
-		union iwreq_data *wrqu, char *extra);
-#endif
+int rtw_mp_mac_loopbk(struct net_device *dev,
+			 struct iw_request_info *info,
+			 union iwreq_data *wrqu, char *extra);
+int rtw_mp_mac_iotest(struct net_device *dev,
+			 struct iw_request_info *info,
+			 union iwreq_data *wrqu, char *extra);
+int rtw_mp_6gcate(struct net_device *dev,
+			struct iw_request_info *info,
+			struct iw_point *wrqu, char *extra);
 
 int rtw_mp_SetBT(struct net_device *dev,
 		struct iw_request_info *info,
@@ -1604,5 +1731,10 @@ int rtw_mp_phl_btc_path(struct net_device *dev,
 int rtw_mp_get_he(struct net_device *dev,
 			 struct iw_request_info *info,
 			 union iwreq_data *wrqu, char *extra);
-
+int rtw_mp_band(struct net_device *dev,
+			 struct iw_request_info *info,
+			 union iwreq_data *wrqu, char *extra);
+void rtw_mp_phl_rx_reset_fltr(_adapter *padapter,
+			struct rtw_mp_rx_arg *rx_arg,
+			bool bstart);
 #endif /* _RTW_MP_H_ */

@@ -14,18 +14,31 @@
  ******************************************************************************/
 
 #include "role.h"
+#include "mac_priv.h"
 
-#define MAC_AX_ACTUAL_WMM_BAND BIT(1)
-#define MAC_AX_ACTUAL_WMM_DRV_WMM BIT(0)
+static u32 _add_role(struct mac_ax_adapter *adapter,
+		     struct mac_ax_role_info *info);
+
+static u32 _change_role(struct mac_ax_adapter *adapter,
+			struct mac_ax_role_info *info);
+
+static u32 _remove_role(struct mac_ax_adapter *adapter, u8 macid);
+
+static u32 _remove_role_soft(struct mac_ax_adapter *adapter, u8 macid);
+
+static u32 _remove_role_by_band(struct mac_ax_adapter *adapter, u8 band, u8 sw);
+
+static struct mac_role_tbl *_role_srch(struct mac_ax_adapter *adapter, u8 macid);
+
+static u32 _role_sync(struct mac_ax_adapter *adapter,
+		      struct mac_ax_role_info *info);
 
 static inline void __role_queue_head_init(struct mac_ax_adapter *adapter,
 					  struct mac_role_tbl_head *list)
 {
-	PLTFM_MUTEX_LOCK(&list->lock);
 	list->prev = (struct mac_role_tbl *)list;
 	list->next = (struct mac_role_tbl *)list;
 	list->qlen = 0;
-	PLTFM_MUTEX_UNLOCK(&list->lock);
 }
 
 static inline void __role_insert(struct mac_ax_adapter *adapter,
@@ -34,13 +47,11 @@ static inline void __role_insert(struct mac_ax_adapter *adapter,
 				 struct mac_role_tbl *next,
 				 struct mac_role_tbl_head *list)
 {
-	PLTFM_MUTEX_LOCK(&list->lock);
 	new_role->next = next;
 	new_role->prev = prev;
 	next->prev  = new_role;
 	prev->next = new_role;
 	list->qlen++;
-	PLTFM_MUTEX_UNLOCK(&list->lock);
 }
 
 static inline void __role_queue_before(struct mac_ax_adapter *adapter,
@@ -51,13 +62,12 @@ static inline void __role_queue_before(struct mac_ax_adapter *adapter,
 	__role_insert(adapter, new_role, next->prev, next, list);
 }
 
-static inline void __role_unlink(struct mac_ax_adapter *adapter,
-				 struct mac_role_tbl *role,
-				 struct mac_role_tbl_head *list)
+static void __role_unlink(struct mac_ax_adapter *adapter,
+			  struct mac_role_tbl *role,
+			  struct mac_role_tbl_head *list)
 {
 	struct mac_role_tbl *next, *prev;
 
-	PLTFM_MUTEX_LOCK(&list->lock);
 	list->qlen--;
 	next = role->next;
 	prev = role->prev;
@@ -65,7 +75,6 @@ static inline void __role_unlink(struct mac_ax_adapter *adapter,
 	role->next = NULL;
 	next->prev = prev;
 	prev->next = next;
-	PLTFM_MUTEX_UNLOCK(&list->lock);
 }
 
 static inline struct mac_role_tbl *__role_peek(struct mac_role_tbl_head *list)
@@ -74,6 +83,7 @@ static inline struct mac_role_tbl *__role_peek(struct mac_role_tbl_head *list)
 
 	if (role == (struct mac_role_tbl *)list)
 		role = NULL;
+
 	return role;
 }
 
@@ -95,8 +105,8 @@ static inline u32 role_queue_len(struct mac_role_tbl_head *list)
 	return list->qlen;
 }
 
-static inline void role_queue_head_init(struct mac_ax_adapter *adapter,
-					struct mac_role_tbl_head *list)
+static void role_queue_head_init(struct mac_ax_adapter *adapter,
+				 struct mac_role_tbl_head *list)
 {
 	PLTFM_MUTEX_INIT(&list->lock);
 	__role_queue_head_init(adapter, list);
@@ -110,13 +120,15 @@ static inline void role_enqueue(struct mac_ax_adapter *adapter,
 			    list, (struct mac_role_tbl *)list, new_role);
 }
 
-static inline struct mac_role_tbl *role_dequeue(struct mac_ax_adapter *adapter,
-						struct mac_role_tbl_head *list)
+static struct mac_role_tbl *role_dequeue(struct mac_ax_adapter *adapter,
+					 struct mac_role_tbl_head *list)
 {
-	struct mac_role_tbl *role = __role_peek(list);
+	struct mac_role_tbl *role = NULL;
 
+	role = __role_peek(list);
 	if (role)
 		__role_unlink(adapter, role, list);
+
 	return role;
 }
 
@@ -172,7 +184,6 @@ static u32 role_free(struct mac_ax_adapter *adapter)
 				break;
 			}
 		}
-		PLTFM_MUTEX_DEINIT(&role_head->lock);
 	}
 	if (role_pool) {
 		while (role_queue_len(role_pool) > 0) {
@@ -184,7 +195,6 @@ static u32 role_free(struct mac_ax_adapter *adapter)
 				break;
 			}
 		}
-		PLTFM_MUTEX_DEINIT(&role_pool->lock);
 	}
 
 	return ret;
@@ -214,7 +224,7 @@ u32 role_info_valid(struct mac_ax_adapter *adapter,
 			return MACFUNCINPUT;
 		}
 		// Check macid exist or not
-		if (mac_role_srch(adapter, info->macid)) {
+		if (_role_srch(adapter, info->macid)) {
 			PLTFM_MSG_ERR("existing macid: %d\n", info->macid);
 			return MACSAMACID;
 		}
@@ -224,7 +234,7 @@ u32 role_info_valid(struct mac_ax_adapter *adapter,
 			PLTFM_MSG_ERR("equals to MAC_AX_ROLE_CREATE\n");
 			return MACFUNCINPUT;
 		}
-		if (!mac_role_srch(adapter, info->macid)) {
+		if (!_role_srch(adapter, info->macid)) {
 			PLTFM_MSG_ERR("macid not exist: %d\n", info->macid);
 			return MACNOITEM;
 		}
@@ -268,7 +278,9 @@ u32 role_info_valid(struct mac_ax_adapter *adapter,
 		return MACFUNCINPUT;
 	}
 
-	if (is_chip_id(adapter, MAC_AX_CHIP_ID_8852B)) {
+	if (is_chip_id(adapter, MAC_AX_CHIP_ID_8852B) ||
+	    is_chip_id(adapter, MAC_AX_CHIP_ID_8851B) ||
+	    is_chip_id(adapter, MAC_AX_CHIP_ID_8852BT)) {
 		if (info->wmm >= 2) {
 			PLTFM_MSG_ERR("invalid wmm %d\n", info->wmm);
 			return MACFUNCINPUT;
@@ -320,7 +332,9 @@ u32 role_tbl_init(struct mac_ax_adapter *adapter)
 	for (a_idx = 0; a_idx < adapter->hw_info->macid_num; a_idx++) {
 		role = role_alloc(adapter);
 		if (role) {
+			PLTFM_MUTEX_LOCK(&role_pool->lock);
 			role_enqueue(adapter, role_pool, role);
+			PLTFM_MUTEX_UNLOCK(&role_pool->lock);
 		} else {
 			PLTFM_MSG_ERR("%s memory alloc failed\n", __func__);
 			ret = MACBUFALLOC;
@@ -338,9 +352,33 @@ u32 role_tbl_init(struct mac_ax_adapter *adapter)
 
 u32 role_tbl_exit(struct mac_ax_adapter *adapter)
 {
+	struct mac_role_tbl_head *role_head = NULL;
+	struct mac_role_tbl_head *role_pool = NULL;
 	u32 ret = MACSUCCESS;
 
+	role_head = adapter->role_tbl;
+
+	if (!role_head) {
+		PLTFM_MSG_ERR("%s role head list is null\n", __func__);
+		return MACMEMRO;
+	}
+
+	role_pool = adapter->role_tbl->role_tbl_pool;
+
+	if (!role_pool) {
+		PLTFM_MSG_ERR("%s role pool list is null\n", __func__);
+		return MACMEMRO;
+	}
+
+	PLTFM_MUTEX_LOCK(&role_head->lock);
+	PLTFM_MUTEX_LOCK(&role_pool->lock);
 	ret = role_free(adapter);
+	PLTFM_MUTEX_UNLOCK(&role_pool->lock);
+	PLTFM_MUTEX_UNLOCK(&role_head->lock);
+
+	PLTFM_MUTEX_DEINIT(&role_head->lock);
+	PLTFM_MUTEX_DEINIT(&role_pool->lock);
+
 	if (ret != MACSUCCESS)
 		PLTFM_MSG_ERR("%s memory free failed\n", __func__);
 
@@ -422,18 +460,18 @@ u32 sec_info_deinit(struct mac_ax_adapter *adapter,
 {
 	u32 i, ret;
 	struct sec_cam_table_t *sec_cam_table = adapter->hw_info->sec_cam_table;
+	struct mac_ax_priv_ops *p_ops = adapter_to_priv_ops(adapter);
 
 	if (!sec_cam_table)
 		return MACSUCCESS;
 
-	ret = disconnect_flush_key(adapter, role);
+	ret = p_ops->disconnect_flush_key(adapter, role);
 	if (ret != MACSUCCESS)
 		return ret;
 
 	/* deinit info */
 	info->a_info.sec_ent_mode = 0;
 	info->a_info.sec_ent_valid = 0;
-	info->a_info.wapi = 0;
 	for (i = 0; i < 7; i++) {
 		info->a_info.sec_ent_keyid[i] = 0;
 		info->a_info.sec_ent[i] = 0;
@@ -442,7 +480,6 @@ u32 sec_info_deinit(struct mac_ax_adapter *adapter,
 	/* deinit role */
 	role->info.a_info.sec_ent_mode = 0;
 	role->info.a_info.sec_ent_valid = 0;
-	role->info.a_info.wapi = 0;
 	for (i = 0; i < 7; i++) {
 		role->info.a_info.sec_ent_keyid[i] = 0;
 		role->info.a_info.sec_ent[i] = 0;
@@ -477,6 +514,7 @@ u32 role_init(struct mac_ax_adapter *adapter,
 	role->wmm = (info->band ? MAC_AX_ACTUAL_WMM_BAND : 0) |
 		    (info->wmm ? MAC_AX_ACTUAL_WMM_DRV_WMM : 0);
 
+#if MAC_FEAT_DBCC
 	if (info->dbcc_role) {
 		ret = dbcc_wmm_add_macid(adapter, info);
 		if (ret != MACSUCCESS) {
@@ -484,6 +522,7 @@ u32 role_init(struct mac_ax_adapter *adapter,
 			return ret;
 		}
 	}
+#endif /* MAC_FEAT_DBCC */
 
 	role->info = *info;
 
@@ -553,12 +592,52 @@ u32 set_role_bss_clr(struct mac_ax_adapter *adapter,
 	return 0;
 }
 
-u32 mac_add_role(struct mac_ax_adapter *adapter, struct mac_ax_role_info *info)
+static void _show_addr_cam_vld(struct mac_ax_adapter *adapter,
+			       struct mac_ax_role_info *info)
+{
+	u16 i;
+	bool V[512] = {0};
+	struct mac_role_tbl *role;
+	struct mac_role_tbl_head *list_head = adapter->role_tbl;
+
+	PLTFM_MSG_TRACE("HW MACID NUM = %d\n", adapter->hw_info->macid_num);
+	PLTFM_MSG_TRACE("ADDRCAM IDX = %d\n", info->a_info.addr_cam_idx);
+
+	if (!list_head) {
+		PLTFM_MSG_ERR("%s list_head NULL\n", __func__);
+		return;
+	}
+
+	role = list_head->next;
+	for (; role->next != list_head->next; role = role->next) {
+		for (i = 0; i < adapter->hw_info->macid_num; i++) {
+			if (i == role->info.a_info.addr_cam_idx &&
+			    role->info.a_info.valid) {
+				V[i] = 1;
+				break;
+			}
+		}
+	}
+
+	for (i = 0; i < adapter->hw_info->macid_num; i += 16)
+		PLTFM_MSG_TRACE("%d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d\n",
+				V[i], V[i + 1], V[i + 2], V[i + 3],
+				V[i + 4], V[i + 5], V[i + 6], V[i + 7],
+				V[i + 8], V[i + 9], V[i + 10], V[i + 11],
+				V[i + 12], V[i + 13], V[i + 14], V[i + 15]);
+}
+
+static u32 _add_role(struct mac_ax_adapter *adapter,
+		     struct mac_ax_role_info *info)
 {
 	struct mac_role_tbl *role = NULL;
 	struct mac_role_tbl_head *list_head = adapter->role_tbl;
+	//struct mac_ax_priv_ops *p_ops = adapter_to_priv_ops(adapter);
+	//struct mac_ax_dctl_info dctl_info;
+	//struct mac_ax_dctl_info dctl_mask;
 	u32 ret = MACSUCCESS;
 	u32 cmac_en;
+	bool fw_role = true;
 
 	cmac_en = check_mac_en(adapter, info->band, MAC_AX_CMAC_SEL);
 	if (cmac_en != MACSUCCESS)
@@ -592,9 +671,12 @@ u32 mac_add_role(struct mac_ax_adapter *adapter, struct mac_ax_role_info *info)
 		goto role_add_fail;
 	}
 
-	// Do not call mac_fw_role_maintain if is_mulitcast_entry = 1.
+	// Do not call mac_fw_role_maintain if is_mulitcast_entry = 1 or virtual role
 	// mac_fw_role_maintain will trigger FW to create FW Role.
-	if (!info->is_mul_ent) {
+	if (info->wifi_role == MAC_AX_WIFI_ROLE_VIRTUAL || info->is_mul_ent)
+		fw_role = false;
+
+	if (fw_role) {
 		ret = mac_fw_role_maintain(adapter, info);
 		if (ret != MACSUCCESS) {
 			if (ret == MACFWNONRDY) {
@@ -617,7 +699,22 @@ u32 mac_add_role(struct mac_ax_adapter *adapter, struct mac_ax_role_info *info)
 			}
 		}
 	}
+#if 0
+	ret = p_ops->init_cctl_info(adapter, info->macid);
+	if (ret != MACSUCCESS) {
+		PLTFM_MSG_ERR("%s init cctl info\n", __func__);
+		return ret;
+	}
 
+	PLTFM_MEMSET(&dctl_info, 0, sizeof(struct mac_ax_dctl_info));
+	PLTFM_MEMSET(&dctl_mask, 0xFF, sizeof(struct mac_ax_dctl_info));
+	ret = mac_upd_dctl_info(adapter, &dctl_info, &dctl_mask,
+				info->macid, TBL_WRITE_OP);
+	if (ret != MACSUCCESS) {
+		PLTFM_MSG_ERR("%s init dctl info\n", __func__);
+		return ret;
+	}
+#endif
 	ret = mac_upd_addr_cam(adapter, &role->info, ADD);
 
 	if (ret == MACADDRCAMFL) {
@@ -635,23 +732,33 @@ u32 mac_add_role(struct mac_ax_adapter *adapter, struct mac_ax_role_info *info)
 	if (cmac_en)
 		set_role_bss_clr(adapter, info);
 
+	PLTFM_MSG_TRACE("ADDRCAM status after %s:\n", __func__);
+	_show_addr_cam_vld(adapter, info);
+
 	return MACSUCCESS;
 
 role_add_fail:
 	role_enqueue(adapter, list_head->role_tbl_pool, role);
+#if MAC_FEAT_DBCC
 	if (role->info.dbcc_role) {
 		ret = dbcc_wmm_rm_macid(adapter, &role->info);
 		if (ret != MACSUCCESS)
 			PLTFM_MSG_ERR("add role fail dbcc wmm rm macid %d\n", ret);
 	}
+#endif /* MAC_FEAT_DBCC */
+
+	PLTFM_MSG_TRACE("ADDRCAM status after %s:\n", __func__);
+	_show_addr_cam_vld(adapter, info);
+
 	return ret;
 }
 
-u32 mac_change_role(struct mac_ax_adapter *adapter,
-		    struct mac_ax_role_info *info)
+static u32 _change_role(struct mac_ax_adapter *adapter,
+			struct mac_ax_role_info *info)
 {
 	struct mac_role_tbl *role;
 	u32 ret, cmac_en;
+	bool fw_role = true;
 
 	cmac_en = check_mac_en(adapter, info->band, MAC_AX_CMAC_SEL);
 	if (cmac_en != MACSUCCESS)
@@ -661,12 +768,13 @@ u32 mac_change_role(struct mac_ax_adapter *adapter,
 	if (ret != MACSUCCESS)
 		return ret;
 
-	role = mac_role_srch(adapter, info->macid);
+	role = _role_srch(adapter, info->macid);
 	if (!role) {
 		PLTFM_MSG_ERR("role search failed\n");
 		return MACNOITEM;
 	}
 
+#if MAC_FEAT_DBCC
 	if (info->upd_mode == MAC_AX_ROLE_BAND_SW) {
 		if (!role->info.dbcc_role) {
 			PLTFM_MSG_ERR("role band sw runs only for dbcc role\n");
@@ -679,35 +787,34 @@ u32 mac_change_role(struct mac_ax_adapter *adapter,
 				      info->band, info->macid, ret);
 			return ret;
 		}
-
-		role->info.band = info->band;
-		role->info.a_info.bb_sel = info->band;
-		role->info.b_info.bb_sel = info->band;
-		role->info.upd_mode = info->upd_mode;
-		role->wmm = (info->band ? MAC_AX_ACTUAL_WMM_BAND : 0) |
-			    (info->wmm ? MAC_AX_ACTUAL_WMM_DRV_WMM : 0);
-		role->info.wmm = role->wmm;
-		*info = role->info;
-	} else {
-		info->a_info = role->info.a_info;
-		info->dbcc_role = role->info.dbcc_role;
-
-		if (role_info_init(adapter, info)) {
-			PLTFM_MSG_ERR("role change failed\n");
-			return MACROLEINITFL;
-		}
-
-		role->macid = info->macid;
-		role->wmm = (info->band ? MAC_AX_ACTUAL_WMM_BAND : 0) |
-			    (info->wmm ? MAC_AX_ACTUAL_WMM_DRV_WMM : 0);
-		role->info = *info;
 	}
+#endif /* MAC_FEAT_DBCC */
+	info->a_info = role->info.a_info;
+	info->b_info = role->info.b_info;
+	info->s_info = role->info.s_info;
+	info->c_info = role->info.c_info;
+
+	info->dbcc_role = role->info.dbcc_role;
+
+	if (role_info_init(adapter, info)) {
+		PLTFM_MSG_ERR("role change failed\n");
+		return MACROLEINITFL;
+	}
+
+	role->macid = info->macid;
+	role->wmm = (info->band ? MAC_AX_ACTUAL_WMM_BAND : 0) |
+		    (info->wmm ? MAC_AX_ACTUAL_WMM_DRV_WMM : 0);
+	role->info = *info;
+
+	// Do not call mac_fw_role_maintain if is_mulitcast_entry = 1 or virtual role
+	// mac_fw_role_maintain will trigger FW to create FW Role.
+	if (info->wifi_role == MAC_AX_WIFI_ROLE_VIRTUAL || info->is_mul_ent)
+		fw_role = false;
 
 	if (info->upd_mode == MAC_AX_ROLE_TYPE_CHANGE ||
 	    info->upd_mode == MAC_AX_ROLE_REMOVE ||
 	    info->upd_mode == MAC_AX_ROLE_FW_RESTORE) {
-		// Do not call mac_fw_role_maintain if is_mulitcast_entry = 1.
-		if (!info->is_mul_ent) {
+		if (fw_role && info->upd_mode != MAC_AX_ROLE_TYPE_CHANGE) {
 			ret = mac_fw_role_maintain(adapter, info);
 			if (ret != MACSUCCESS) {
 				if (ret == MACFWNONRDY) {
@@ -721,7 +828,7 @@ u32 mac_change_role(struct mac_ax_adapter *adapter,
 		}
 		if ((info->upd_mode == MAC_AX_ROLE_TYPE_CHANGE ||
 		     info->upd_mode == MAC_AX_ROLE_FW_RESTORE) &&
-		    info->self_role == MAC_AX_SELF_ROLE_AP) {
+		     info->self_role == MAC_AX_SELF_ROLE_AP) {
 			ret = mac_h2c_join_info(adapter, info);
 			if (ret != MACSUCCESS) {
 				if (ret == MACFWNONRDY) {
@@ -775,19 +882,25 @@ u32 mac_change_role(struct mac_ax_adapter *adapter,
 	if (cmac_en)
 		set_role_bss_clr(adapter, info);
 
+	PLTFM_MSG_TRACE("ADDRCAM status after %s:\n", __func__);
+	_show_addr_cam_vld(adapter, info);
+
 	return ret;
 }
 
-u32 mac_remove_role(struct mac_ax_adapter *adapter, u8 macid)
+static u32 _remove_role(struct mac_ax_adapter *adapter, u8 macid)
 {
 	struct mac_role_tbl *role;
 	u32 ret;
 
-	role = mac_role_srch(adapter, macid);
+	role = _role_srch(adapter, macid);
 	if (!role) {
 		PLTFM_MSG_ERR("no role for macid %d\n", macid);
 		return MACNOROLE;
 	}
+
+	PLTFM_MSG_TRACE("ADDRCAM status before %s:\n", __func__);
+	_show_addr_cam_vld(adapter, &role->info);
 
 	role->info.a_info.valid = 0;
 	role->info.upd_mode = MAC_AX_ROLE_REMOVE;
@@ -796,12 +909,13 @@ u32 mac_remove_role(struct mac_ax_adapter *adapter, u8 macid)
 	if (!mac_role_srch_by_bssid(adapter, role->info.a_info.bssid_cam_idx))
 		role->info.b_info.valid = 0;
 
-	ret = mac_change_role(adapter, &role->info);
+	ret = _change_role(adapter, &role->info);
 	if (ret != MACSUCCESS) {
 		PLTFM_MSG_ERR("%s: %d\n", __func__, ret);
 		return ret;
 	}
 
+#if MAC_FEAT_DBCC
 	if (role->info.dbcc_role) {
 		role->info.dbcc_role = 0;
 		ret = dbcc_wmm_rm_macid(adapter, &role->info);
@@ -810,20 +924,21 @@ u32 mac_remove_role(struct mac_ax_adapter *adapter, u8 macid)
 			return ret;
 		}
 	}
+#endif /* MAC_FEAT_DBCC */
 
 	role_return(adapter, role);
 
 	return MACSUCCESS;
 }
 
-static u32 mac_remove_role_soft(struct mac_ax_adapter *adapter, u8 macid)
+static u32 _remove_role_soft(struct mac_ax_adapter *adapter, u8 macid)
 {
 	/* This function should be called only before poweroff,
 	 * because it will unlink the role without update any info to FW
 	 */
 	struct mac_role_tbl *role;
 
-	role = mac_role_srch(adapter, macid);
+	role = _role_srch(adapter, macid);
 	if (!role) {
 		PLTFM_MSG_ERR("no role for macid %d\n", macid);
 		return MACNOROLE;
@@ -834,7 +949,7 @@ static u32 mac_remove_role_soft(struct mac_ax_adapter *adapter, u8 macid)
 	return MACSUCCESS;
 }
 
-u32 mac_remove_role_by_band(struct mac_ax_adapter *adapter, u8 band, u8 sw)
+static u32 _remove_role_by_band(struct mac_ax_adapter *adapter, u8 band, u8 sw)
 {
 	struct mac_role_tbl *role, *curr_role;
 	struct mac_role_tbl_head *list_head = adapter->role_tbl;
@@ -842,9 +957,9 @@ u32 mac_remove_role_by_band(struct mac_ax_adapter *adapter, u8 band, u8 sw)
 	u32 (*_rm_role)(struct mac_ax_adapter *adapter, u8 macid);
 
 	if (sw)
-		_rm_role = mac_remove_role_soft;
+		_rm_role = _remove_role_soft;
 	else
-		_rm_role = mac_remove_role;
+		_rm_role = _remove_role;
 
 	role = list_head->next;
 	while (role->next != list_head->next) {
@@ -860,7 +975,8 @@ u32 mac_remove_role_by_band(struct mac_ax_adapter *adapter, u8 band, u8 sw)
 	return MACSUCCESS;
 }
 
-struct mac_role_tbl *mac_role_srch(struct mac_ax_adapter *adapter, u8 macid)
+static struct mac_role_tbl *_role_srch(struct mac_ax_adapter *adapter,
+				       u8 macid)
 {
 	struct mac_role_tbl *role;
 	struct mac_role_tbl_head *list_head = adapter->role_tbl;
@@ -875,6 +991,168 @@ struct mac_role_tbl *mac_role_srch(struct mac_ax_adapter *adapter, u8 macid)
 	}
 
 	return NULL;
+}
+
+static u32 _role_sync(struct mac_ax_adapter *adapter,
+		      struct mac_ax_role_info *info)
+{
+	struct mac_role_tbl *role;
+	u32 ret = MACSUCCESS;
+	bool fw_role = true;
+
+	role = _role_srch(adapter, info->macid);
+	if (!role) {
+		PLTFM_MSG_ERR("role search failed\n");
+		return MACNOITEM;
+	}
+
+	// Do not call mac_fw_role_maintain if is_mulitcast_entry = 1 or virtual role
+	// mac_fw_role_maintain will trigger FW to create FW Role.
+	if (info->wifi_role == MAC_AX_WIFI_ROLE_VIRTUAL || info->is_mul_ent)
+		fw_role = false;
+
+	if (fw_role) {
+		ret = mac_fw_role_maintain(adapter, info);
+		if (ret) {
+			if (ret == MACFWNONRDY)
+				PLTFM_MSG_WARN("skip fw role sync since fw not ready\n");
+			else
+				PLTFM_MSG_ERR("mac_fw_role_maintain failed:%d\n", ret);
+			return ret;
+		}
+	}
+	if (info->self_role == MAC_AX_SELF_ROLE_AP) {
+		ret = mac_h2c_join_info(adapter, info);
+		if (ret) {
+			if (ret == MACFWNONRDY)
+				PLTFM_MSG_WARN("skip join info\n");
+			else
+				PLTFM_MSG_ERR("mac_h2c_join_info: %d\n", ret);
+		}
+	}
+	return ret;
+}
+
+u32 mac_add_role(struct mac_ax_adapter *adapter, struct mac_ax_role_info *info)
+{
+	u32 ret;
+	struct mac_role_tbl_head *list_head = adapter->role_tbl;
+
+	PLTFM_MUTEX_LOCK(&list_head->lock);
+	PLTFM_MSG_TRACE("====== [MAC ROLE ADD] ======\n");
+	PLTFM_MSG_TRACE("Function: %s with MACID = %d\n",
+			__func__, (u16)info->macid);
+	PLTFM_MSG_TRACE("(SELF_ROLE, WIFI_ROLE) = (%d, %d)\n",
+			(u8)info->self_role, (u8)info->wifi_role);
+	PLTFM_MSG_TRACE("(NET_TYPE, UPD_MODE, OPMODE) = (%d, %d, %d)\n",
+			(u8)info->net_type, (u8)info->upd_mode, (u8)info->opmode);
+	PLTFM_MSG_TRACE("(BAND, PORT) = (%d, %d)\n",
+			(u8)info->band, (u8)info->port);
+	PLTFM_MSG_TRACE("(MASK_SEL, ADDR_MASK) = (%d, %d)\n",
+			(u8)info->mask_sel, (u8)info->addr_mask);
+
+	ret = _add_role(adapter, info);
+	PLTFM_MUTEX_UNLOCK(&list_head->lock);
+
+	return ret;
+}
+
+u32 mac_change_role(struct mac_ax_adapter *adapter,
+		    struct mac_ax_role_info *info)
+{
+	u32 ret;
+	struct mac_role_tbl_head *list_head = adapter->role_tbl;
+
+	PLTFM_MUTEX_LOCK(&list_head->lock);
+	PLTFM_MSG_TRACE("====== [MAC ROLE CHANGE] ======\n");
+	PLTFM_MSG_TRACE("Function: %s with MACID = %d\n",
+			__func__, (u16)info->macid);
+	PLTFM_MSG_TRACE("(SELF_ROLE, WIFI_ROLE) = (%d, %d)\n",
+			(u8)info->self_role, (u8)info->wifi_role);
+	PLTFM_MSG_TRACE("(NET_TYPE, UPD_MODE, OPMODE) = (%d, %d, %d)\n",
+			(u8)info->net_type, (u8)info->upd_mode, (u8)info->opmode);
+	PLTFM_MSG_TRACE("(BAND, PORT) = (%d, %d)\n",
+			(u8)info->band, (u8)info->port);
+	PLTFM_MSG_TRACE("(MASK_SEL, ADDR_MASK) = (%d, %d)\n",
+			(u8)info->mask_sel, (u8)info->addr_mask);
+
+	ret = _change_role(adapter, info);
+	PLTFM_MUTEX_UNLOCK(&list_head->lock);
+
+	return ret;
+}
+
+u32 mac_remove_role(struct mac_ax_adapter *adapter, u8 macid)
+{
+	u32 ret;
+	struct mac_role_tbl_head *list_head = adapter->role_tbl;
+
+	PLTFM_MUTEX_LOCK(&list_head->lock);
+	PLTFM_MSG_TRACE("====== [MAC ROLE REMOVE] ======\n");
+	PLTFM_MSG_TRACE("Function: %s with MACID = %d\n",
+			__func__, macid);
+
+	ret = _remove_role(adapter, macid);
+	PLTFM_MUTEX_UNLOCK(&list_head->lock);
+
+	return ret;
+}
+
+u32 mac_remove_role_by_band(struct mac_ax_adapter *adapter, u8 band, u8 sw)
+{
+	u32 ret;
+	struct mac_role_tbl_head *list_head = adapter->role_tbl;
+
+	PLTFM_MUTEX_LOCK(&list_head->lock);
+	PLTFM_MSG_TRACE("====== [MAC ROLE REMOVE BY BAND] ======\n");
+	PLTFM_MSG_TRACE("Function: %s with BAND = %d, SW = %d\n",
+			__func__, band, sw);
+
+	ret = _remove_role_by_band(adapter, band, sw);
+	PLTFM_MUTEX_UNLOCK(&list_head->lock);
+
+	return ret;
+}
+
+struct mac_role_tbl *mac_role_srch(struct mac_ax_adapter *adapter, u8 macid)
+{
+	struct mac_role_tbl *ret;
+	struct mac_role_tbl_head *list_head = adapter->role_tbl;
+
+	PLTFM_MUTEX_LOCK(&list_head->lock);
+	ret = _role_srch(adapter, macid);
+	PLTFM_MUTEX_UNLOCK(&list_head->lock);
+
+	return ret;
+}
+
+u32 mac_role_sync(struct mac_ax_adapter *adapter, struct mac_ax_role_info *info)
+{
+	u32 ret;
+	struct mac_role_tbl_head *list_head = adapter->role_tbl;
+
+	PLTFM_MUTEX_LOCK(&list_head->lock);
+	PLTFM_MSG_TRACE("====== [MAC ROLE SYNC] ======\n");
+	PLTFM_MSG_TRACE("Function: %s with MACID = %d\n",
+			__func__, (u16)info->macid);
+	PLTFM_MSG_TRACE("(SELF_ROLE, WIFI_ROLE) = (%d, %d)\n",
+			(u8)info->self_role, (u8)info->wifi_role);
+	PLTFM_MSG_TRACE("(NET_TYPE, UPD_MODE, OPMODE) = (%d, %d, %d)\n",
+			(u8)info->net_type, (u8)info->upd_mode, (u8)info->opmode);
+	PLTFM_MSG_TRACE("(BAND, PORT) = (%d, %d)\n",
+			(u8)info->band, (u8)info->port);
+	PLTFM_MSG_TRACE("(MASK_SEL, ADDR_MASK) = (%d, %d)\n",
+			(u8)info->mask_sel, (u8)info->addr_mask);
+
+	ret = _role_sync(adapter, info);
+	PLTFM_MUTEX_UNLOCK(&list_head->lock);
+
+	return ret;
+}
+
+struct mac_role_tbl *role_srch_no_lock(struct mac_ax_adapter *adapter, u8 macid)
+{
+	return _role_srch(adapter, macid);
 }
 
 struct mac_role_tbl *mac_role_srch_by_addr_cam(struct mac_ax_adapter *adapter,
@@ -938,6 +1216,10 @@ u32 mac_get_macaddr(struct mac_ax_adapter *adapter,
 	macaddr_list = (struct mac_ax_macaddr *)
 			PLTFM_MALLOC(sizeof(struct mac_ax_macaddr) *
 			adapter->hw_info->macid_num);
+	if (!macaddr_list) {
+		PLTFM_MSG_ERR("[ERR]malloc macaddr_list\n");
+		return MACBUFALLOC;
+	}
 	role = list_head->next;
 	for (m_list_idx = 0; role->next != list_head->next; role = role->next) {
 		if (!role->info.a_info.valid)
@@ -1048,23 +1330,27 @@ u32 mac_set_slot_time(struct mac_ax_adapter *adapter, enum mac_ax_slot_time st)
 	return ret;
 }
 
-static u32 mac_h2c_join_info(struct mac_ax_adapter *adapter,
-			     struct mac_ax_role_info *info)
+u32 mac_h2c_join_info(struct mac_ax_adapter *adapter,
+		      struct mac_ax_role_info *info)
 {
-	u8 *buf;
-	#if MAC_AX_PHL_H2C
-	struct rtw_h2c_pkt *h2cb;
-	#else
-	struct h2c_buf *h2cb;
-	#endif
-	struct fwcmd_joininfo *fwcmd_tbl;
 	struct mac_ax_sta_init_info sta;
-	u32 ret;
+	u32 ret = MACSUCCESS;
+
+	struct h2c_info h2c_info = {0};
+	struct fwcmd_joininfo *fwcmd_tbl;
 
 	if (adapter->sm.fwdl != MAC_AX_FWDL_INIT_RDY) {
 		PLTFM_MSG_WARN("%s fw not ready\n", __func__);
 		return MACFWNONRDY;
 	}
+
+	h2c_info.agg_en = 1;
+	h2c_info.content_len = sizeof(struct fwcmd_joininfo);
+	h2c_info.h2c_cat = FWCMD_H2C_CAT_MAC;
+	h2c_info.h2c_class = FWCMD_H2C_CL_MEDIA_RPT;
+	h2c_info.h2c_func = FWCMD_H2C_FUNC_JOININFO;
+	h2c_info.rec_ack = 0;
+	h2c_info.done_ack = 1;
 
 	// sta info
 	sta.macid = info->macid;
@@ -1082,17 +1368,11 @@ static u32 mac_h2c_join_info(struct mac_ax_adapter *adapter,
 	sta.wifi_role = info->wifi_role;
 	sta.self_role = info->self_role;
 
-	h2cb = h2cb_alloc(adapter, H2CB_CLASS_CMD);
-	if (!h2cb)
-		return MACNPTR;
-
-	buf = h2cb_put(h2cb, sizeof(struct fwcmd_joininfo));
-	if (!buf) {
-		ret = MACNOBUF;
-		goto join_info_fail;
+	fwcmd_tbl = (struct fwcmd_joininfo *)PLTFM_MALLOC(h2c_info.content_len);
+	if (!fwcmd_tbl) {
+		PLTFM_MSG_ERR("[ERR]malloc fwcmd_tbl\n");
+		return MACBUFALLOC;
 	}
-
-	fwcmd_tbl = (struct fwcmd_joininfo *)buf;
 	fwcmd_tbl->dword0 =
 	cpu_to_le32(SET_WORD(sta.macid, FWCMD_H2C_JOININFO_MACID) |
 		    (sta.opmode ? FWCMD_H2C_JOININFO_OPMODE : 0) |
@@ -1109,77 +1389,48 @@ static u32 mac_h2c_join_info(struct mac_ax_adapter *adapter,
 		    SET_WORD(sta.wifi_role, FWCMD_H2C_JOININFO_WIFI_ROLE) |
 		    SET_WORD(sta.self_role, FWCMD_H2C_JOININFO_SELF_ROLE));
 
-	ret = h2c_pkt_set_hdr(adapter, h2cb,
-			      FWCMD_TYPE_H2C,
-			      FWCMD_H2C_CAT_MAC,
-			      FWCMD_H2C_CL_MEDIA_RPT,
-			      FWCMD_H2C_FUNC_JOININFO,
-			      0,
-			      1);
+	ret = mac_h2c_common(adapter, &h2c_info, (u32 *)fwcmd_tbl);
+	if (ret)
+		PLTFM_MSG_ERR("[ERR]%s: Send H2C fail\n", __func__);
 
-	if (ret != MACSUCCESS)
-		goto join_info_fail;
-
-	// return MACSUCCESS if h2c aggregation is enabled and enqueued successfully.
-	// H2C shall be sent by mac_h2c_agg_tx.
-	ret = h2c_agg_enqueue(adapter, h2cb);
-	if (ret == MACSUCCESS)
-		return MACSUCCESS;
-
-	ret = h2c_pkt_build_txd(adapter, h2cb);
-	if (ret != MACSUCCESS)
-		goto join_info_fail;
-
-	#if MAC_AX_PHL_H2C
-	ret = PLTFM_TX(h2cb);
-	#else
-	ret = PLTFM_TX(h2cb->data, h2cb->len);
-	#endif
-	if (ret != MACSUCCESS)
-		goto join_info_fail;
-
-	h2cb_free(adapter, h2cb);
-	return MACSUCCESS;
-
-join_info_fail:
-	h2cb_free(adapter, h2cb);
+	PLTFM_FREE(fwcmd_tbl, h2c_info.content_len);
 	return ret;
 }
 
-static u32 mac_fw_role_maintain(struct mac_ax_adapter *adapter,
-				struct mac_ax_role_info *info)
+u32 mac_fw_role_maintain(struct mac_ax_adapter *adapter,
+			 struct mac_ax_role_info *info)
 {
-	u8 *buf;
-	#if MAC_AX_PHL_H2C
-	struct rtw_h2c_pkt *h2cb;
-	#else
-	struct h2c_buf *h2cb;
-	#endif
-	struct fwcmd_fwrole_maintain *fwcmd_tbl;
 	struct mac_ax_fwrole_maintain fwrole_main;
-	u32 ret;
+	u32 ret = MACSUCCESS;
+
+	struct h2c_info h2c_info = {0};
+	struct fwcmd_fwrole_maintain *fwcmd_tbl;
 
 	if (adapter->sm.fwdl != MAC_AX_FWDL_INIT_RDY) {
 		PLTFM_MSG_WARN("%s fw not ready\n", __func__);
 		return MACFWNONRDY;
 	}
 
+	h2c_info.agg_en = 1;
+	h2c_info.content_len = sizeof(struct fwcmd_fwrole_maintain);
+	h2c_info.h2c_cat = FWCMD_H2C_CAT_MAC;
+	h2c_info.h2c_class = FWCMD_H2C_CL_MEDIA_RPT;
+	h2c_info.h2c_func = FWCMD_H2C_FUNC_FWROLE_MAINTAIN;
+	h2c_info.rec_ack = 0;
+	h2c_info.done_ack = 1;
+
 	fwrole_main.macid = info->macid;
 	fwrole_main.self_role = info->self_role;
 	fwrole_main.upd_mode = info->upd_mode;
 	fwrole_main.wifi_role = info->wifi_role;
+	fwrole_main.band = info->band;
+	fwrole_main.port = info->port;
 
-	h2cb = h2cb_alloc(adapter, H2CB_CLASS_CMD);
-	if (!h2cb)
-		return MACNPTR;
-
-	buf = h2cb_put(h2cb, sizeof(struct fwcmd_fwrole_maintain));
-	if (!buf) {
-		ret = MACNOBUF;
-		goto role_maintain_fail;
+	fwcmd_tbl = (struct fwcmd_fwrole_maintain *)PLTFM_MALLOC(h2c_info.content_len);
+	if (!fwcmd_tbl) {
+		PLTFM_MSG_ERR("[ERR]malloc fwcmd_tbl\n");
+		return MACBUFALLOC;
 	}
-
-	fwcmd_tbl = (struct fwcmd_fwrole_maintain *)buf;
 	fwcmd_tbl->dword0 =
 	cpu_to_le32(SET_WORD(fwrole_main.macid,
 			     FWCMD_H2C_FWROLE_MAINTAIN_MACID) |
@@ -1188,72 +1439,17 @@ static u32 mac_fw_role_maintain(struct mac_ax_adapter *adapter,
 		    SET_WORD(fwrole_main.upd_mode,
 			     FWCMD_H2C_FWROLE_MAINTAIN_UPD_MODE) |
 		    SET_WORD(fwrole_main.wifi_role,
-			     FWCMD_H2C_FWROLE_MAINTAIN_WIFI_ROLE));
+			     FWCMD_H2C_FWROLE_MAINTAIN_WIFI_ROLE) |
+		    SET_WORD(fwrole_main.band,
+			     FWCMD_H2C_FWROLE_MAINTAIN_BAND) |
+		    SET_WORD(fwrole_main.port,
+			     FWCMD_H2C_FWROLE_MAINTAIN_PORT));
 
-	ret = h2c_pkt_set_hdr(adapter, h2cb,
-			      FWCMD_TYPE_H2C,
-			      FWCMD_H2C_CAT_MAC,
-			      FWCMD_H2C_CL_MEDIA_RPT,
-			      FWCMD_H2C_FUNC_FWROLE_MAINTAIN,
-			      0,
-			      1);
+	ret = mac_h2c_common(adapter, &h2c_info, (u32 *)fwcmd_tbl);
+	if (ret)
+		PLTFM_MSG_ERR("[ERR]%s: Send H2C fail\n", __func__);
 
-	if (ret != MACSUCCESS)
-		goto role_maintain_fail;
-
-	// return MACSUCCESS if h2c aggregation is enabled and enqueued successfully.
-	// H2C shall be sent by mac_h2c_agg_tx.
-	ret = h2c_agg_enqueue(adapter, h2cb);
-	if (ret == MACSUCCESS)
-		return MACSUCCESS;
-
-	ret = h2c_pkt_build_txd(adapter, h2cb);
-	if (ret != MACSUCCESS)
-		goto role_maintain_fail;
-
-#if MAC_AX_PHL_H2C
-	ret = PLTFM_TX(h2cb);
-#else
-	ret = PLTFM_TX(h2cb->data, h2cb->len);
-#endif
-	if (ret != MACSUCCESS)
-		goto role_maintain_fail;
-
-	h2cb_free(adapter, h2cb);
-	return MACSUCCESS;
-
-role_maintain_fail:
-	h2cb_free(adapter, h2cb);
+	PLTFM_FREE(fwcmd_tbl, h2c_info.content_len);
 	return ret;
 }
 
-u32 mac_role_sync(struct mac_ax_adapter *adapter, struct mac_ax_role_info *info)
-{
-	struct mac_role_tbl *role;
-	u32 ret = MACSUCCESS;
-
-	role = mac_role_srch(adapter, info->macid);
-	if (!role) {
-		PLTFM_MSG_ERR("role search failed\n");
-		return MACNOITEM;
-	}
-
-	ret = mac_fw_role_maintain(adapter, info);
-	if (ret) {
-		if (ret == MACFWNONRDY)
-			PLTFM_MSG_WARN("skip fw role sync since fw not ready\n");
-		else
-			PLTFM_MSG_ERR("mac_fw_role_maintain failed:%d\n", ret);
-		return ret;
-	}
-	if (info->self_role == MAC_AX_SELF_ROLE_AP) {
-		ret = mac_h2c_join_info(adapter, info);
-		if (ret) {
-			if (ret == MACFWNONRDY)
-				PLTFM_MSG_WARN("skip join info\n");
-			else
-				PLTFM_MSG_ERR("mac_h2c_join_info: %d\n", ret);
-		}
-	}
-	return ret;
-}

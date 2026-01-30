@@ -27,6 +27,7 @@ enum HALRF_CMD_ID {
 	HALRF_IQK,
 	HALRF_IQK_DEBUG,
 	HALRF_DPK,
+	HALRF_DPK_TRACK,
 	HALRF_DACK,
 	HALRF_DACK_DEBUG,
 	HALRF_RX_DCK,
@@ -53,7 +54,15 @@ enum HALRF_CMD_ID {
 	HALRF_XTAL_TRK,
 	HALRF_HWTX,
 	HALRF_KFREE,
-	HALRF_CHL_RFK
+	HALRF_CHL_RFK,
+	HALRF_OP5K,
+	HALRF_RFK,
+	HALRF_PSD,
+	HALRF_DZ_DBG,
+	HALRF_BB_RESET,
+	HALRF_FT_TEST,
+	HALRF_LPS_CFG,
+	HALRF_TAS
 };
 
 struct halrf_cmd_info halrf_cmd_i[] = {
@@ -63,6 +72,7 @@ struct halrf_cmd_info halrf_cmd_i[] = {
 	{"profile", HALRF_PROFILE},
 	{"iqk", HALRF_IQK},
 	{"dpk", HALRF_DPK},
+	{"dpk_trk", HALRF_DPK_TRACK},
 	{"dack", HALRF_DACK},
 	{"dack_dbg", HALRF_DACK_DEBUG},
 	{"rx_dck", HALRF_RX_DCK},
@@ -90,6 +100,14 @@ struct halrf_cmd_info halrf_cmd_i[] = {
 	{"hwtx", HALRF_HWTX},
 	{"kfree", HALRF_KFREE},
 	{"chl_rfk", HALRF_CHL_RFK},
+	{"op5k", HALRF_OP5K},
+	{"rfk", HALRF_RFK},
+	{"psd", HALRF_PSD},
+	{"dz_dbg",HALRF_DZ_DBG},
+	{"bb_reset", HALRF_BB_RESET},
+	{"ft_test", HALRF_FT_TEST},
+	{"lps", HALRF_LPS_CFG},
+	{"tas", HALRF_TAS},
 };
 
 void halrf_cmd_parser(struct rf_info *rf, char input[][RF_MAX_ARGV],
@@ -144,6 +162,9 @@ void halrf_cmd_parser(struct rf_info *rf, char input[][RF_MAX_ARGV],
 		break;
 	case HALRF_DPK:
 		halrf_dpk_dbg_cmd(rf, input, &used, output, &out_len);
+		break;
+	case HALRF_DPK_TRACK:
+		halrf_dpk_track_dbg_cmd(rf, input, &used, output, &out_len);
 		break;
 	case HALRF_DACK:		
 		halrf_dack_dbg_cmd(rf, input, &used, output, &out_len);
@@ -244,6 +265,41 @@ void halrf_cmd_parser(struct rf_info *rf, char input[][RF_MAX_ARGV],
 		break;
 	case HALRF_CHL_RFK:
 		halrf_chl_rfk_dbg_cmd(rf, input, &used, output, &out_len);
+		break;
+	case HALRF_OP5K:
+#ifdef HALRF_OP5K_SUPPORT
+		halrf_op5k_dbg_cmd(rf, input, &used, output, &out_len);
+#endif
+		break;
+	case HALRF_RFK:
+		halrf_rfk_dbg_cmd(rf, input, &used, output, &out_len);
+		break;
+	case HALRF_PSD:
+#ifdef HALRF_PSD_SUPPORT
+		halrf_psd_cmd(rf, input, &used, output, &out_len);
+#endif	/*HALRF_PSD_SUPPORT*/
+		break;
+	case HALRF_DZ_DBG:
+#ifdef  HALRF_DZ_LOG
+		halrf_dz_dbg_cmd(rf, input, &used, output, &out_len);
+#endif
+		break;
+	case HALRF_BB_RESET:
+		_os_sscanf(input[1], "%d", &val_1);
+		halrf_bb_reset(rf, val_1);
+		RF_DBG_CNSL(out_len, used, output + used, out_len - used,
+			"PHY%d BB reset!!\n", val_1);
+		break;
+	case HALRF_FT_TEST:
+#ifdef HALRF_FT
+		halrf_ft_rfq_cmd(rf, input, &used, output, &out_len);
+#endif
+		break;
+	case HALRF_LPS_CFG:
+		halrf_lps_cfg_cmd(rf, input, &used, output, &out_len);
+		break;
+	case HALRF_TAS:
+		halrf_tas_dbg_cmd(rf, input, &used, output, &out_len);
 		break;
 	default:
 		RF_DBG_CNSL(out_len, used, output + used, out_len - used,

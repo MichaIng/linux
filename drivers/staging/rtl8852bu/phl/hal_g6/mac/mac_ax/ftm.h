@@ -21,15 +21,43 @@
 #include "role.h"
 #include "fwcmd.h"
 #include "addr_cam.h"
+#if MAC_FEAT_FTM
 
 /*--------------------Define ----------------------------------------*/
 #define FWCMD_H2C_FUNC_SECCAM_FTM 0x2
+#define FWCMD_H2C_FUNC_SECCAM_FTM_CANCEL 0x3
+#define FWCMD_H2C_FUNC_SECCAM_FTM_UPD 0x4
 
 /*--------------------DSecurity cam type declaration-----------------*/
-struct fwcmd_ftm_info {
+struct fwcmd_ftm_upd_info {
+	u32 dword0;
+	u32 dword1;
+	u32 dword2;
+	u32 dword3;
+};
+
+struct fwcmd_ftm_cancel_info {
 	u32 dword0;
 };
 
+struct fwcmd_ftm_en_info {
+	u32 dword0;
+	u32 dword1;
+	u32 dword2;
+};
+
+struct fwcmd_ftm_info {
+	u32 dword0;
+	u32 dword1;
+	u32 dword2;
+	u32 dword3;
+	u32 dword4;
+	u32 dword5;
+	u32 dword6;
+	u32 dword7;
+	u32 dword8;
+	u32 dword9;
+};
 /*--------------------Funciton declaration----------------------------*/
 
 /**
@@ -61,5 +89,11 @@ u32 mac_ista_ftm_proc(struct mac_ax_adapter *adapter,
 u32 mac_ista_ftm_enable(struct mac_ax_adapter *adapter,
 			u8 macid, bool enable);
 
-#endif
+u32 mac_ista_ftm_cancel(struct mac_ax_adapter *adapter,
+			struct mac_ax_ftm_cancel_para *ftm_cancel);
 
+u32 mac_ista_ftm_upd_para(struct mac_ax_adapter *adapter,
+			  struct mac_ax_ftm_upd_para *ftm_upd_para);
+
+#endif
+#endif

@@ -18,6 +18,8 @@
 #define _HV_AX_TYPE_H_
 
 #include "pltfm_cfg.h"
+#include "chip_cfg.h"
+#include "feature_cfg.h"
 
 typedef unsigned long long u64;
 
@@ -28,6 +30,21 @@ typedef unsigned long long u64;
 #define HV_AX_FPGA 0
 #define HV_AX_ASIC 1
 #define HV_AX_PXP  2
+
+#define MAC_HV_CTRL_CNT_R 0
+#define MAC_HV_CTRL_CNT_W 1
+#define MAC_HV_CTRL_CNT_RST 2
+#define MAC_HV_CTRL_CNT_RST_ALL 3
+#define MAC_HV_CTRL_CNT_NUM 16
+
+#define MAC_HV_RX_CNT_R 0
+#define MAC_HV_RX_CNT_W 1
+#define MAC_HV_RX_CNT_RST 2
+#define MAC_HV_RX_CNT_NUM 48
+#define MAC_HV_RX_CNT_MSK_FC BIT(0)
+#define MAC_HV_RX_CNT_MSK_BSSID BIT(1)
+#define MAC_HV_RX_CNT_MSK_RATE BIT(2)
+#define MAC_HV_RX_CNT_MSK_RU BIT(3)
 
 /**
  * @enum hv_ax_ss_wmm
@@ -309,6 +326,17 @@ enum hv_ax_ss_delay_tx_band {
 	HV_AX_SS_DELAY_TX_B0 = 1,
 	HV_AX_SS_DELAY_TX_B1 = 2,
 	HV_AX_SS_DELAY_TX_B0_B1 = 3,
+};
+
+enum hv_ax_pwr_seq_sel {
+	HV_AX_PWR_SEQ_SEL_ON_NIC,
+	HV_AX_PWR_SEQ_SEL_OFF_NIC,
+	HV_AX_PWR_SEQ_SEL_CARD_DIS,
+	HV_AX_PWR_SEQ_SEL_ENTER_LPS,
+	HV_AX_PWR_SEQ_SEL_LEAVE_LPS,
+	HV_AX_PWR_SEQ_SEL_IPS,
+	HV_AX_PWR_SEQ_SEL_ON_AP,
+	HV_AX_PWR_SEQ_SEL_OFF_AP,
 };
 
 /**
@@ -679,6 +707,20 @@ struct hv_ax_sta_len {
 };
 
 /**
+ * @struct hv_freq_band_cfg
+ * @brief hv_freq_band_cfg
+ *
+ * @var hv_freq_band_cfg::band_sel
+ * Please Place Description here.
+ * @var hv_freq_band_cfg::band_type
+ * Please Place Description here.
+ */
+struct hv_freq_band_cfg {
+	u8 band_sel;
+	enum band_type freq_band;
+};
+
+/**
  * @struct hv_aggregator_t
  * @brief hv_aggregator_t
  *
@@ -790,14 +832,9 @@ struct mac_ax_plat_auto_test {
  * Please Place Description here.
  */
 struct hv_ctrl_frame_cnt {
-#define MAC_HV_CTRL_CNT_R 0
-#define MAC_HV_CTRL_CNT_W 1
-#define MAC_HV_CTRL_CNT_RST 2
-#define MAC_HV_CTRL_CNT_RST_ALL 3
 	u8 band;
 	u8 op;
 	u8 stype;
-#define MAC_HV_CTRL_CNT_NUM 16
 	u8 idx;
 	u16 rval;
 	u16 tval;
@@ -831,11 +868,7 @@ struct hv_ctrl_frame_cnt {
  * Please Place Description here.
  */
 struct hv_rx_cnt {
-#define MAC_HV_RX_CNT_R 0
-#define MAC_HV_RX_CNT_W 1
-#define MAC_HV_RX_CNT_RST 2
 	u8 op;
-#define MAC_HV_RX_CNT_NUM 48
 	u8 idx;
 	u8 band;
 	u8 type;
@@ -845,13 +878,16 @@ struct hv_rx_cnt {
 	u16 rate;
 	u8 gi_ltf;
 	u8 ru;
-#define MAC_HV_RX_CNT_MSK_FC BIT(0)
-#define MAC_HV_RX_CNT_MSK_BSSID BIT(1)
-#define MAC_HV_RX_CNT_MSK_RATE BIT(2)
-#define MAC_HV_RX_CNT_MSK_RU BIT(3)
 	u8 msk;
 };
 
+/**
+ * @struct hv_txpkt_info
+ * @brief hv_txpkt_info
+ * hv_txpkt_info is used for non-normal flow WD fields.
+ * Especially for verification WD fields
+ *
+ */
 struct hv_txpkt_info {
 	u8 null_0;
 	u8 null_1;
@@ -1053,6 +1089,17 @@ struct hv_ax_ops {
 				   struct mac_ax_muedca_timer *timer);
 	u32 (*set_hw_ch_busy_cnt)(struct mac_ax_adapter *adapter,
 				  struct mac_ax_ch_busy_cnt_cfg *cfg);
+	u32 (*run_pwr_seq)(struct mac_ax_adapter *adapter,
+			   enum hv_ax_pwr_seq_sel sel);
+#if MAC_FEAT_COEX
+	u32 (*read_lte)(struct mac_ax_adapter *adapter,
+			const u32 offset, u32 *val);
+#endif /* MAC_FEAT_COEX */
+	u32 (*write_lte)(struct mac_ax_adapter *adapter,
+			 const u32 offset, u32 val);
+	u32 (*c2h_log_test)(struct mac_ax_adapter *adapter, u32 len);
+	u32 (*set_band_mode)(struct mac_ax_adapter *adapter,
+			     struct hv_freq_band_cfg *band_cfg);
 };
 
 #endif

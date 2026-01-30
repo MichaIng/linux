@@ -24,6 +24,10 @@
 #define TX_STATUS_TX_FAIL_LIFETIME_DROP 2
 #define TX_STATUS_TX_FAIL_MACID_DROP 3
 #define TX_STATUS_TX_FAIL_SW_DROP 4
+#define TX_STATUS_TX_FAIL_FORCE_DROP_BY_STUCK 5
+
+#define WP_MAX_CNT 4096
+#define WP_USED_SEQ 0xFFFF
 
 /* for tx */
 struct phl_usb_buf {
@@ -37,6 +41,7 @@ struct phl_usb_buf {
 /* for rx */
 struct rtw_rx_buf {
 	_os_list list;
+	u8 *alloc_buf_addr;
 	u8 *buffer;
 	u32 buf_len;
 	u32 transfer_len;

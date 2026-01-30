@@ -1151,7 +1151,7 @@ static void LinkLayerStats(_adapter *padapter)
 	u32 ps_time, trx_total_time;
 	u64 tx_bytes, rx_bytes, trx_total_bytes = 0;
 	u64 tmp = 0;
-	
+
 	RTW_DBG("%s adapter type : %u\n", __func__, padapter->adapter_type);
 
 	tx_bytes = 0;
@@ -1163,22 +1163,6 @@ static void LinkLayerStats(_adapter *padapter)
 
 		pwrpriv->on_time = rtw_get_passing_time_ms(pwrpriv->radio_on_start_time);
 
-		if (rtw_mi_check_fwstate(padapter, WIFI_ASOC_STATE)) {
-			if ( pwrpriv->bpower_saving == _TRUE ) {
-				pwrpriv->pwr_saving_time += rtw_get_passing_time_ms(pwrpriv->pwr_saving_start_time);
-				pwrpriv->pwr_saving_start_time = rtw_get_current_time();
-			}
-		} else {		
-#ifdef CONFIG_IPS
-			if ( pwrpriv->bpower_saving == _TRUE ) {
-				pwrpriv->pwr_saving_time += rtw_get_passing_time_ms(pwrpriv->pwr_saving_start_time);
-				pwrpriv->pwr_saving_start_time = rtw_get_current_time();
-			}
-#else
-			pwrpriv->pwr_saving_time = pwrpriv->on_time;
-#endif
-		}
-
 		ps_time = pwrpriv->pwr_saving_time;
 
 		/* Deviation caused by caculation start time */
@@ -1186,7 +1170,7 @@ static void LinkLayerStats(_adapter *padapter)
 			ps_time = pwrpriv->on_time;
 
 		tx_bytes = pdvobjpriv->traffic_stat.last_tx_bytes;
-		rx_bytes = pdvobjpriv->traffic_stat.last_rx_bytes;		
+		rx_bytes = pdvobjpriv->traffic_stat.last_rx_bytes;
 		trx_total_bytes = tx_bytes + rx_bytes;
 
 		trx_total_time = pwrpriv->on_time - ps_time;
@@ -1205,24 +1189,24 @@ static void LinkLayerStats(_adapter *padapter)
 
 			tmp = (rx_bytes * trx_total_time);
 			tmp = rtw_division64(tmp, trx_total_bytes);
-			pwrpriv->rx_time = tmp;		
+			pwrpriv->rx_time = tmp;
 
 		}
-	
+
 	}
 	else {
 			pwrpriv->on_time = 0;
 			pwrpriv->tx_time = 0;
-			pwrpriv->rx_time = 0;	
+			pwrpriv->rx_time = 0;
 	}
 
 #ifdef CONFIG_RTW_WIFI_HAL_DEBUG
 	RTW_INFO("- tx_bytes : %llu rx_bytes : %llu total bytes : %llu\n", tx_bytes, rx_bytes, trx_total_bytes);
 	RTW_INFO("- netif_up = %s, on_time : %u ms\n", padapter->netif_up ? "1":"0", pwrpriv->on_time);
 	RTW_INFO("- pwr_saving_time : %u (%u) ms\n", pwrpriv->pwr_saving_time, ps_time);
-	RTW_INFO("- trx_total_time : %u ms\n", trx_total_time);		
+	RTW_INFO("- trx_total_time : %u ms\n", trx_total_time);
 	RTW_INFO("- tx_time : %u ms\n", pwrpriv->tx_time);
-	RTW_INFO("- rx_time : %u ms\n", pwrpriv->rx_time);	
+	RTW_INFO("- rx_time : %u ms\n", pwrpriv->rx_time);
 #endif /* CONFIG_RTW_WIFI_HAL_DEBUG */
 
 }
@@ -1329,7 +1313,7 @@ void rtw_cfgvendor_rssi_monitor_evt(_adapter *padapter) {
 	struct wiphy *wiphy= wdev->wiphy;
         struct recv_info *precvinfo = &padapter->recvinfo;
 	struct	mlme_priv	*pmlmepriv = &(padapter->mlmepriv);
-	struct	wlan_network	*pcur_network = &pmlmepriv->cur_network;
+	struct	wlan_network	*pcur_network = &pmlmepriv->dev_cur_network;
         struct rtw_wdev_priv *pwdev_priv = adapter_wdev_data(padapter);
 	struct sk_buff *skb;
 	u32 tot_len = NLMSG_DEFAULT_SIZE;
@@ -1553,6 +1537,7 @@ static int rtw_cfgvendor_logger_get_rx_pkt_fates(struct wiphy *wiphy,
 }
 
 #endif /* CONFIG_RTW_CFGVENDOR_WIFI_LOGGER */
+
 #ifdef CONFIG_RTW_WIFI_HAL
 #ifdef CONFIG_RTW_CFGVENDOR_RANDOM_MAC_OUI
 
@@ -1585,19 +1570,6 @@ void rtw_hal_pno_random_gen_mac_addr(_adapter *adapter)
 		       DUMP_PREFIX_OFFSET, 16, 1, pwdev_priv->pno_mac_addr,
 		       ETH_ALEN, 1);
 #endif
-}
-
-void rtw_hal_set_hw_mac_addr(_adapter *adapter, u8 *mac_addr)
-{
-	rtw_ps_deny(adapter, PS_DENY_IOCTL);
-	LeaveAllPowerSaveModeDirect(adapter);
-
-	rtw_hal_set_hwreg(adapter, HW_VAR_MAC_ADDR, mac_addr);
-
-#ifdef CONFIG_RTW_DEBUG
-	rtw_hal_dump_macaddr(RTW_DBGDUMP, adapter);
-#endif
-	rtw_ps_deny_cancel(adapter, PS_DENY_IOCTL);
 }
 
 static int rtw_cfgvendor_set_rand_mac_oui(struct wiphy *wiphy,
@@ -1729,7 +1701,7 @@ static int rtw_cfgvendor_set_country(struct wiphy *wiphy,
 
 	RTW_INFO("%s country_code:\"%c%c\" \n", __func__, country_code[0], country_code[1]);
 
-	rtw_set_country(padapter, country_code, RTW_REGD_SET_BY_USER);
+	rtw_set_country(padapter, country_code, RTW_ENV_NUM, RTW_REGD_SET_BY_USER);
 
 	return err;
 }
@@ -1757,6 +1729,275 @@ static int rtw_cfgvendor_set_nd_offload(struct wiphy *wiphy,
 	return err;
 }
 #endif /* CONFIG_RTW_WIFI_HAL */
+
+#ifdef CONFIG_NAN
+static int rtw_cfgvendor_set_nan_srvc_extinfo(struct wiphy *wiphy,
+					      struct wireless_dev *wdev,
+					      const void *data, int len)
+{
+	struct phl_info_t *phl_info = GET_PHL_INFO(wiphy_to_dvobj(wiphy));
+	struct rtw_phl_nan_srvc_ext_info psrvc_ext_info = {0};
+	int err = 0;
+
+	RTW_INFO("%s\n", __func__);
+
+	if (len != sizeof(struct rtw_phl_nan_srvc_ext_info)) {
+		RTW_ERR("%s: Input data length not match!\n", __func__);
+		err = -EINVAL;
+		return err;
+	}
+
+	_rtw_memset(&psrvc_ext_info, 0, sizeof(struct rtw_phl_nan_srvc_ext_info));
+	_rtw_memcpy(&psrvc_ext_info, data, len);
+
+	psrvc_ext_info.updating = _TRUE;
+
+	if (!rtw_phl_nan_set_srvc_ext_info((void *)phl_info, &psrvc_ext_info)) {
+		RTW_INFO("%s set service ext info fail! \n", __func__);
+		err = _FALSE;
+	}
+
+#ifdef CONFIG_NAN_DEBUG
+	RTW_INFO("period %d\n", psrvc_ext_info.period);
+	RTW_INFO("awake_dw_int %d\n", psrvc_ext_info.awake_dw_int);
+	RTW_INFO("proximity %d\n", psrvc_ext_info.proximity_flag);
+	RTW_INFO("data_path %d\n", psrvc_ext_info.data_path_flag);
+	RTW_INFO("data_path_type %d\n", psrvc_ext_info.data_path_type);
+	RTW_INFO("qos %d\n", psrvc_ext_info.qos);
+	RTW_INFO("sec %d\n", psrvc_ext_info.sec);
+	RTW_INFO("event_condition %d\n", psrvc_ext_info.event_condition);
+	RTW_INFO("further_srvc_disc %d\n", psrvc_ext_info.further_srvc_disc);
+	RTW_INFO("further_srvc_disc_func %d\n", psrvc_ext_info.further_srvc_disc_func);
+	RTW_INFO("service_id "MAC_FMT"\n", MAC_ARG(psrvc_ext_info.service_id));
+#endif
+
+	return err;
+}
+
+#ifdef CONFIG_NAN_R2
+static int rtw_cfgvendor_set_nan_data_request(struct wiphy *wiphy,
+					      struct wireless_dev *wdev,
+					      const void *data, int len)
+{
+	struct dvobj_priv *dvobj = wiphy_to_dvobj(wiphy);
+	struct phl_info_t *phl_info = GET_PHL_INFO(dvobj);
+	struct registry_priv *registry_par = dvobj_to_regsty(dvobj);
+	struct rtw_phl_nan_data_req_info pdata_req;
+	bool force_qos = _FALSE;
+	int err = 0;
+
+	RTW_INFO("%s\n", __func__);
+
+	if (len != sizeof(struct rtw_phl_nan_data_req_info)) {
+		RTW_ERR("%s: Input data length not match!\n", __func__);
+		err = -EINVAL;
+		return err;
+	}
+
+	_rtw_memset(&pdata_req, 0, sizeof(struct rtw_phl_nan_data_req_info));
+	_rtw_memcpy(&pdata_req, data, len);
+
+	if (registry_par->wifi_spec)
+		force_qos = _TRUE;
+
+	if (!rtw_phl_nan_set_data_request((void *)phl_info, &pdata_req, force_qos)) {
+		RTW_ERR("%s: set data request fail!\n", __func__);
+		err = -EINVAL;
+	}
+
+#ifdef CONFIG_NAN_DEBUG
+	RTW_INFO("WTS CAPI parameters\n");
+	RTW_INFO("req_type = %d\n", pdata_req.req_type);
+	RTW_INFO("rsp nan mac = "MAC_FMT"\n", MAC_ARG(pdata_req.rsp_nan_mac));
+	RTW_INFO("sec = %d\n", pdata_req.sec);
+	/* RTW_INFO("ndp_id = %d\n", ndp_setup_info.ndp_id); */
+	RTW_INFO("Spec parameters\n");
+	RTW_INFO("type = %d\n", pdata_req.type);
+	RTW_INFO("publish_id = %d\n", pdata_req .publish_id);
+	RTW_INFO("mcast mac = "MAC_FMT"\n", MAC_ARG(pdata_req.mcast_addr));
+	RTW_INFO("max_latency = %d\n", pdata_req.qos_req.max_latency);
+	RTW_INFO("min_duration = %d\n", pdata_req.qos_req.min_duration);
+#endif
+
+	return err;
+}
+
+
+static int rtw_cfgvendor_set_nan_data_response(struct wiphy *wiphy,
+					       struct wireless_dev *wdev,
+					       const void *data, int len)
+{
+	struct dvobj_priv *dvobj = wiphy_to_dvobj(wiphy);
+	struct phl_info_t *phl_info = GET_PHL_INFO(dvobj);
+	struct registry_priv *registry_par = dvobj_to_regsty(dvobj);
+	struct rtw_phl_nan_data_rsp_info pdata_rsp;
+	bool force_qos = _FALSE;
+	int err = 0;
+#ifdef CONFIG_NAN_DEBUG
+	int i = 0;
+#endif
+
+	RTW_INFO("%s\n", __func__);
+
+	if (len != sizeof(struct rtw_phl_nan_data_rsp_info)) {
+		RTW_ERR("%s: Input data length not match!\n", __func__);
+		err = -EINVAL;
+		return err;
+	}
+
+	_rtw_memset(&pdata_rsp, 0, sizeof(struct rtw_phl_nan_data_rsp_info));
+	_rtw_memcpy(&pdata_rsp , data, len);
+
+	if (registry_par->wifi_spec)
+		force_qos = _TRUE;
+
+	if (!rtw_phl_nan_set_data_response((void *)phl_info, &pdata_rsp, force_qos)) {
+		RTW_ERR("%s: set data response fail!\n", __func__);
+		err = -EINVAL;
+	}
+
+#ifdef CONFIG_NAN_DEBUG
+	RTW_INFO("WTS CAPI parameters\n");
+	RTW_INFO("rsp_mode = %d\n", pdata_rsp.rsp_mode);
+	RTW_INFO("ndl_rsp = %d\n", pdata_rsp.ndl_rsp);
+	RTW_INFO("data_path_id = %d\n", pdata_rsp.data_path_id);
+	RTW_INFO("publish_id = %d\n", pdata_rsp.publish_id);
+	RTW_INFO("m4_rsp_type =  %d\n", pdata_rsp.m4_rsp_type);
+	RTW_INFO("Spec parameters\n");
+	RTW_INFO("type = %d\n", pdata_rsp.type);
+	RTW_INFO("mc_id = %d\n", pdata_rsp.mc_id);
+	RTW_INFO("initiator data mac = "MAC_FMT"\n", MAC_ARG(pdata_rsp.initiator_data_address));
+	RTW_INFO("mcast mac = "MAC_FMT"\n", MAC_ARG(pdata_rsp.mcast_addr));
+	RTW_INFO("max_latency = %d\n", pdata_rsp.qos_req.max_latency);
+	RTW_INFO("min_duration = %d\n", pdata_rsp.qos_req.min_duration);
+	RTW_INFO("ndp_auto_rsp_info.info.len = %d\n", (pdata_rsp.srvc_info_len));
+	for (i = 0; i < (pdata_rsp->srvc_info_len); i++)
+		RTW_INFO("input info [%d] = 0x%x\n", i, (pdata_rsp.srvc_info[i]));
+#endif
+
+exit:
+	return err;
+}
+
+
+static int rtw_cfgvendor_set_nan_data_end(struct wiphy *wiphy,
+					  struct wireless_dev *wdev,
+					  const void *data, int len)
+{
+	struct phl_info_t *phl_info = GET_PHL_INFO(wiphy_to_dvobj(wiphy));
+	struct rtw_phl_nan_data_end_info pdata_end = {0};
+	int err = 0;
+
+	RTW_INFO("%s\n", __func__);
+
+	if (len != sizeof(struct rtw_phl_nan_data_end_info)) {
+		RTW_ERR("%s: Input data length not match!\n", __func__);
+		err = -EINVAL;
+		return err;
+	}
+
+	_rtw_memcpy(&pdata_end , data, len);
+	if (false == rtw_phl_nan_set_data_end((void *)phl_info, &pdata_end)) {
+		RTW_ERR("%s: set data end fail!\n", __func__);
+		err = -EINVAL;
+	}
+
+#ifdef CONFIG_NAN_DEBUG
+	RTW_INFO("WTS CAPI parameters\n");
+	RTW_INFO("ndp_id = %d\n", pdata_end.ndp_id);
+	RTW_INFO("initiator ndi = "MAC_FMT"\n", MAC_ARG(pdata_end.initiatorndi));
+	RTW_INFO("Spec parameters\n");
+	RTW_INFO("type = %d\n", pdata_end.type);
+	RTW_INFO("status = %d\n", pdata_end.status);
+	RTW_INFO("mc_id = %d\n", pdata_end.mc_id);
+	RTW_INFO("nmsg_id = %d\n", pdata_end.nmsg_id);
+#endif
+
+	return err;
+
+}
+
+void rtw_cfgvendor_nan_data_indic_evt(
+				_adapter *padapter,
+				 struct rtw_phl_nan_rpt_data_indication *event)
+{
+	struct wiphy *wiphy = adapter_to_wiphy(padapter);
+	struct rtw_wiphy_data *wiphy_data = rtw_wiphy_priv(wiphy);
+	struct wireless_dev *wdev = wiphy_data->nan_wdev;
+	struct sk_buff *skb;
+	u32 tot_len = NLMSG_DEFAULT_SIZE;
+	gfp_t kflags;
+
+	kflags = in_atomic() ? GFP_ATOMIC : GFP_KERNEL;
+
+	/* Alloc the SKB for vendor_event */
+	skb = rtw_cfg80211_vendor_event_alloc(wiphy,wdev,tot_len,
+					      NAN_EVENT_DATA_INDICATION,
+					      kflags);
+	if (!skb)
+		goto exit;
+
+	nla_append(skb, sizeof(struct rtw_phl_nan_rpt_data_indication), event);
+
+	rtw_cfg80211_vendor_event(skb, kflags);
+exit:
+	return;
+}
+
+void rtw_cfgvendor_nan_data_confirm_evt(
+				_adapter *padapter,
+				struct rtw_phl_nan_rpt_data_confirm *event)
+{
+	struct wiphy *wiphy = adapter_to_wiphy(padapter);
+	struct rtw_wiphy_data *wiphy_data = rtw_wiphy_priv(wiphy);
+	struct wireless_dev *wdev = wiphy_data->nan_wdev;
+	struct sk_buff *skb;
+	u32 tot_len = NLMSG_DEFAULT_SIZE;
+	gfp_t kflags;
+
+	kflags = in_atomic() ? GFP_ATOMIC : GFP_KERNEL;
+
+	/* Alloc the SKB for vendor_event */
+	skb = rtw_cfg80211_vendor_event_alloc(wiphy, wdev, tot_len,
+					      NAN_EVENT_DATA_COMFIRM, kflags);
+	if (!skb)
+		goto exit;
+
+	nla_append(skb, sizeof(struct rtw_phl_nan_rpt_data_confirm), event);
+
+	rtw_cfg80211_vendor_event(skb, kflags);
+exit:
+	return;
+}
+
+void rtw_cfgvendor_nan_data_term_evt(
+				_adapter *padapter,
+				struct rtw_phl_nan_rpt_data_termination *event)
+{
+	struct wiphy *wiphy = adapter_to_wiphy(padapter);
+	struct rtw_wiphy_data *wiphy_data = rtw_wiphy_priv(wiphy);
+	struct wireless_dev *wdev = wiphy_data->nan_wdev;
+	struct sk_buff *skb;
+	u32 tot_len = NLMSG_DEFAULT_SIZE;
+	gfp_t kflags;
+
+	kflags = in_atomic() ? GFP_ATOMIC : GFP_KERNEL;
+
+	/* Alloc the SKB for vendor_event */
+	skb = rtw_cfg80211_vendor_event_alloc(wiphy, wdev, tot_len,
+					      NAN_EVENT_DATA_TERMINATION,
+					      kflags);
+	if (!skb)
+		goto exit;
+
+	nla_append(skb, sizeof(struct rtw_phl_nan_rpt_data_termination), event);
+
+	rtw_cfg80211_vendor_event(skb, kflags);
+exit:
+	return;
+}
+#endif /* CONFIG_NAN_R2 */
+#endif /* CONFIG_NAN */
 
 static const struct wiphy_vendor_command rtw_vendor_cmds[] = {
 #if defined(GSCAN_SUPPORT) && 0
@@ -2116,6 +2357,67 @@ static const struct wiphy_vendor_command rtw_vendor_cmds[] = {
 		#endif
 	},
 #endif /* CONFIG_RTW_WIFI_HAL */
+#ifdef CONFIG_NAN
+	{
+		{
+			.vendor_id = OUI_REALTEK,
+			.subcmd = NAN_SUBCMD_SRVC_EXT_INFO
+		},
+		.flags = WIPHY_VENDOR_CMD_NEED_WDEV | WIPHY_VENDOR_CMD_NEED_NETDEV,
+#if(LINUX_VERSION_CODE >= KERNEL_VERSION(5,3,0))
+		.policy = VENDOR_CMD_RAW_DATA,
+#endif
+		.doit = rtw_cfgvendor_set_nan_srvc_extinfo
+	},
+#ifdef CONFIG_NAN_R2
+	{
+		{
+			.vendor_id = OUI_REALTEK,
+			.subcmd = NAN_SUBCMD_DATA_REQ
+		},
+		.flags = WIPHY_VENDOR_CMD_NEED_WDEV | WIPHY_VENDOR_CMD_NEED_NETDEV,
+#if(LINUX_VERSION_CODE >= KERNEL_VERSION(5,3,0))
+		.policy = VENDOR_CMD_RAW_DATA,
+#endif
+		.doit = rtw_cfgvendor_set_nan_data_request
+	},
+	{
+		{
+			.vendor_id = OUI_REALTEK,
+			.subcmd = NAN_SUBCMD_DATA_RSP
+		},
+		.flags = WIPHY_VENDOR_CMD_NEED_WDEV | WIPHY_VENDOR_CMD_NEED_NETDEV,
+#if(LINUX_VERSION_CODE >= KERNEL_VERSION(5,3,0))
+		.policy = VENDOR_CMD_RAW_DATA,
+#endif
+		.doit = rtw_cfgvendor_set_nan_data_response
+	},
+	{
+		{
+			.vendor_id = OUI_REALTEK,
+			.subcmd = NAN_SUBCMD_DATA_END
+		},
+		.flags = WIPHY_VENDOR_CMD_NEED_WDEV | WIPHY_VENDOR_CMD_NEED_NETDEV,
+#if(LINUX_VERSION_CODE >= KERNEL_VERSION(5,3,0))
+		.policy = VENDOR_CMD_RAW_DATA,
+#endif
+		.doit = rtw_cfgvendor_set_nan_data_end
+	},
+#ifdef CONFIG_NAN_CFGVENDOR
+	{
+		{
+			.vendor_id = OUI_REALTEK,
+			.subcmd = NAN_SUBCMD_CFGVENDOR
+		},
+		.flags = WIPHY_VENDOR_CMD_NEED_WDEV | WIPHY_VENDOR_CMD_NEED_NETDEV,
+#if(LINUX_VERSION_CODE >= KERNEL_VERSION(5,3,0))
+		.policy = VENDOR_CMD_RAW_DATA,
+#endif
+		.doit = rtw_cfgvendor_nandow_entry
+	},
+#endif /* CONFIG_NAN_CFGVENDOR */
+#endif /* CONFIG_NAN_R2 */
+#endif /* CONFIG_NAN */
 	{
 		{
 			.vendor_id = OUI_GOOGLE,
@@ -2141,6 +2443,14 @@ static const struct wiphy_vendor_command rtw_vendor_cmds[] = {
 };
 
 static const struct  nl80211_vendor_cmd_info rtw_vendor_events[] = {
+#ifdef CONFIG_NAN_R2
+	{ OUI_REALTEK, NAN_EVENT_DATA_COMFIRM},
+	{ OUI_REALTEK, NAN_EVENT_DATA_TERMINATION},
+	{ OUI_REALTEK, NAN_EVENT_DATA_INDICATION},
+	{ OUI_REALTEK, NAN_EVENT_PASN_START},
+	{ OUI_REALTEK, NAN_EVENT_PASN_RX},
+	{ OUI_REALTEK, NAN_EVENT_PASN_UPD_PMKID},
+#endif
 #if defined(GSCAN_SUPPORT) && 0
 	{ OUI_GOOGLE, GSCAN_EVENT_SIGNIFICANT_CHANGE_RESULTS },
 	{ OUI_GOOGLE, GSCAN_EVENT_HOTLIST_RESULTS_FOUND },

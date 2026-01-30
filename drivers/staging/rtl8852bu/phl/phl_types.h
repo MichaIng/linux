@@ -59,25 +59,36 @@ enum lock_type {
 
 	#define BUG_ON
 
-	#define PCI_DMA_TODEVICE 0
-	#define PCI_DMA_FROMDEVICE 1
+	#define DMA_TO_DEVICE 0
+	#define DMA_FROM_DEVICE 1
 #endif /*#ifndef PHL_PLATFORM_LINUX*/
 
 
 #ifdef PHL_PLATFORM_WINDOWS
 
 	#define MAC_ALEN 6
-	#define _dma unsigned int
 	#define _os_timer RT_TIMER
 	#define _os_lock RT_SPIN_LOCK
 	#define _os_mutex PlatformMutex
 	#define _os_sema PlatformSemaphore
 	#define _os_event PlatformEvent
 	#define _os_list struct list_head
+	#define _os_raw_time u32
 
 	#define _os_atomic volatile long
+#ifdef _KERNEL_MODE
 	#define _os_dbgdump DbgPrint
-	#define _os_dbgdump_c DbgPrint
+#else
+	char phl_msgbuf[MAX_MSG_LEN];
+	#define _os_dbgdump(fmt, ...) do {\
+		snprintf(phl_msgbuf, MAX_MSG_LEN, fmt, ##__VA_ARGS__);\
+		OutputDebugStringA(phl_msgbuf);\
+	}while(0);
+#endif /* _KERNEL_MODE */
+
+	#define _os_dbgdump_c _os_dbgdump
+	#define _os_dbgdump_lmt DbgPrint
+	#define _os_dbgdump_c_lmt DbgPrint
 	#define _os_assert ASSERT
 	#define _os_warn_on
 
@@ -86,6 +97,7 @@ enum lock_type {
 	#define _os_thread RT_THREAD
 	#define _os_spinlockfg unsigned int
 	#define _os_workitem RT_WORK_ITEM
+	#define _os_va_list va_list
 
 	#define _os_path_sep "\\"
 	#define HAL_FILE_CONFIG_PATH ""
@@ -94,30 +106,58 @@ enum lock_type {
 
 #elif defined(PHL_PLATFORM_LINUX)
 	typedef struct rtw_timer_list _os_timer;
+
+	/* taskletw is wrapper for callback function prototype is void (*func)(void *) */
+	typedef struct rtw_taskletw _taskletw;
+	struct rtw_taskletw {
+		struct tasklet_struct tasklet;
+		void (*func)(void *);
+		void *data;
+	};
+
+	/* workitemw is wrapper for callback function prototype is void (*func)(void *) */
+	typedef struct rtw_workitemw _workitemw;
+	struct rtw_workitemw {
+		_workitem work;
+		void (*func)(void *);
+	};
+
 	#define _os_lock _lock
 	#define _os_mutex _mutex
 	#define _os_sema _sema
 	#define _os_event struct completion
 	#define _os_list _list
+	#define _os_raw_time sysptime
 	#define _os_atomic ATOMIC_T
 	#define MAC_ALEN ETH_ALEN
 	#define _os_dbgdump _dbgdump
+	#ifdef _dbgdump_lmt
+		#define _os_dbgdump_lmt _dbgdump_lmt
+	#else
+		#define _os_dbgdump_lmt _dbgdump
+	#endif
 	#ifdef _dbgdump_c
 		#define _os_dbgdump_c _dbgdump_c
+		#ifdef _dbgdump_c_lmt
+			#define _os_dbgdump_c_lmt _dbgdump_c_lmt
+		#else
+			#define _os_dbgdump_c_lmt _dbgdump_c
+		#endif
 	#else
 		#if (LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 24))
 			#define KERN_CONT
 		#endif
 		#define _os_dbgdump_c(fmt, arg...)	_dbgdump(KERN_CONT fmt, ##arg)
+		#define _os_dbgdump_c_lmt(fmt, arg...)	_dbgdump(KERN_CONT fmt, ##arg)
 	#endif
 	#define _os_assert(_expr) 0/*rtw_bug_on(_expr)*/
 	#define _os_warn_on(_cond) rtw_warn_on(_cond)
-	#define _dma dma_addr_t
 
-	#define _os_tasklet _tasklet
+	#define _os_tasklet _taskletw
 	#define _os_thread struct thread_hdl
-	#define _os_workitem _workitem
+	#define _os_workitem _workitemw
 	#define _os_spinlockfg unsigned long
+	#define _os_va_list va_list
 
 	#define	_os_path_sep "/"
 
@@ -135,6 +175,40 @@ enum lock_type {
 	#else
 	#define PLATFOM_IS_LITTLE_ENDIAN 0
 	#endif
+
+#elif defined(PHL_PLATFORM_UEFI)
+
+	#define MAC_ALEN 6
+	#define _dma unsigned int
+	#define _os_timer RT_TIMER
+	#define _os_lock RT_SPIN_LOCK
+	#define _os_mutex PlatformMutex
+	#define _os_sema PlatformSemaphore
+	#define _os_event PlatformEvent
+	#define _os_list struct list_head
+	#define _os_raw_time u32
+
+	#define _os_atomic volatile long
+
+	#define _os_dbgdump DbgPrint
+	#define _os_dbgdump_c DbgPrint
+	#define _os_dbgdump_lmt DbgPrint
+
+	#define KERN_CONT
+	#define _os_assert
+	#define _os_warn_on
+
+		/*#define _os_completion unsigned long*/
+	#define _os_tasklet struct uefi_tasklet
+	#define _os_thread RT_THREAD
+	#define _os_spinlockfg unsigned int
+	#define _os_workitem RT_WORK_ITEM
+	#define _os_va_list unsigned int
+
+	#define _os_path_sep "\\"
+	#define HAL_FILE_CONFIG_PATH ""
+	#define FW_FILE_CONFIG_PATH ""
+	#define PLATFOM_IS_LITTLE_ENDIAN 1
 
 #else
 
@@ -168,7 +242,6 @@ enum lock_type {
 	#endif
 
 	/* keep define name then delete if osdep ready */
-	#define _dma unsigned long
 
 	#define _os_timer unsigned long
 	#define _os_lock unsigned long
@@ -179,13 +252,17 @@ enum lock_type {
 	#define _os_atomic int
 	#define _os_dbgdump(_fmt, ...)
 	#define _os_dbgdump_c(_fmt, ...)
+	#define _os_dbgdump_lmt(...)
+	#define _os_dbgdump_c_lmt(...)
 	#define _os_assert(_expr)
 	#define _os_warn_on(_cond)
 	#define _os_spinlockfg unsigned int
+	#define _os_raw_time u32
 
 	#define _os_tasklet unsigned long
 	#define _os_thread unsigned long
 	#define _os_workitem unsigned long
+	#define _os_va_list unsigned long
 
 	#define	_os_path_sep "/"
 	#define HAL_FILE_CONFIG_PATH	""

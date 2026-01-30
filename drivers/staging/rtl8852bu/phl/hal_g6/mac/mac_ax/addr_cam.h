@@ -29,6 +29,16 @@
 #define DEFAULT_HIT_MACID 0x0
 
 #define ADDR_CAM_SERCH_RANGE  0x7f
+
+#define MAC_AX_MAX_MC_ENTRY 32
+#define MAC_AX_NO_HIT_IDX 0xFF
+
+#define CCTRL_INFO_ADDR_CAM_IDX_SH 0
+#define CCTRL_INFO_ADDR_CAM_IDX_MSK 0xFF
+
+#define MAC_AX_ACK_CMAC1_SH 1
+#define MAC_AX_ACK_CMAC0_SH 0
+
 /**
  * @addtogroup Basic_TRX
  * @{
@@ -284,34 +294,6 @@ u32 set_mac_resp_ack(struct mac_ax_adapter *adapter, u32 *ack);
  */
 
 /**
- * @brief get_mac_resp_ack
- *
- * The function could get MAC resp ACK ability
- *
- * @param *adapter
- * @param ack
- * @return 0 for success. Others are fail.
- * @retval u32
- */
-
-u32 get_mac_resp_ack(struct mac_ax_adapter *adapter, u32 *ack);
-/**
- * @}
- * @}
- */
-
-/**
- * @}
- * @}
- */
-/**
- * @addtogroup Basic_TRX
- * @{
- * @addtogroup ADDRCAM
- * @{
- */
-
-/**
  * @brief get_addr_cam_size
  *
  * Get the entry size of address CAM
@@ -341,4 +323,5 @@ u32 mac_pre_proc_mc_info(struct mac_ax_multicast_info *info);
 
 u32 mac_cfg_multicast(struct mac_ax_adapter *adapter, u8 add,
 		      struct mac_ax_multicast_info *info);
+
 #endif

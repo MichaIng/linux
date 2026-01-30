@@ -43,10 +43,6 @@ struct pci_priv {
 	u8	pcibridge_linkctrlreg;
 
 	u8	amd_l1_patch;
-
-#ifdef CONFIG_PCI_DYNAMIC_ASPM
-	u8	aspm_mode;
-#endif
 };
 
 typedef struct _RT_ISR_CONTENT {
@@ -90,6 +86,10 @@ typedef struct pci_data {
 	_lock	irq_th_lock;
 
 	u8	bdma64;
+
+#ifndef CONFIG_RTW_PCI_MSI_DISABLE
+	u32 msi_en;
+#endif
 #endif/* PLATFORM_LINUX */
 } PCI_DATA, *PPCI_DATA;
 

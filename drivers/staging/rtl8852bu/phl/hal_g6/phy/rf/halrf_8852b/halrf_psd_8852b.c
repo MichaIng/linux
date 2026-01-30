@@ -15,6 +15,7 @@
 #include "../halrf_precomp.h"
 
 #ifdef RF_8852B_SUPPORT
+#ifdef HALRF_PSD_SUPPORT
 
 void _halrf_psd_backup_bb_registers_8852b(
 	struct rf_info *rf,
@@ -68,7 +69,7 @@ void halrf_psd_init_8852b(struct rf_info *rf, enum phl_phy_idx phy,
 
 	RF_DBG(rf, DBG_RF_PSD, "======> %s   phy=%d\n", __func__, phy);
 
-	psd_info->psd_progress = 1;
+	rf->psd_progress = 1;
 
 	_halrf_psd_backup_bb_registers_8852b(rf, phy, bb_reg,
 			psd_info->psd_reg_backup, PSD_BACKUP_NUM_8852B);
@@ -185,7 +186,7 @@ void halrf_psd_restore_8852b(struct rf_info *rf, enum phl_phy_idx phy)
 	halrf_wrf(rf, RF_PATH_A, 0x5, 0x00001, 0x1);
 	halrf_wrf(rf, RF_PATH_B, 0x5, 0x00001, 0x1);
 
-	psd_info->psd_progress = 0;
+	rf->psd_progress = 0;
 
 #if 0
 	/*98_IQK_Reg_Non_DBCC_PHY0_path01_Restore*/
@@ -343,4 +344,5 @@ void halrf_psd_query_8852b(struct rf_info *rf, enum phl_phy_idx phy,
 #endif
 }
 
+#endif	/*HALRF_PSD_SUPPORT*/
 #endif	/*RF_8852B_SUPPORT*/

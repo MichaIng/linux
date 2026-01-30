@@ -28,6 +28,7 @@
 #include "halbb_ic_hw_info.h"
 
 /*@--------------------------[Define] ---------------------------------------*/
+#define HALBB_PAUSE_MAX_LENGTH 5
 
 /*@--------------------------[Enum]------------------------------------------*/
 
@@ -67,7 +68,7 @@ enum habb_fun_t {
 	F_ANT_DIV		= 10,
 	F_DIG			= 11,
 	F_PATH_DIV		= 12,
-	F_UL_TB_CTRL		= 13,
+	F_UL_TB_CTRL	= 13,
 	F_DCR			= 31,
 	F_DEFAULT		= 0xff
 };
@@ -76,6 +77,15 @@ enum bb_watchdog_mode_t {
 	BB_WATCHDOG_NORMAL = 0,
 	BB_WATCHDOG_LOW_IO = 1,
 	BB_WATCHDOG_NON_IO = 2,
+};
+
+enum halbb_diag_event_level {
+	HALBB_DIAG_EVT_LVL_FATAL = 0,
+	HALBB_DIAG_EVT_LVL_CRITICAL = 1,
+	HALBB_DIAG_EVT_LVL_ERROR = 2,
+	HALBB_DIAG_EVT_LVL_WARNING = 3,
+	HALBB_DIAG_EVT_LVL_INFO = 4,
+	HALBB_DIAG_EVT_LVL_DBG = 5
 };
 
 struct halbb_func_info {
@@ -115,7 +125,7 @@ enum habb_supportability_t {
 	BB_ANT_DIV		= BIT(F_ANT_DIV),
 	BB_DIG			= BIT(F_DIG),
 	BB_PATH_DIV		= BIT(F_PATH_DIV),
-	BB_UL_TB_CTRL		= BIT(F_UL_TB_CTRL),
+	BB_UL_TB_CTRL	= BIT(F_UL_TB_CTRL),
 	BB_DCR			= BIT(F_DCR)
 };
 
@@ -137,15 +147,14 @@ enum halbb_dbg_comp_t {
 	DBG_PATH_DIV		= BIT(F_PATH_DIV),
 	DBG_UL_TB_CTRL		= BIT(F_UL_TB_CTRL),
 	/*=== [Non-DM Part] ======================*/
-	DBG_BIT13		= BIT(13),
 	DBG_BIT14		= BIT(14),
-	DBG_BIT15		= BIT(15),
-	DBG_BIT16		= BIT(16),
+	DBG_FW_DBG		= BIT(15),
+	DBG_PHY_CONFIG_BE		= BIT(16),
 	DBG_BIT17		= BIT(17),
-	DBG_BIT18		= BIT(18),
-	DBG_BIT19		= BIT(19),
+	DBG_SNIFFER		= BIT(18),
+	DBG_CH_INFO		= BIT(19),
 	DBG_PHY_STS		= BIT(20),
-	DBG_BIT21		= BIT(21),
+	DBG_CONNECT		= BIT(21),
 	DBG_FW_INFO		= BIT(22),
 	DBG_COMMON_FLOW		= BIT(23),
 	DBG_IC_API		= BIT(24),
@@ -186,13 +195,15 @@ bool halbb_sta_info_delete_entry(struct bb_info *bb,
 void halbb_media_status_update(struct bb_info *bb,
 			       struct rtw_phl_stainfo_t *phl_sta_info,
 			       bool is_connected);
+void halbb_watchdog_io_saving_en(struct bb_info *bb_0, bool en, enum phl_phy_idx phy_idx);
 void halbb_watchdog_reset(struct bb_info *bb);
 void halbb_watchdog(struct bb_info *bb, enum bb_watchdog_mode_t mode,
 		    enum phl_phy_idx phy_idx);
+u8 halbb_wifi_event_notify(struct bb_info *bb, enum phl_msg_evt_id event, enum phl_phy_idx phy_idx);
 void halbb_bb_cmd_notify(struct bb_info *bb, void *bb_cmd, enum phl_phy_idx phy_idx);
 u8 halbb_pause_func(struct bb_info *bb, enum habb_fun_t pause_func,
 		    enum halbb_pause_type pause_type,
 		    enum halbb_pause_lv_type lv,
 		    u8 val_lehgth,
-		    u32 *val_buf);
+		    u32 *val_buf, enum phl_phy_idx phy_idx);
 #endif

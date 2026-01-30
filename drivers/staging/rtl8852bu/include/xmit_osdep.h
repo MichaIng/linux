@@ -24,11 +24,14 @@ struct pkt_file {
 	u8 *cur_addr;
 	SIZE_T buf_len;
 };
-
 #ifndef NR_XMITFRAME
 #define NR_XMITFRAME		1256
-#endif /* NR_XMITFRAME */
+#endif /*NR_XMITFRAME*/
+
+#ifndef NR_XMITFRAME_EXT
 #define NR_XMITFRAME_EXT	32
+#endif /*NR_XMITFRAME_EXT*/
+
 #define SZ_XMITFRAME_EXT	1536	/*MGNT frame*/
 
 #ifdef CONFIG_PCI_HCI
@@ -55,7 +58,9 @@ extern void rtw_xmit_entry_wrap(_nic_hdl pifp);
 #endif /* PLATFORM_FREEBSD */
 
 #ifdef PLATFORM_LINUX
+#if 0
 extern int _rtw_xmit_entry(struct sk_buff *pkt, _nic_hdl pnetdev);
+#endif
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 32))
 extern netdev_tx_t rtw_xmit_entry(struct sk_buff *pkt, _nic_hdl pnetdev);
@@ -77,7 +82,9 @@ void rtw_os_xmit_resource_free(_adapter *padapter, struct xmit_buf *pxmitbuf, u3
 u8 rtw_os_xmit_resource_alloc(_adapter *padapter, struct xmit_frame *pxframe);
 void rtw_os_xmit_resource_free(_adapter *padapter, struct xmit_frame *pxframe);
 #endif
-extern void rtw_set_tx_chksum_offload(struct sk_buff *pkt, struct pkt_attrib *pattrib);
+#ifdef CONFIG_TCP_CSUM_OFFLOAD_TX
+void rtw_set_tx_chksum_offload(struct sk_buff *pkt, struct pkt_attrib *pattrib);
+#endif
 
 extern uint rtw_remainder_len(struct pkt_file *pfile);
 extern void _rtw_open_pktfile(struct sk_buff *pkt, struct pkt_file *pfile);

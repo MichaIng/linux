@@ -184,7 +184,7 @@ static u32 wmm_vld_chk(struct mac_ax_adapter *adapter, u8 *vld, u8 wmm)
 {
 	u8 wmm_num;
 
-	switch (adapter->hw_info->chip_id) {
+	switch (adapter->drv_info->sw_chip_id) {
 	case MAC_AX_CHIP_ID_8852A:
 		wmm_num = STA_SCH_WMM_NUM_8852A;
 		break;
@@ -196,6 +196,15 @@ static u32 wmm_vld_chk(struct mac_ax_adapter *adapter, u8 *vld, u8 wmm)
 		break;
 	case MAC_AX_CHIP_ID_8192XB:
 		wmm_num = STA_SCH_WMM_NUM_8192XB;
+		break;
+	case MAC_AX_CHIP_ID_8851B:
+		wmm_num = STA_SCH_WMM_NUM_8851B;
+		break;
+	case MAC_AX_CHIP_ID_8852D:
+		wmm_num = STA_SCH_WMM_NUM_8852D;
+		break;
+	case MAC_AX_CHIP_ID_8852BT:
+		wmm_num = STA_SCH_WMM_NUM_8852BT;
 		break;
 	default:
 		return MACCHIPID;
@@ -213,7 +222,7 @@ static u32 ul_vld_chk(struct mac_ax_adapter *adapter, u8 *vld)
 {
 	u8 ul_support;
 
-	switch (adapter->hw_info->chip_id) {
+	switch (adapter->drv_info->sw_chip_id) {
 	case MAC_AX_CHIP_ID_8852A:
 		ul_support = STA_SCH_UL_SUPPORT_8852A;
 		break;
@@ -225,6 +234,15 @@ static u32 ul_vld_chk(struct mac_ax_adapter *adapter, u8 *vld)
 		break;
 	case MAC_AX_CHIP_ID_8192XB:
 		ul_support = STA_SCH_UL_SUPPORT_8192XB;
+		break;
+	case MAC_AX_CHIP_ID_8851B:
+		ul_support = STA_SCH_UL_SUPPORT_8851B;
+		break;
+	case MAC_AX_CHIP_ID_8852D:
+		ul_support = STA_SCH_UL_SUPPORT_8852D;
+		break;
+	case MAC_AX_CHIP_ID_8852BT:
+		ul_support = STA_SCH_UL_SUPPORT_8852BT;
 		break;
 	default:
 		return MACCHIPID;
@@ -245,8 +263,7 @@ static u32 get_sta_link(struct mac_ax_adapter *adapter,
 	u8 macid, wmm, ac;
 	u32 ret;
 	u32 cmd;
-	u16 macid_num = adapter->hw_info->macid_num;
-	u16 id_empty = (macid_num << 1) - 1;
+	u16 id_empty = STA_SCH_LEFT_SHIFT_ONE_SET_MSB(adapter->hw_info->macid_num);
 
 	if (link->ul) {
 		wmm = 0;
@@ -316,15 +333,14 @@ u32 sta_link_cfg(struct mac_ax_adapter *adapter,
 		if (ret != MACSUCCESS)
 			return ret;
 		if (vld == 0)
-			return MACSUCCESS;
+			return MACCHIPID;
 	}
 
 	ret = wmm_vld_chk(adapter, &vld, link->wmm);
 	if (ret != MACSUCCESS)
 		return ret;
 	if (vld == 0)
-		return MACSUCCESS;
-
+		return MACCHIPID;
 	switch (cfg) {
 	case MAC_AX_SS_LINK_CFG_GET:
 		ret = get_sta_link(adapter, link);
@@ -404,7 +420,7 @@ static u32 chk_role_wmm(struct mac_ax_adapter *adapter, u8 *pmacid, u8 src_wmm)
 	struct mac_role_tbl *role;
 	u8 wmm;
 
-	role = mac_role_srch(adapter, *pmacid);
+	role = role_srch_no_lock(adapter, *pmacid);
 	if (!role)
 		return MACNOITEM;
 
@@ -566,5 +582,396 @@ u32 mac_ss_wmm_map_upd(struct mac_ax_adapter *adapter,
 	ss_wmm_tbl_cfg(adapter, &ctrl, MAC_AX_SS_WMM_TBL_SET);
 
 	return MACSUCCESS;
+}
+
+static void get_dl_su_rpt(struct mac_ax_adapter *adapter,
+			  struct mac_ax_ss_dl_rpt_info *info)
+{
+	u32 val32;
+	struct mac_ax_intf_ops *ops = adapter_to_intf_ops(adapter);
+
+	val32 = MAC_REG_R32(R_AX_SS_DL_RPT_CRTL);
+	info->wmm0_max = GET_FIELD(val32, B_AX_SS_MAX_SU_NUM_0);
+	info->wmm1_max = GET_FIELD(val32, B_AX_SS_MAX_SU_NUM_1);
+	info->twt_wmm0_max = GET_FIELD(val32, B_AX_SS_TWT_MAX_SU_NUM_0);
+	info->twt_wmm1_max = GET_FIELD(val32, B_AX_SS_TWT_MAX_SU_NUM_1);
+}
+
+static void set_dl_su_rpt(struct mac_ax_adapter *adapter,
+			  struct mac_ax_ss_dl_rpt_info *info)
+{
+	u32 val32;
+	struct mac_ax_intf_ops *ops = adapter_to_intf_ops(adapter);
+
+	val32 = MAC_REG_R32(R_AX_SS_DL_RPT_CRTL);
+	val32 = SET_CLR_WORD(val32, info->wmm0_max, B_AX_SS_MAX_SU_NUM_0);
+	val32 = SET_CLR_WORD(val32, info->wmm1_max, B_AX_SS_MAX_SU_NUM_1);
+	val32 =	SET_CLR_WORD(val32, info->twt_wmm0_max,
+			     B_AX_SS_TWT_MAX_SU_NUM_0);
+	val32 =	SET_CLR_WORD(val32, info->twt_wmm1_max,
+			     B_AX_SS_TWT_MAX_SU_NUM_1);
+	MAC_REG_W32(R_AX_SS_DL_RPT_CRTL, val32);
+}
+
+static void get_dl_mu_rpt(struct mac_ax_adapter *adapter,
+			  struct mac_ax_ss_dl_rpt_info *info)
+{
+	u32 val32;
+	struct mac_ax_intf_ops *ops = adapter_to_intf_ops(adapter);
+
+	val32 = MAC_REG_R32(R_AX_SS_DL_MU_RPT_CRTL);
+	info->wmm0_max = GET_FIELD(val32, B_AX_SS_MAX_MU_NUM_0);
+	info->wmm1_max = GET_FIELD(val32, B_AX_SS_MAX_MU_NUM_1);
+	info->twt_wmm0_max = GET_FIELD(val32, B_AX_SS_TWT_MAX_MU_NUM_0);
+	info->twt_wmm1_max = GET_FIELD(val32, B_AX_SS_TWT_MAX_MU_NUM_1);
+}
+
+static void set_dl_mu_rpt(struct mac_ax_adapter *adapter,
+			  struct mac_ax_ss_dl_rpt_info *info)
+{
+	u32 val32;
+	struct mac_ax_intf_ops *ops = adapter_to_intf_ops(adapter);
+
+	val32 = MAC_REG_R32(R_AX_SS_DL_MU_RPT_CRTL);
+	val32 = SET_CLR_WORD(val32, info->wmm0_max, B_AX_SS_MAX_MU_NUM_0);
+	val32 = SET_CLR_WORD(val32, info->wmm1_max, B_AX_SS_MAX_MU_NUM_1);
+	val32 =	SET_CLR_WORD(val32, info->twt_wmm0_max,
+			     B_AX_SS_TWT_MAX_MU_NUM_0);
+	val32 =	SET_CLR_WORD(val32, info->twt_wmm1_max,
+			     B_AX_SS_TWT_MAX_MU_NUM_1);
+	MAC_REG_W32(R_AX_SS_DL_MU_RPT_CRTL, val32);
+}
+
+static void get_dl_ru_rpt(struct mac_ax_adapter *adapter,
+			  struct mac_ax_ss_dl_rpt_info *info)
+{
+	u32 val32;
+	struct mac_ax_intf_ops *ops = adapter_to_intf_ops(adapter);
+
+	val32 = MAC_REG_R32(R_AX_SS_DL_RU_RPT_CRTL);
+	info->wmm0_max = GET_FIELD(val32, B_AX_SS_MAX_RU_NUM_0);
+	info->wmm1_max = GET_FIELD(val32, B_AX_SS_MAX_RU_NUM_1);
+	info->twt_wmm0_max = GET_FIELD(val32, B_AX_SS_TWT_MAX_RU_NUM_0);
+	info->twt_wmm1_max = GET_FIELD(val32, B_AX_SS_TWT_MAX_RU_NUM_1);
+}
+
+static void set_dl_ru_rpt(struct mac_ax_adapter *adapter,
+			  struct mac_ax_ss_dl_rpt_info *info)
+{
+	u32 val32;
+	struct mac_ax_intf_ops *ops = adapter_to_intf_ops(adapter);
+
+	val32 = MAC_REG_R32(R_AX_SS_DL_RU_RPT_CRTL);
+	val32 = SET_CLR_WORD(val32, info->wmm0_max, B_AX_SS_MAX_RU_NUM_0);
+	val32 = SET_CLR_WORD(val32, info->wmm1_max, B_AX_SS_MAX_RU_NUM_1);
+	val32 =	SET_CLR_WORD(val32, info->twt_wmm0_max,
+			     B_AX_SS_TWT_MAX_RU_NUM_0);
+	val32 =	SET_CLR_WORD(val32, info->twt_wmm1_max,
+			     B_AX_SS_TWT_MAX_RU_NUM_1);
+	MAC_REG_W32(R_AX_SS_DL_RU_RPT_CRTL, val32);
+}
+
+void set_delay_tx_cfg(struct mac_ax_adapter *adapter,
+		      struct mac_ax_delay_tx_cfg *cfg)
+{
+	u32 val32;
+	struct mac_ax_intf_ops *ops = adapter_to_intf_ops(adapter);
+
+	val32 = MAC_REG_R32(R_AX_SS_CTRL);
+	val32 = SET_CLR_WORD(val32, cfg->en, B_AX_SS_DELAY_TX_BAND_SEL);
+	MAC_REG_W32(R_AX_SS_CTRL, val32);
+
+	val32 = SET_WORD(cfg->vovi_to_b0, B_AX_SS_VOVI_TO_0) |
+		SET_WORD(cfg->bebk_to_b0, B_AX_SS_BEBK_TO_0) |
+		SET_WORD(cfg->vovi_to_b1, B_AX_SS_VOVI_TO_1) |
+		SET_WORD(cfg->bebk_to_b1, B_AX_SS_BEBK_TO_1);
+	MAC_REG_W32(R_AX_SS_DELAYTX_TO, val32);
+
+	val32 = SET_WORD(cfg->vovi_len_b0, B_AX_SS_VOVI_LEN_THR_0) |
+		SET_WORD(cfg->bebk_len_b0, B_AX_SS_BEBK_LEN_THR_0) |
+		SET_WORD(cfg->vovi_len_b1, B_AX_SS_VOVI_LEN_THR_1) |
+		SET_WORD(cfg->bebk_len_b1, B_AX_SS_BEBK_LEN_THR_1);
+	MAC_REG_W32(R_AX_SS_DELAYTX_LEN_THR, val32);
+}
+
+u32 set_ss_quota_mode(struct mac_ax_adapter *adapter,
+		      struct mac_ax_ss_quota_mode_ctrl *ctrl)
+{
+	struct mac_ax_intf_ops *ops = adapter_to_intf_ops(adapter);
+	u32 val32_wmm, val32_ul, ret;
+
+	val32_wmm = MAC_REG_R32(R_AX_SS_DL_QUOTA_CTRL);
+	val32_ul = MAC_REG_R32(R_AX_SS_UL_QUOTA_CTRL);
+	switch (ctrl->wmm) {
+	case MAC_AX_SS_WMM0:
+		if (ctrl->mode == MAC_AX_SS_QUOTA_MODE_CNT)
+			MAC_REG_W32(R_AX_SS_DL_QUOTA_CTRL,
+				    val32_wmm | B_AX_SS_QUOTA_MODE_0);
+		else
+			MAC_REG_W32(R_AX_SS_DL_QUOTA_CTRL,
+				    val32_wmm & ~B_AX_SS_QUOTA_MODE_0);
+		break;
+	case MAC_AX_SS_WMM1:
+		if (ctrl->mode == MAC_AX_SS_QUOTA_MODE_CNT)
+			MAC_REG_W32(R_AX_SS_DL_QUOTA_CTRL,
+				    val32_wmm | B_AX_SS_QUOTA_MODE_1);
+		else
+			MAC_REG_W32(R_AX_SS_DL_QUOTA_CTRL,
+				    val32_wmm & ~B_AX_SS_QUOTA_MODE_1);
+		break;
+	case MAC_AX_SS_WMM2:
+		if (ctrl->mode == MAC_AX_SS_QUOTA_MODE_CNT)
+			MAC_REG_W32(R_AX_SS_DL_QUOTA_CTRL,
+				    val32_wmm | B_AX_SS_QUOTA_MODE_2);
+		else
+			MAC_REG_W32(R_AX_SS_DL_QUOTA_CTRL,
+				    val32_wmm & ~B_AX_SS_QUOTA_MODE_2);
+		break;
+	case MAC_AX_SS_WMM3:
+		if (ctrl->mode == MAC_AX_SS_QUOTA_MODE_CNT)
+			MAC_REG_W32(R_AX_SS_DL_QUOTA_CTRL,
+				    val32_wmm | B_AX_SS_QUOTA_MODE_3);
+		else
+			MAC_REG_W32(R_AX_SS_DL_QUOTA_CTRL,
+				    val32_wmm & ~B_AX_SS_QUOTA_MODE_3);
+		break;
+	case MAC_AX_SS_UL:
+		if (ctrl->mode == MAC_AX_SS_QUOTA_MODE_CNT)
+			MAC_REG_W32(R_AX_SS_UL_QUOTA_CTRL,
+				    val32_ul | B_AX_SS_QUOTA_MODE_UL);
+		else
+			MAC_REG_W32(R_AX_SS_UL_QUOTA_CTRL,
+				    val32_ul & ~B_AX_SS_QUOTA_MODE_UL);
+		break;
+	}
+#if MAC_AX_FW_REG_OFLD
+	if (adapter->sm.fwdl == MAC_AX_FWDL_INIT_RDY) {
+		switch (ctrl->wmm) {
+		case MAC_AX_SS_WMM0:
+		case MAC_AX_SS_WMM1:
+		case MAC_AX_SS_UL:
+			ret = check_mac_en(adapter, 0, MAC_AX_CMAC_SEL);
+			if (ret != MACSUCCESS)
+				return ret;
+			if (ctrl->mode == MAC_AX_SS_QUOTA_MODE_TIME) {
+				ret = MAC_REG_W_OFLD(R_AX_PTCL_ATM,
+						     B_AX_ATM_AIRTIME_EN, 1, 1);
+				if (ret != MACSUCCESS) {
+					PLTFM_MSG_ERR("%s: config fail\n",
+						      __func__);
+					return ret;
+				}
+			}
+			break;
+		case MAC_AX_SS_WMM2:
+		case MAC_AX_SS_WMM3:
+			ret = check_mac_en(adapter, 1, MAC_AX_CMAC_SEL);
+			if (ret != MACSUCCESS)
+				return ret;
+			if (ctrl->mode == MAC_AX_SS_QUOTA_MODE_TIME) {
+				ret = MAC_REG_W_OFLD(R_AX_PTCL_ATM_C1,
+						     B_AX_ATM_AIRTIME_EN, 1, 1);
+				if (ret != MACSUCCESS) {
+					PLTFM_MSG_ERR("%s: config fail\n",
+						      __func__);
+					return ret;
+				}
+			}
+			break;
+		}
+
+		return MACSUCCESS;
+	}
+#endif
+
+	switch (ctrl->wmm) {
+	case MAC_AX_SS_WMM0:
+	case MAC_AX_SS_WMM1:
+	case MAC_AX_SS_UL:
+		ret = check_mac_en(adapter, 0, MAC_AX_CMAC_SEL);
+		if (ret != MACSUCCESS)
+			return ret;
+		val32_wmm = MAC_REG_R32(R_AX_PTCL_ATM);
+		if (ctrl->mode == MAC_AX_SS_QUOTA_MODE_TIME)
+			MAC_REG_W32(R_AX_PTCL_ATM,
+				    val32_wmm | B_AX_ATM_AIRTIME_EN);
+		break;
+	case MAC_AX_SS_WMM2:
+	case MAC_AX_SS_WMM3:
+		ret = check_mac_en(adapter, 1, MAC_AX_CMAC_SEL);
+		if (ret != MACSUCCESS)
+			return ret;
+		val32_wmm = MAC_REG_R32(R_AX_PTCL_ATM_C1);
+		if (ctrl->mode == MAC_AX_SS_QUOTA_MODE_TIME)
+			MAC_REG_W32(R_AX_PTCL_ATM_C1,
+				    val32_wmm | B_AX_ATM_AIRTIME_EN);
+		break;
+	}
+
+	return MACSUCCESS;
+}
+
+u32 ss_set_quotasetting(struct mac_ax_adapter *adapter,
+			struct mac_ax_ss_quota_setting *para)
+{
+	struct mac_ax_intf_ops *ops = adapter_to_intf_ops(adapter);
+	u32 val32;
+	u32 cnt = 1000;
+
+	if (para->ul_dl == mac_ax_issue_ul) {
+		val32 = (B_AX_SS_OWN |
+			SET_WORD(SS_W_QUOTA_SETTING, B_AX_SS_CMD_SEL) |
+			BIT(23) | SET_WORD(para->val, B_AX_SS_VALUE) |
+			para->macid);
+		MAC_REG_W32(R_AX_SS_SRAM_CTRL_1, val32);
+	} else {
+		val32 = (B_AX_SS_OWN |
+			SET_WORD(SS_W_QUOTA_SETTING, B_AX_SS_CMD_SEL) |
+			SET_WORD(para->ac_type, B_AX_SS_AC) |
+			SET_WORD(para->val, B_AX_SS_VALUE) | para->macid);
+		MAC_REG_W32(R_AX_SS_SRAM_CTRL_1, val32);
+	}
+
+	while (--cnt) {
+		val32 = MAC_REG_R32(R_AX_SS_SRAM_CTRL_1);
+		if ((val32 & B_AX_SS_OWN) == 0)
+			break;
+		PLTFM_DELAY_US(1);
+	}
+
+	if (!cnt) {
+		PLTFM_MSG_ERR("SS Set quota setting fail!!\n");
+		return MACPOLLTO;
+	}
+
+	return MACSUCCESS;
+}
+
+u32 get_ss_wmm_tbl(struct mac_ax_adapter *adapter,
+		   struct mac_ax_ss_wmm_tbl_ctrl *ctrl)
+{
+	u32 val32;
+	struct mac_ax_intf_ops *ops = adapter_to_intf_ops(adapter);
+
+	val32 = MAC_REG_R32(R_AX_SS_CTRL);
+	switch (ctrl->wmm) {
+	case 0:
+		ctrl->wmm_mapping =
+		(enum mac_ax_ss_wmm_tbl)GET_FIELD(val32, B_AX_SS_WMM_SEL_0);
+		break;
+	case 1:
+		ctrl->wmm_mapping =
+		(enum mac_ax_ss_wmm_tbl)GET_FIELD(val32, B_AX_SS_WMM_SEL_1);
+		break;
+	case 2:
+		ctrl->wmm_mapping =
+		(enum mac_ax_ss_wmm_tbl)GET_FIELD(val32, B_AX_SS_WMM_SEL_2);
+		break;
+	case 3:
+		ctrl->wmm_mapping =
+		(enum mac_ax_ss_wmm_tbl)GET_FIELD(val32, B_AX_SS_WMM_SEL_3);
+		break;
+	default:
+		return MACNOITEM;
+	}
+
+	return MACSUCCESS;
+}
+
+void get_delay_tx_cfg(struct mac_ax_adapter *adapter,
+		      struct mac_ax_delay_tx_cfg *cfg)
+{
+	u32 val32;
+	struct mac_ax_intf_ops *ops = adapter_to_intf_ops(adapter);
+
+	val32 = MAC_REG_R32(R_AX_SS_CTRL);
+	cfg->en =
+		(enum mac_ax_delay_tx_en)GET_FIELD(val32,
+						   B_AX_SS_DELAY_TX_BAND_SEL);
+
+	val32 = MAC_REG_R32(R_AX_SS_DELAYTX_TO);
+	cfg->vovi_to_b0 = GET_FIELD(val32, B_AX_SS_VOVI_TO_0);
+	cfg->bebk_to_b0 = GET_FIELD(val32, B_AX_SS_BEBK_TO_0);
+	cfg->vovi_to_b1 = GET_FIELD(val32, B_AX_SS_VOVI_TO_1);
+	cfg->bebk_to_b1 = GET_FIELD(val32, B_AX_SS_BEBK_TO_1);
+
+	val32 = MAC_REG_R32(R_AX_SS_DELAYTX_LEN_THR);
+	cfg->vovi_len_b0 = GET_FIELD(val32, B_AX_SS_VOVI_LEN_THR_0);
+	cfg->bebk_len_b0 = GET_FIELD(val32, B_AX_SS_BEBK_LEN_THR_0);
+	cfg->vovi_len_b1 = GET_FIELD(val32, B_AX_SS_VOVI_LEN_THR_1);
+	cfg->bebk_len_b1 = GET_FIELD(val32, B_AX_SS_BEBK_LEN_THR_1);
+}
+
+void mac_ss_dl_rpt_cfg(struct mac_ax_adapter *adapter,
+		       struct mac_ax_ss_dl_rpt_info *info,
+		       enum mac_ax_ss_rpt_cfg cfg)
+{
+	switch (cfg) {
+	case MAC_AX_SS_DL_SU_RPT_CFG_GET:
+		get_dl_su_rpt(adapter, info);
+		break;
+	case MAC_AX_SS_DL_SU_RPT_CFG_SET:
+		set_dl_su_rpt(adapter, info);
+		break;
+	case MAC_AX_SS_DL_MU_RPT_CFG_GET:
+		get_dl_mu_rpt(adapter, info);
+		break;
+	case MAC_AX_SS_DL_MU_RPT_CFG_SET:
+		set_dl_mu_rpt(adapter, info);
+		break;
+	case MAC_AX_SS_DL_RU_RPT_CFG_GET:
+		get_dl_ru_rpt(adapter, info);
+		break;
+	case MAC_AX_SS_DL_RU_RPT_CFG_SET:
+		set_dl_ru_rpt(adapter, info);
+		break;
+	}
+}
+u32 mac_ss_stat_chk(struct mac_ax_adapter *adapter)
+{
+	u32 val32 = 0;
+	u32 r_val32;
+	u8 fw_vld;
+	struct mac_ax_intf_ops *ops = adapter_to_intf_ops(adapter);
+
+	switch (adapter->drv_info->sw_chip_id) {
+	case MAC_AX_CHIP_ID_8852A:
+		fw_vld = SS_FW_SUPPORT_8852A;
+		break;
+	case MAC_AX_CHIP_ID_8852B:
+		fw_vld = SS_FW_SUPPORT_8852B;
+		break;
+	default:
+		fw_vld = 0;
+		break;
+	}
+
+	r_val32 = MAC_REG_R32(R_AX_SS_DBG_3);
+	if (r_val32 & B_AX_SS_HW_DECR_LEN_UDN)
+		val32 |= SS_TX_HW_LEN_UDN;
+	if (r_val32 & B_AX_SS_SW_DECR_LEN_UDN)
+		val32 |= SS_TX_SW_LEN_UDN;
+	if (r_val32 & B_AX_SS_HW_ADD_LEN_OVF)
+		val32 |= SS_TX_HW_LEN_OVF;
+
+	r_val32 = MAC_REG_R32(R_AX_SS_DBG_2);
+	if (fw_vld) {
+		if (GET_FIELD(r_val32, B_AX_SS_FWTX_STAT) != 1)
+			val32 |= SS_STAT_FWTX;
+	}
+	if (GET_FIELD(r_val32, B_AX_SS_RPTA_STAT) != 1)
+		val32 |= SS_STAT_RPTA;
+	if (GET_FIELD(r_val32, B_AX_SS_WDEA_STAT_V1) != 1)
+		val32 |= SS_STAT_WDEA;
+	if (GET_FIELD(r_val32, B_AX_SS_PLEA_STAT_V1) != 1)
+		val32 |= SS_STAT_PLEA;
+
+	r_val32 = MAC_REG_R32(R_AX_SS_DBG_1);
+	if (GET_FIELD(r_val32, B_AX_SS_ULRU_STAT) > 1)
+		val32 |= SS_STAT_ULRU;
+	if (GET_FIELD(r_val32, B_AX_SS_DLTX_STAT) > 1)
+		val32 |= SS_STAT_DLTX;
+
+	return val32;
 }
 

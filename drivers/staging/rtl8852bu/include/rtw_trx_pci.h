@@ -15,8 +15,6 @@
 #ifndef _RTW_TRX_PCI_H_
 #define _RTW_TRX_PCI_H_
 
-extern struct rtw_intf_ops pci_ops;
-
 static inline u8 is_pci_support_dma64(struct dvobj_priv *dvobj)
 {
 	PPCI_DATA pci_data = dvobj_to_pci(dvobj);

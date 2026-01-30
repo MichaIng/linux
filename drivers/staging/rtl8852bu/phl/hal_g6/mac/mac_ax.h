@@ -23,7 +23,9 @@
 #include "mac_ax/secure_boot.h"
 #include "mac_ax/efuse.h"
 #include "mac_ax/p2p.h"
+#include "mac_ax/twt.h"
 #include "mac_ax/dbcc.h"
+#include "mac_ax/sta_sch.h"
 #if MAC_AX_SDIO_SUPPORT
 #include "mac_ax/_sdio.h"
 #endif
@@ -37,45 +39,18 @@
 #endif
 
 #define MAC_AX_MAJOR_VER	0	/*Software Architcture Modify*/
-#define MAC_AX_PROTOTYPE_VER	25	/*New Feature;Regular Release*/
-#define MAC_AX_SUB_VER		61	/*for bug fix*/
-#define MAC_AX_SUB_INDEX	0	/*for special used*/
+#define MAC_AX_PROTOTYPE_VER	29	/*New Feature;Regular Release*/
+#define MAC_AX_SUB_VER		137	/*for bug fix*/
+#define MAC_AX_SUB_INDEX	10	/*for special used*/
 
 #define MAC_AX_SRC_VER(a, b, c, d)                                             \
 				(((a) << 24) + ((b) << 16) + ((c) << 8) + (d))
 
-#ifdef CONFIG_NEW_HALMAC_INTERFACE
+#define MAC_AX_COLLOCATION_PROTOTYPE_VER	29	/* Collocation Major Version */
+#define MAC_AX_COLLOCATION_SUB_VER		1	/* Collocation Minor Version */
 
-/**
- * @brief mac_ax_ops_init_v1
- *
- * @param *phl_adapter
- * @param *drv_adapter
- * @param chip_id
- * @param hci
- * @param **mac_adapter
- * @param **mac_ops
- * @return Please Place Description here.
- * @retval u32
- */
-u32 mac_ax_ops_init_v1(void *phl_adapter, void *drv_adapter,
-		       enum rtw_chip_id chip_id,
-		       enum rtw_hci_type hci,
-		       struct mac_ax_adapter **mac_adapter,
-		       struct mac_ax_ops **mac_ops);
+#define acv_mask		0x0F
 
-/**
- * @brief mac_ax_ops_init
- *
- * @param *drv_adapter
- * @param *pltfm_cb
- * @param intf
- * @param **mac_adapter
- * @param **mac_ops
- * @return Please Place Description here.
- * @retval u32
- */
-#else
 u32 mac_ax_ops_init(void *drv_adapter, struct mac_ax_pltfm_cb *pltfm_cb,
 		    enum mac_ax_intf intf,
 		    struct mac_ax_adapter **mac_adapter,
@@ -90,7 +65,6 @@ u32 mac_ax_ops_init(void *drv_adapter, struct mac_ax_pltfm_cb *pltfm_cb,
  * @retval u32
  */
 
-#endif
 #if MAC_AX_PHL_H2C
 u32 mac_ax_phl_init(void *phl_adapter, struct mac_ax_adapter *mac_adapter);
 
@@ -126,5 +100,28 @@ u32 is_chip_id(struct mac_ax_adapter *adapter, enum mac_ax_chip_id id);
  */
 
 u32 is_cv(struct mac_ax_adapter *adapter, enum rtw_cv cv);
+
+/**
+ * @brief xlat_chip_id
+ *
+ * @param hw_id
+ * @param *chip_id
+ * @return Please Place Description here.
+ * @retval u32
+ */
+u32 xlat_chip_id(u8 hw_id, u8 *chip_id);
+
+/**
+ * @brief mac_get_wlanfw_cap
+ *
+ * @param *adapter
+ * @param size
+ * @param buf
+ * @param mac_cap
+ * @param outsrc_cap
+ * @return Please Place Description here.
+ * @retval u32
+ */
+u32 mac_get_wlanfw_cap(struct mac_ax_adapter *adapter, struct rtw_wcpu_cap_t *wcpu_cap);
 
 #endif

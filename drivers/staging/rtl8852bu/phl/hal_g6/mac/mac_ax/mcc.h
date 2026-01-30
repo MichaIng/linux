@@ -20,6 +20,8 @@
 #include "../type.h"
 #include "fwcmd.h"
 
+#if MAC_FEAT_MCC
+
 #define MCC_GROUP_ID_MAX 3
 
 /**
@@ -410,4 +412,5 @@ u32 mac_check_mcc_set_duration_done(struct mac_ax_adapter *adapter, u8 group);
  * @}
  */
 
+#endif /* MAC_FEAT_MCC */
 #endif
