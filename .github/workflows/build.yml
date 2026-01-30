@@ -7,7 +7,7 @@ permissions: {}
 jobs:
   build:
     # https://github.com/actions/virtual-environments
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     env:
       CROSS_COMPILE: 'riscv64-linux-gnu-'
       ARCH: 'riscv'
