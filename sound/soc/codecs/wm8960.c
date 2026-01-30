@@ -1720,3 +1720,4 @@ module_i2c_driver(wm8960_i2c_driver);
 
 MODULE_DESCRIPTION("ASoC WM8960 driver");
 MODULE_AUTHOR("Liam Girdwood");
+MODULE_LICENSE("GPL");
