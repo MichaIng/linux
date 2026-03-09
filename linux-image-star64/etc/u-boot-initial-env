@@ -18,7 +18,7 @@ ipaddr=192.168.120.230
 
 bootcmd=setenv devnum; for target in "${boot_targets}"; do echo "Trying to boot from ${target} ..."; run "bootcmd_${target}"; done
 
-boot_targets=mmc1 mmc0 dhcp
+boot_targets=mmc1 usb0 nvme0 mmc0 dhcp
 bootcmd_mmc1=devnum=1; run mmc_boot
 bootcmd_usb0=devnum=0; run usb_boot
 bootcmd_nvme0=devnum=0; run nvme_boot
